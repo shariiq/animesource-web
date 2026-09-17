@@ -2,7 +2,7 @@
 
 Directive: research a focused component-preview (chrome nav + glossy beveled buttons) for the AniSource UI/UX pass. This note grounds the visual direction in primary sources and gives concrete, performance-safe CSS construction recipes. It informed `design-preview-components.html`; no product application code was changed.
 
-> **Historical / superseded direction.** This note records an early Y2K/Frutiger-Aero exploration. Its glossy chrome treatment, Quicksand/Comfortaa alternatives, and open decision gates are not current product requirements. The adopted system is the editorial paper/ink/frosted material system in `docs/adr/0001-tailwind-y2k-material-system.md`, implemented by the current tokens and recipes in `app/styles/`. Keep the research and citations for historical context, but do not use this note or the preview as a production component contract.
+> **Historical / superseded direction.** This note records an early Y2K/Frutiger-Aero exploration. Its glossy chrome treatment, Quicksand/Comfortaa alternatives, and open decision gates are not current product requirements. The adopted system is the editorial paper/ink/frosted material system in `docs/adr/0001-editorial-material-system.md`, implemented by the current tokens and recipes in `app/styles/`. Keep the research and citations for historical context, but do not use this note or the preview as a production component contract.
 
 Sources are cited inline. Where only a secondary summary was obtainable, it is labeled as such.
 

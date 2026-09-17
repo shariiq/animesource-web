@@ -7,14 +7,20 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: true
+  VITE_ANILIST_API_URL: http://127.0.0.1:3101/anilist
+  VITE_ANISOURCE_BASE: http://127.0.0.1:3101
+
 jobs:
-  verify:
+  static:
+    name: Lint, types, and build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      CI: true
-      VITE_ANILIST_API_URL: http://127.0.0.1:3101/anilist
-      VITE_ANISOURCE_BASE: http://127.0.0.1:3101
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -25,5 +31,40 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Run verification suite
-        run: npm run verify
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build Vercel output
+        run: npm run build
+
+  test:
+    name: Unit and browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Run Vitest suite
+        run: npm test
+      - name: Run mocked Playwright suite
+        run: npm run e2e
+      - name: Upload browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7

@@ -19,6 +19,8 @@ Copy `.env.example` to `.env` for local development. `VITE_ANILIST_API_URL` and 
 
 Playwright and CI override both values with `tests/e2e/mock-api.mjs`. CI must never call either live external service.
 
+The merge-gate workflow (`verify.yml`) is deterministic and mock-only. A separate scheduled workflow, `live-smoke.yml`, exercises the real services (`npm run test:live`) twice daily and on manual dispatch. It is operational only: its failures open an issue for the deploy owner and never block a merge, preview, or production promotion. See `docs/ci.md`.
+
 ## Preview and release procedure
 
 1. Run `npm ci` and `npm run verify` from a clean checkout.

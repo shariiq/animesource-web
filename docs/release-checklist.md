@@ -8,6 +8,7 @@ Run this checklist against the commit being released. Do not mark a release read
 - [ ] `npm run verify` succeeds: lint, strict typecheck, Vercel/Nitro build, Vitest, and mocked Playwright.
 - [ ] `git status` contains no generated output, reports, `.env` files, or local Claude settings.
 - [ ] CI uses `tests/e2e/mock-api.mjs` and has no live AniList/AniSource dependency.
+- [ ] The scheduled `live-smoke` workflow (see `docs/ci.md`) is understood to be operational only: its failures open an issue and never gate the release.
 
 ## Route smoke checks
 

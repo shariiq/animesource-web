@@ -313,7 +313,7 @@ The current application is a **working discovery plus watch vertical slice**. Th
 - `[ ]` Measure contrast for normal, hover, focus, loading, error, empty, and imagery-backed states.
 - `[ ]` Audit mobile touch targets, focus visibility, reduced-motion behavior, and no-horizontal-overflow behavior.
 - `[ ]` Keep tests focused on actual seams: schemas, persistence, matching, query clients, route intent, and high-value regressions.
-- `[ ]` Keep live AniList/AniSource calls out of CI. Use mocked transports; live checks, if needed, must be non-blocking operational checks.
+- `[x]` Keep live AniList/AniSource calls out of CI. Use mocked transports; live checks, if needed, must be non-blocking operational checks. (Done: `verify.yml` is mock-only; scheduled, non-blocking `live-smoke.yml` opens an issue on failure — see `docs/ci.md`.)
 
 ### Operations, policy, and legal readiness
 

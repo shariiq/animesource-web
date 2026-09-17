@@ -5,15 +5,13 @@ import { z } from 'zod'
 // the backend docs explicitly warn not every listed field is always present.
 
 export const healthResponseSchema = z.object({
+  status: z.string().default('ok'),
   version: z.string(),
   uptime_seconds: z.number(),
   memory_usage_mb: z.number(),
-  active_sources: z.number(),
-  cache_stats: z.object({
-    memory: z.number(),
-    ttl: z.number(),
-    size: z.number(),
-  }),
+  active_sources: z.number().int(),
+  // OpenAPI intentionally permits backend-specific observability counters here.
+  cache_stats: z.record(z.string(), z.unknown()),
 })
 export type HealthResponse = z.infer<typeof healthResponseSchema>
 

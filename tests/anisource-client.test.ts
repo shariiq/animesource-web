@@ -9,6 +9,29 @@ const transport = (fetch: (input: string, init?: RequestInit) => Promise<Respons
 })
 
 describe('AniSource client', () => {
+  it('validates the deployed health response contract', async () => {
+    const health = {
+      status: 'ok',
+      version: '0.2.0',
+      uptime_seconds: 46.77,
+      memory_usage_mb: 75.23,
+      active_sources: 2,
+      cache_stats: {
+        item_count: 0,
+        max_items: 1_000,
+        hits: 0,
+        misses: 0,
+        hit_rate_percent: 0,
+        inflight_requests: 0,
+      },
+    }
+    const fetch = vi.fn(async () => response(health))
+    const client = createAniSourceClient({ baseUrl: 'https://api.test', transport: transport(fetch) })
+
+    await expect(client.health()).resolves.toEqual(health)
+    expect(fetch).toHaveBeenCalledWith('https://api.test/health', expect.any(Object))
+  })
+
   it('validates and returns source data', async () => {
     const fetch = vi.fn(async () => response({ sources: [{ id: 'source id', name: 'Source', base_url: 'https://source.test' }], count: 1 }))
     const client = createAniSourceClient({ baseUrl: 'https://api.test/', transport: transport(fetch) })

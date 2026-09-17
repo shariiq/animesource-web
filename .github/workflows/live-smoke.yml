@@ -1,0 +1,48 @@
+name: Live smoke
+
+# Operational track: exercises the real AniList and AniSource services.
+# Never part of the merge gate (verify.yml); fails honestly and opens an issue.
+
+on:
+  schedule:
+    - cron: "17 4,16 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: live-smoke
+  cancel-in-progress: true
+
+jobs:
+  live:
+    name: Live service smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - run: npm ci
+      - run: npm run test:live
+      - name: Open or update the live-smoke failure issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          stamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          printf -v body '%s\n\n%s\n%s\n' \
+            "Live smoke failed at ${stamp}." \
+            "Run: ${run_url}" \
+            "This check is operational only — it does not gate merges or releases."
+          existing="$(gh issue list --state open --search 'Live smoke failed in:title' --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "Live smoke failed — ${stamp}" --body "$body" --label bug
+          fi

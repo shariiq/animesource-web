@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
+    "test:live": "node scripts/live-smoke.mjs",
     "verify": "npm run lint && npm run typecheck && npm run build && npm test && npm run e2e"
   },
   "dependencies": {

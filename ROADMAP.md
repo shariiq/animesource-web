@@ -4,7 +4,7 @@
 **Roadmap status:** Active  
 **Product target:** A production-grade anime discovery, library, schedule, and playback platform.
 
-This is the product roadmap for AnimeSource. It tracks user-visible capability and the engineering work required to support it. It is intentionally separate from the visual reference files and from `anisource.html`: production behavior, real AniList data, the current route tree, `CLAUDE.md`, and the accepted ADR remain authoritative.
+This is the product roadmap for AnimeSource. It tracks user-visible capability and the engineering work required to support it. Production behavior, real AniList data, the current route tree, `CLAUDE.md`, and the accepted ADR remain authoritative.
 
 ## How to maintain this file
 
@@ -345,7 +345,6 @@ These are intentional sequencing decisions, not forgotten tasks:
 - **Community features:** Do not add comments, ratings, reviews, or social lists before identity, moderation, privacy, reporting, and deletion are designed.
 - **Large visual redesigns:** Prefer product capability, data-model, and reliability work while the current approved paper/ink/frosted system is coherent.
 - **Broad snapshot suites:** Prefer focused tests at module interfaces and real regression cases over snapshots that make visual change expensive without proving behavior.
-- **Prototype markup/content copying:** `anisource.html` is a functional reference and the design-preview files are visual references; neither supplies production placeholder data, route contracts, or exact markup.
 
 ## Milestone release gates
 

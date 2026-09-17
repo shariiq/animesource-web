@@ -6,7 +6,7 @@ import solidTypeScript from 'eslint-plugin-solid/configs/typescript'
 
 export default [
   {
-    ignores: ['dist/**', '.vercel/**', 'node_modules/**', 'app/routeTree.gen.ts', 'anisource.html', 'tests/e2e/mock-api.mjs'],
+    ignores: ['dist/**', '.vercel/**', 'node_modules/**', 'app/routeTree.gen.ts', 'tests/e2e/mock-api.mjs'],
   },
   eslint.configs.recommended,
   {

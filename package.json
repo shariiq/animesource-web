@@ -1,0 +1,47 @@
+{
+  "name": "animesource-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev --port 3000",
+    "build": "vite build",
+    "start": "vite preview --host 0.0.0.0",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "playwright test",
+    "verify": "npm run lint && npm run typecheck && npm run build && npm test && npm run e2e"
+  },
+  "dependencies": {
+    "@tanstack/solid-query": "^5.102.8",
+    "@tanstack/solid-router": "^1.170.34",
+    "@tanstack/solid-start": "^1.168.52",
+    "autoprefixer": "^10.6.0",
+    "hls.js": "^1.7.3",
+    "postcss": "^8.5.28",
+    "solid-js": "^1.9.15",
+    "tailwindcss": "^4.3.3",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@solidjs/testing-library": "^0.8.10",
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@types/node": "^26.5.1",
+    "@typescript-eslint/eslint-plugin": "^8.70.0",
+    "@typescript-eslint/parser": "^8.70.0",
+    "@vitest/coverage-v8": "^5.0.1",
+    "eslint": "^9.39.1",
+    "eslint-plugin-solid": "^0.14.5",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^30.0.1",
+    "nitro": "npm:nitro-nightly@^3.0.1-20260915-165946-4f902851",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.0",
+    "vite-plugin-solid": "^2.11.11",
+    "vitest": "^5.0.1"
+  }
+}

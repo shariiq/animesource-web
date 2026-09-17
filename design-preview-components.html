@@ -1,0 +1,1286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AnimeSource Component Direction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #09090b;
+      --paper: #f8f8fa;
+      --line: rgba(9, 9, 11, .13);
+      --line-light: rgba(255, 255, 255, .18);
+      --muted: #62616b;
+      --quiet: #8b8993;
+      --violet: #7665e8;
+      --plum: #ae6a8d;
+      --mint: #9de4c4;
+      --acid: #d9f56a;
+      --orange: #fa775f;
+      --emerald: #00c853;
+      --body: "Manrope", sans-serif;
+      --serif: "Instrument Serif", serif;
+      --mono: "DM Mono", monospace;
+      --ease: cubic-bezier(.16, 1, .3, 1);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: var(--ink);
+      background: #fafafd;
+      font-family: var(--body);
+      -webkit-font-smoothing: antialiased;
+    }
+    button, a { font: inherit; }
+    button { color: inherit; }
+    img { display: block; max-width: 100%; }
+    a { color: inherit; }
+
+    /* Atmosphere */
+    .atmosphere {
+      position: fixed;
+      inset: 0;
+      z-index: -3;
+      overflow: hidden;
+      background: radial-gradient(circle at 42% 15%, #fff 0 13%, #f4f4f8 58%, #fff 100%);
+    }
+    .atmosphere::before,
+    .atmosphere::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(88px);
+    }
+    .atmosphere::before {
+      width: 60vw;
+      height: 57vw;
+      right: -9vw;
+      top: -24vw;
+      background: radial-gradient(circle at 47% 58%, #11111a 0 14%, #30303f 29%, rgba(35,35,48,.66) 46%, transparent 72%);
+      opacity: .92;
+    }
+    .atmosphere::after {
+      width: 56vw;
+      height: 46vw;
+      left: 5vw;
+      bottom: -26vw;
+      background: radial-gradient(circle at 48% 38%, #151823 0 18%, rgba(47,53,72,.74) 38%, transparent 70%);
+      opacity: .83;
+    }
+    .bloom {
+      position: absolute;
+      width: 38vw;
+      height: 42vw;
+      left: 2vw;
+      top: 8vw;
+      border-radius: 50%;
+      filter: blur(100px);
+      background: radial-gradient(circle, rgba(203,154,181,.86), rgba(169,134,164,.34) 51%, transparent 76%);
+    }
+    .grain {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      pointer-events: none;
+      opacity: .36;
+      background-image:
+        radial-gradient(rgba(0,0,0,.13) .55px, transparent .7px),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.07'/%3E%3C/svg%3E");
+      background-size: 6px 6px, 180px 180px;
+      mix-blend-mode: multiply;
+    }
+
+    .page {
+      width: min(1480px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 34px 0 120px;
+    }
+    .proof-nav {
+      height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 44px;
+      border-bottom: 1px solid rgba(0,0,0,.17);
+    }
+    .wordmark {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: -.03em;
+    }
+    .mark {
+      width: 24px;
+      aspect-ratio: 1;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2px;
+    }
+    .mark i { border-radius: 50%; background: #09090b; }
+    .mark i:nth-child(5) { opacity: .15; }
+    .proof-nav small {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+      color: rgba(0,0,0,.62);
+    }
+
+    .section { margin-top: 104px; }
+    .section:first-of-type { margin-top: 0; }
+    .section-heading {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 16px;
+      margin: 0 0 25px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(0,0,0,.17);
+    }
+    .section-heading .index {
+      font: 500 10px/1 var(--mono);
+      color: #6c6a74;
+    }
+    .section-heading h2 {
+      margin: 0;
+      font-size: clamp(20px, 2vw, 29px);
+      line-height: .95;
+      letter-spacing: -.05em;
+    }
+    .section-heading p {
+      max-width: 46ch;
+      margin: 0;
+      font: 400 10px/1.5 var(--mono);
+      text-align: right;
+      color: #65636d;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    /* -------------------------------------------------------------
+       COMPONENT 1: CINEMATIC BROADCAST HERO
+       Shared philosophy: Frosted shell, fluid spacing (no harsh interior lines),
+       tall immersive panoramic banner, floating telemetry cluster.
+       ------------------------------------------------------------- */
+    .hero-shell {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, .82);
+      border-radius: 26px;
+      background: rgba(255,255,255,.62);
+      backdrop-filter: blur(54px) saturate(180%);
+      color: var(--ink);
+      box-shadow: 0 38px 110px -40px rgba(0,0,0,.38), inset 0 1.5px rgba(255,255,255,1);
+    }
+
+    .hero-backdrop-frame {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+    .hero-backdrop-frame img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: 70% 25%;
+      filter: saturate(.92) contrast(1.08) brightness(1.04);
+      transform: scale(1.02);
+      transition: transform 1.2s var(--ease);
+    }
+    .hero-shell:hover .hero-backdrop-frame img {
+      transform: scale(1.05);
+    }
+    .hero-backdrop-frame::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.98) 0%, rgba(255,255,255,.92) 38%, rgba(255,255,255,.45) 70%, rgba(255,255,255,.18) 100%),
+        linear-gradient(0deg, rgba(250,250,253,.96) 0%, rgba(250,250,253,.2) 50%, transparent 100%);
+    }
+    .hero-backdrop-frame::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      opacity: .25;
+      background-image: radial-gradient(rgba(255,255,255,.4) .6px, transparent .8px);
+      background-size: 5px 5px;
+      mix-blend-mode: soft-light;
+    }
+
+    /* Top Broadcast Toolbar */
+    .hero-toolbar {
+      position: relative;
+      z-index: 4;
+      min-height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 32px;
+      background: rgba(255, 255, 255, .32);
+      backdrop-filter: blur(16px);
+      font: 500 9px var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: #66646f;
+    }
+    .hero-toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #258f64;
+      box-shadow: 0 0 8px rgba(37, 143, 100, .5);
+    }
+    .hero-channel-indices {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .hero-channel-chip {
+      height: 28px;
+      padding: 0 12px;
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid rgba(0, 0, 0, .08);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .68);
+      color: #44424c;
+      font: 600 9px var(--mono);
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .hero-channel-chip:hover {
+      background: #ffffff;
+      transform: translateY(-1px);
+    }
+    .hero-channel-chip.active {
+      background: #111116;
+      color: #ffffff;
+      border-color: #111116;
+      font-weight: 700;
+      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    }
+
+    /* Hero Center Stage */
+    .hero-stage-grid {
+      position: relative;
+      z-index: 3;
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr);
+      min-height: 530px;
+      gap: 24px;
+      padding: 24px 32px 36px;
+    }
+
+    .hero-main-content {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      min-width: 0;
+      padding-right: 12px;
+    }
+
+    .hero-kicker-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font: 600 10px var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: #55535e;
+      margin-bottom: 12px;
+    }
+    .hero-kicker-line span {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      background: rgba(118, 101, 232, .12);
+      color: var(--violet);
+      border-radius: 5px;
+      font-weight: 700;
+    }
+
+    .hero-headline {
+      margin: 0;
+      font: 400 clamp(48px, 6vw, 92px)/.86 var(--serif);
+      letter-spacing: -.055em;
+      color: var(--ink);
+      text-wrap: balance;
+    }
+    .hero-headline em {
+      color: var(--violet);
+      font-weight: 400;
+      font-style: italic;
+    }
+
+    .hero-native-line {
+      margin-top: 10px;
+      font-size: 11.5px;
+      color: var(--quiet);
+      letter-spacing: .02em;
+    }
+
+    .hero-synopsis-box {
+      max-width: 62ch;
+      margin-top: 22px;
+      color: #42404b;
+      font-size: 13.5px;
+      line-height: 1.7;
+    }
+
+    .hero-actions-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 32px;
+    }
+
+    .btn-action-primary {
+      min-height: 46px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 0 26px;
+      background: #111116;
+      color: #ffffff;
+      border: 1px solid #111116;
+      border-radius: 10px;
+      font-size: 11.5px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0,0,0,.16);
+      transition: all .2s var(--ease);
+    }
+    .btn-action-primary:hover {
+      background: #24242e;
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(0,0,0,.22);
+    }
+
+    .btn-action-secondary {
+      min-height: 46px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 20px;
+      background: rgba(255, 255, 255, .78);
+      backdrop-filter: blur(14px);
+      color: var(--ink);
+      border: 1px solid rgba(0, 0, 0, .1);
+      border-radius: 10px;
+      font-size: 11.5px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(0,0,0,.04);
+      transition: all .2s var(--ease);
+    }
+    .btn-action-secondary:hover {
+      background: #ffffff;
+      border-color: rgba(0,0,0,.18);
+      transform: translateY(-2px);
+    }
+
+    /* Hero Right Column: Floating Telemetry Matrix (No harsh interior grid lines) */
+    .hero-telemetry-panel {
+      background: rgba(255, 255, 255, .52);
+      backdrop-filter: blur(34px) saturate(170%);
+      border: 1px solid rgba(255, 255, 255, .8);
+      border-radius: 18px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 20px;
+      box-shadow: 0 16px 36px -12px rgba(0,0,0,.08);
+      align-self: end;
+    }
+
+    .hero-telemetry-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font: 600 9.5px var(--mono);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: #55535e;
+    }
+    .hero-score-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      background: rgba(18, 101, 71, .12);
+      color: #126547;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .hero-telemetry-matrix {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .hero-telemetry-node {
+      padding: 14px 16px;
+      background: rgba(255, 255, 255, .64);
+      border: 1px solid rgba(0, 0, 0, .05);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .hero-telemetry-node small {
+      font: 500 8px var(--mono);
+      color: #7b7984;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+    }
+    .hero-telemetry-node strong {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .hero-telemetry-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 10px;
+      border-top: 1px solid rgba(0,0,0,.06);
+      font: 500 9px var(--mono);
+      color: #66646f;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    /* -------------------------------------------------------------
+       COMPONENT 2: DISCOVERY QUEUE (Approved baseline)
+       ------------------------------------------------------------- */
+    .discovery-shell {
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.72);
+      border-radius: 22px;
+      background: rgba(255,255,255,.57);
+      backdrop-filter: blur(40px) saturate(175%);
+      box-shadow: 0 28px 80px -38px rgba(0,0,0,.38), inset 0 1px rgba(255,255,255,.95);
+    }
+    .discovery-toolbar {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--line);
+    }
+    .discovery-toolbar strong { font-size: 13px; letter-spacing: -.02em; }
+    .discovery-toolbar strong span { margin-left: 8px; color: var(--quiet); font: 400 9px var(--mono); }
+    .filters { display: flex; gap: 6px; }
+    .filter {
+      min-height: 30px;
+      padding: 0 12px;
+      border: 1px solid rgba(0,0,0,.12);
+      border-radius: 6px;
+      background: rgba(255,255,255,.58);
+      font: 500 8.5px var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      cursor: pointer;
+    }
+    .filter.active { color: white; background: #111116; border-color: #111116; }
+    .discovery-list { display: grid; grid-template-columns: 1fr 1fr; }
+    .catalog-item {
+      --accent: var(--violet);
+      min-width: 0;
+      min-height: 196px;
+      display: grid;
+      grid-template-columns: 126px minmax(0, 1fr) 42px;
+      color: inherit;
+      text-decoration: none;
+      border-bottom: 1px solid var(--line);
+      transition: background .24s, transform .24s var(--ease);
+    }
+    .catalog-item:nth-child(odd) { border-right: 1px solid var(--line); }
+    .catalog-item:nth-last-child(-n+2) { border-bottom: 0; }
+    .catalog-item:hover { position: relative; z-index: 1; background: rgba(255,255,255,.72); }
+    .catalog-cover { position: relative; min-height: 196px; overflow: hidden; background: var(--accent); }
+    .catalog-cover::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      box-shadow: inset -1px 0 rgba(255,255,255,.3), inset 0 0 0 1px rgba(0,0,0,.08);
+    }
+    .catalog-cover img { width: 100%; height: 100%; object-fit: cover; transition: transform .55s var(--ease); }
+    .catalog-item:hover .catalog-cover img { transform: scale(1.055); }
+    .rank {
+      position: absolute;
+      z-index: 2;
+      left: 9px;
+      top: 9px;
+      min-width: 27px;
+      height: 27px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255,255,255,.3);
+      border-radius: 6px;
+      color: white;
+      background: rgba(8,8,12,.78);
+      backdrop-filter: blur(8px);
+      font: 500 9px var(--mono);
+    }
+    .catalog-copy { min-width: 0; display: flex; flex-direction: column; padding: 19px 18px 17px; }
+    .catalog-signal { display: flex; align-items: center; gap: 8px; color: var(--muted); font: 400 9px var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+    .catalog-signal .live { color: #258f64; font-weight: 500; }
+    .catalog-title { margin: 9px 0 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 1.2; letter-spacing: -.035em; }
+    .catalog-native { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--quiet); font-size: 10px; }
+    .catalog-meta { display: flex; flex-wrap: wrap; gap: 7px 13px; margin-top: auto; padding-top: 16px; font: 500 10px var(--mono); color: #4f4d57; }
+    .catalog-meta b { color: #111116; font-weight: 500; }
+    .tagline { margin-top: 9px; overflow: hidden; color: #74727c; font-size: 10px; white-space: nowrap; text-overflow: ellipsis; }
+    .catalog-arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-left: 1px solid var(--line);
+      color: #777580;
+      font-size: 18px;
+      transition: background .2s, color .2s;
+    }
+    .catalog-item:hover .catalog-arrow { color: white; background: var(--accent); }
+
+    /* -------------------------------------------------------------
+       COMPONENT 3: ANIME DOSSIER & SPECIFICATION
+       Shared philosophy: Frosted translucent shell, deep identity
+       typography, immersive banner, exact production register with soft
+       floating nodes instead of harsh dividing lines.
+       ------------------------------------------------------------- */
+    .detail {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.82);
+      border-radius: 26px;
+      background: rgba(255,255,255,.54);
+      backdrop-filter: blur(48px) saturate(180%);
+      box-shadow: 0 38px 110px -40px rgba(0,0,0,.38), inset 0 1.5px rgba(255,255,255,1);
+    }
+    .detail-backdrop {
+      position: absolute;
+      inset: 0 0 auto;
+      height: 480px;
+      overflow: hidden;
+      z-index: 0;
+    }
+    .detail-backdrop img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: 50% 20%;
+      filter: saturate(1.15) contrast(1.1) brightness(.9);
+    }
+    .detail-backdrop::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(0deg, rgba(250,250,253,.98) 0%, rgba(250,250,253,.6) 50%, rgba(255,255,255,.1) 100%);
+    }
+
+    .detail-topline {
+      position: relative;
+      z-index: 2;
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 16px 36px 0;
+      color: #55535e;
+      font: 600 9.5px var(--mono);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .detail-topline b { color: #1c1b21; font-weight: 700; }
+
+    .detail-inner {
+      position: relative;
+      z-index: 3;
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr) 300px;
+      gap: 24px;
+      padding: 16px 36px 40px;
+    }
+
+    /* Pillar 1: Cover & Fast Actions */
+    .detail-cover-wrap {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .detail-cover {
+      position: relative;
+      aspect-ratio: 2/3;
+      overflow: hidden;
+      border-radius: 16px;
+      background: #24242a;
+      box-shadow: 0 24px 50px -16px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.2);
+      border: 1px solid rgba(0,0,0,.08);
+    }
+    .detail-cover img { width: 100%; height: 100%; object-fit: cover; }
+    .cover-rank {
+      position: absolute;
+      left: 10px;
+      top: 10px;
+      min-width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255,255,255,.3);
+      border-radius: 8px;
+      color: white;
+      background: rgba(8,8,12,.82);
+      backdrop-filter: blur(8px);
+      font: 600 10px var(--mono);
+      box-shadow: 0 4px 12px rgba(0,0,0,.2);
+    }
+    .cover-actions {
+      display: grid;
+      grid-template-columns: 1fr 46px;
+      gap: 10px;
+    }
+    .cover-actions button {
+      min-height: 46px;
+      border: 1px solid rgba(0,0,0,.1);
+      border-radius: 10px;
+      background: rgba(255,255,255,.78);
+      backdrop-filter: blur(14px);
+      font-size: 11.5px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(0,0,0,.04);
+      transition: all .2s var(--ease);
+    }
+    .cover-actions button:hover {
+      background: #ffffff;
+      transform: translateY(-2px);
+      border-color: rgba(0,0,0,.18);
+    }
+    .cover-actions .watch {
+      color: white;
+      background: #111116;
+      border-color: #111116;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      box-shadow: 0 8px 24px rgba(0,0,0,.16);
+    }
+    .cover-actions .watch:hover {
+      background: #24242e;
+      box-shadow: 0 12px 30px rgba(0,0,0,.22);
+    }
+
+    /* Pillar 2: Core Narrative & Typographic Dossier */
+    .identity {
+      min-width: 0;
+      padding-top: 12px;
+      display: flex;
+      flex-direction: column;
+    }
+    .identity-kicker {
+      margin: 0 0 16px;
+      color: #55535e;
+      font: 600 10px var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .identity-kicker span {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      background: rgba(118, 101, 232, .12);
+      color: var(--violet);
+      border-radius: 5px;
+      font-weight: 700;
+    }
+    .identity h1 {
+      margin: 0;
+      font: 400 clamp(48px, 6vw, 82px)/.85 var(--serif);
+      letter-spacing: -.055em;
+      text-wrap: balance;
+    }
+    .native-title {
+      display: block;
+      margin-top: 12px;
+      color: var(--quiet);
+      font-size: 11.5px;
+      letter-spacing: .02em;
+    }
+
+    .identity-signals {
+      display: inline-flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      margin: 28px 0 0;
+      padding: 14px 22px;
+      background: rgba(255, 255, 255, .64);
+      border: 1px solid rgba(0, 0, 0, .05);
+      border-radius: 12px;
+      font: 600 10px var(--mono);
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: #42404b;
+    }
+    .identity-signals .rating {
+      color: #126547;
+      font-weight: 700;
+    }
+    .identity-signals span + span { position: relative; }
+    .identity-signals span + span::before {
+      content: "";
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      left: -11px;
+      top: 4px;
+      border-radius: 50%;
+      background: rgba(0,0,0,.15);
+    }
+
+    .synopsis {
+      max-width: 66ch;
+      margin: 28px 0 0;
+      color: #42404b;
+      font-size: 13.5px;
+      line-height: 1.7;
+    }
+
+    .genre-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 28px;
+    }
+    .genre-line a {
+      padding: 6px 12px;
+      border: 1px solid rgba(0,0,0,.08);
+      border-radius: 8px;
+      background: rgba(255,255,255,.68);
+      font: 600 9px var(--mono);
+      text-decoration: none;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: #44424c;
+      transition: all .2s;
+    }
+    .genre-line a:hover {
+      border-color: #000000;
+      color: #000000;
+      background: #ffffff;
+      transform: translateY(-1px);
+    }
+
+    /* Pillar 3: Technical Production Spec Column */
+    .fact-sheet {
+      margin: 0;
+      background: rgba(255, 255, 255, .52);
+      backdrop-filter: blur(34px) saturate(170%);
+      border: 1px solid rgba(255, 255, 255, .8);
+      border-radius: 18px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 16px 36px -12px rgba(0,0,0,.08);
+      align-self: start;
+      margin-top: -24px;
+    }
+    .fact-head {
+      margin-bottom: 8px;
+      font: 600 9.5px var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: #55535e;
+    }
+    .fact {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 12px 16px;
+      background: rgba(255, 255, 255, .64);
+      border: 1px solid rgba(0, 0, 0, .05);
+      border-radius: 12px;
+    }
+    .fact dt {
+      color: #7b7984;
+      font: 500 8.5px var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .1em;
+    }
+    .fact dd {
+      margin: 0;
+      font-weight: 700;
+      font-size: 13.5px;
+      color: var(--ink);
+    }
+
+    /* Bottom Pillar: Tabular Audience Telemetry */
+    .rankings {
+      grid-column: 1 / 4;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-top: 8px;
+    }
+    .ranking {
+      padding: 18px 24px;
+      background: rgba(255, 255, 255, .64);
+      border: 1px solid rgba(0, 0, 0, .05);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 8px 20px -8px rgba(0,0,0,.06);
+    }
+    .ranking small {
+      display: block;
+      font: 500 9px var(--mono);
+      color: #7b7984;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .ranking strong {
+      display: block;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -.02em;
+    }
+
+    :focus-visible { outline: 3px solid #7665e8; outline-offset: 3px; }
+
+    /* Responsive */
+    @media (max-width: 1080px) {
+      .hero-stage-grid { grid-template-columns: 1fr; }
+      .catalog-item { grid-template-columns: 108px minmax(0,1fr) 36px; }
+      .detail-inner { grid-template-columns: 200px minmax(0, 1fr); }
+      .fact-sheet { grid-column: 1 / 3; display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 0; align-self: stretch; }
+      .fact-head { grid-column: 1 / 4; margin-bottom: 0px; }
+      .rankings { grid-column: 1 / 3; grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 780px) {
+      .page { width: min(100% - 28px, 1480px); padding-top: 16px; }
+      .proof-nav { margin-bottom: 30px; }
+      .section { margin-top: 70px; }
+      .section-heading { grid-template-columns: 31px 1fr; }
+      .section-heading p { display: none; }
+      .hero-main-content { padding: 32px 24px; }
+      .hero-headline { font-size: clamp(40px, 12vw, 64px); }
+      .discovery-list { grid-template-columns: 1fr; }
+      .catalog-item:nth-child(odd) { border-right: 0; }
+      .catalog-item:nth-last-child(2) { border-bottom: 1px solid var(--line); }
+      .detail-inner { display: block; padding: 16px 24px 32px; }
+      .detail-backdrop { height: 320px; }
+      .detail-cover { max-width: 180px; }
+      .detail-cover-wrap { align-items: flex-start; }
+      .identity { padding-top: 24px; }
+      .fact-sheet { display: block; }
+      .rankings { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="atmosphere"><div class="bloom"></div></div>
+  <div class="grain"></div>
+
+  <main class="page">
+    <nav class="proof-nav" aria-label="Preview navigation">
+      <a class="wordmark" href="#hero"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>ANIMESOURCE</a>
+      <small>Unified Design System · Component Proof</small>
+    </nav>
+
+    <!-- =========================================================
+         01. CINEMATIC BROADCAST HERO
+         ========================================================= -->
+    <section class="section" id="hero">
+      <header class="section-heading">
+        <span class="index">01</span>
+        <h2>Broadcast spotlight</h2>
+        <p>Flagship billboard / integrated telemetry grid / direct playback trigger</p>
+      </header>
+
+      <article class="hero-shell">
+        <div class="hero-backdrop-frame">
+          <img src="https://s4.anilist.co/file/anilistcdn/media/anime/banner/154587-n1HJZbb5A5W5.jpg" alt="Frieren standing in a field">
+        </div>
+
+        <!-- Top Broadcast Toolbar -->
+        <div class="hero-toolbar">
+          <div class="hero-toolbar-left">
+            <span class="live-dot"></span>
+            <span>Canonical Broadcast · Fall archive</span>
+          </div>
+          <div class="hero-channel-indices">
+            <span>Transmission:</span>
+            <button type="button" class="hero-channel-chip active">01</button>
+            <button type="button" class="hero-channel-chip">02</button>
+            <button type="button" class="hero-channel-chip">03</button>
+            <button type="button" class="hero-channel-chip">04</button>
+          </div>
+        </div>
+
+        <!-- Hero Center Stage -->
+        <div class="hero-stage-grid">
+          <div class="hero-main-content">
+            <div class="hero-kicker-line"><span>#01 Trending</span> 2023 · TV Series · Madhouse</div>
+            <h1 class="hero-headline">Frieren: <em>Beyond Journey’s End</em></h1>
+            <span class="hero-native-line">葬送のフリーレン · SOUSOU NO FRIEREN</span>
+
+            <p class="hero-synopsis-box">
+              After the hero party defeats the Demon King, an elven mage begins a quiet journey to understand the brief human lives that passed beside her.
+            </p>
+
+            <div class="hero-actions-row">
+              <button class="btn-action-primary" type="button">▶ Stream Episode 01</button>
+              <button class="btn-action-secondary" type="button">View Dossier</button>
+              <button class="btn-action-secondary" type="button" aria-label="Add Frieren to favorites">＋ Library</button>
+            </div>
+          </div>
+
+          <!-- Hero Telemetry Panel (Partitioned Grid) -->
+          <aside class="hero-telemetry-panel" aria-label="Broadcast technical telemetry">
+            <div class="hero-telemetry-header">
+              <span>Technical Telemetry</span>
+              <span class="hero-score-badge">★ 94%</span>
+            </div>
+
+            <div class="hero-telemetry-matrix">
+              <div class="hero-telemetry-node">
+                <small>Audience Index</small>
+                <strong>950k Favorites</strong>
+              </div>
+              <div class="hero-telemetry-node">
+                <small>Studio Lab</small>
+                <strong>Madhouse</strong>
+              </div>
+              <div class="hero-telemetry-node">
+                <small>Source Origin</small>
+                <strong>Manga · Japan</strong>
+              </div>
+              <div class="hero-telemetry-node">
+                <small>Run Duration</small>
+                <strong>28 Ep (24m/ep)</strong>
+              </div>
+            </div>
+
+            <div class="hero-telemetry-footer">
+              <span>Status: Completed Run</span>
+              <span>Next: Episode 01</span>
+            </div>
+          </aside>
+        </div>
+      </article>
+    </section>
+
+    <!-- =========================================================
+         02. DISCOVERY QUEUE (Approved baseline)
+         ========================================================= -->
+    <section class="section" id="catalog">
+      <header class="section-heading">
+        <span class="index">02</span>
+        <h2>Discovery queue</h2>
+        <p>Comick density / editorial covers / useful data without badge noise</p>
+      </header>
+
+      <div class="discovery-shell">
+        <div class="discovery-toolbar">
+          <strong>Trending this week <span>24 anime</span></strong>
+          <div class="filters">
+            <button class="filter active" type="button">All</button>
+            <button class="filter" type="button">Airing</button>
+            <button class="filter" type="button">Top rated</button>
+          </div>
+        </div>
+
+        <div class="discovery-list">
+          <!-- Card 1 -->
+          <a class="catalog-item" href="#detail" style="--accent:#7665e8">
+            <div class="catalog-cover">
+              <span class="rank">01</span>
+              <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx113415-bbBWj4pEFseh.jpg" alt="Jujutsu Kaisen cover">
+            </div>
+            <div class="catalog-copy">
+              <div class="catalog-signal">
+                <span class="live">● Complete</span>
+                <span>TV · 2020</span>
+              </div>
+              <h3 class="catalog-title">Jujutsu Kaisen</h3>
+              <span class="catalog-native">呪術廻戦</span>
+              <div class="catalog-meta">
+                <span><b>88%</b> score</span>
+                <span><b>24</b> episodes</span>
+                <span><b>MAPPA</b></span>
+              </div>
+              <div class="tagline">Action · Supernatural · Urban fantasy</div>
+            </div>
+            <span class="catalog-arrow">↗</span>
+          </a>
+
+          <!-- Card 2 -->
+          <a class="catalog-item" href="#detail" style="--accent:#cc6e55">
+            <div class="catalog-cover">
+              <span class="rank">02</span>
+              <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx16498-73IhOXpJZiMF.jpg" alt="Attack on Titan cover">
+            </div>
+            <div class="catalog-copy">
+              <div class="catalog-signal">
+                <span class="live">● Complete</span>
+                <span>TV · 2013</span>
+              </div>
+              <h3 class="catalog-title">Attack on Titan</h3>
+              <span class="catalog-native">進撃の巨人</span>
+              <div class="catalog-meta">
+                <span><b>89%</b> score</span>
+                <span><b>25</b> episodes</span>
+                <span><b>WIT</b></span>
+              </div>
+              <div class="tagline">Drama · Mystery · Survival</div>
+            </div>
+            <span class="catalog-arrow">↗</span>
+          </a>
+
+          <!-- Card 3 -->
+          <a class="catalog-item" href="#detail" style="--accent:#a76b9d">
+            <div class="catalog-cover">
+              <span class="rank">03</span>
+              <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx9253-xndChKdK2Oeb.jpg" alt="Steins Gate cover">
+            </div>
+            <div class="catalog-copy">
+              <div class="catalog-signal">
+                <span class="live">● Complete</span>
+                <span>TV · 2011</span>
+              </div>
+              <h3 class="catalog-title">Steins;Gate</h3>
+              <span class="catalog-native">シュタインズ・ゲート</span>
+              <div class="catalog-meta">
+                <span><b>91%</b> score</span>
+                <span><b>24</b> episodes</span>
+                <span><b>White Fox</b></span>
+              </div>
+              <div class="tagline">Sci-fi · Psychological · Time travel</div>
+            </div>
+            <span class="catalog-arrow">↗</span>
+          </a>
+
+          <!-- Card 4 -->
+          <a class="catalog-item" href="#detail" style="--accent:#e09242">
+            <div class="catalog-cover">
+              <span class="rank">04</span>
+              <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx101922-PEn1CTc93DQl.jpg" alt="Demon Slayer cover">
+            </div>
+            <div class="catalog-copy">
+              <div class="catalog-signal">
+                <span class="live">● Complete</span>
+                <span>TV · 2019</span>
+              </div>
+              <h3 class="catalog-title">Demon Slayer</h3>
+              <span class="catalog-native">鬼滅の刃</span>
+              <div class="catalog-meta">
+                <span><b>85%</b> score</span>
+                <span><b>26</b> episodes</span>
+                <span><b>ufotable</b></span>
+              </div>
+              <div class="tagline">Action · Historical · Demons</div>
+            </div>
+            <span class="catalog-arrow">↗</span>
+          </a>
+
+          <!-- Card 5 -->
+          <a class="catalog-item" href="#detail" style="--accent:#5aa48e">
+            <div class="catalog-cover">
+              <span class="rank">05</span>
+              <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx11061-sIpBprXpf3tA.png" alt="Hunter x Hunter cover">
+            </div>
+            <div class="catalog-copy">
+              <div class="catalog-signal">
+                <span class="live">● Complete</span>
+                <span>TV · 2011</span>
+              </div>
+              <h3 class="catalog-title">Hunter × Hunter</h3>
+              <span class="catalog-native">ハンター×ハンター</span>
+              <div class="catalog-meta">
+                <span><b>90%</b> score</span>
+                <span><b>148</b> episodes</span>
+                <span><b>Madhouse</b></span>
+              </div>
+              <div class="tagline">Adventure · Fantasy · Shounen</div>
+            </div>
+            <span class="catalog-arrow">↗</span>
+          </a>
+
+          <!-- Card 6 -->
+          <a class="catalog-item" href="#detail" style="--accent:#637ab5">
+            <div class="catalog-cover">
+              <span class="rank">06</span>
+              <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx171018-U1C8B4k4R6X3.png" alt="Solo Leveling cover">
+            </div>
+            <div class="catalog-copy">
+              <div class="catalog-signal">
+                <span class="live">● Airing</span>
+                <span>TV · 2025</span>
+              </div>
+              <h3 class="catalog-title">Solo Leveling Season 2</h3>
+              <span class="catalog-native">俺だけレベルアップな件</span>
+              <div class="catalog-meta">
+                <span><b>84%</b> score</span>
+                <span><b>8 / 12</b> episodes</span>
+                <span><b>A-1</b></span>
+              </div>
+              <div class="tagline">Action · Fantasy · Dungeon</div>
+            </div>
+            <span class="catalog-arrow">↗</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================
+         03. ANIME DOSSIER & IDENTITY SPECIFICATION
+         ========================================================= -->
+    <section class="section" id="detail">
+      <header class="section-heading">
+        <span class="index">03</span>
+        <h2>Anime dossier &amp; specification</h2>
+        <p>Definitive show record / architectural layout / structured production telemetry</p>
+      </header>
+
+      <article class="detail">
+        <div class="detail-backdrop">
+          <img src="https://s4.anilist.co/file/anilistcdn/media/anime/banner/9253-5kFvw0EHO6Nh.jpg" alt="">
+        </div>
+
+        <!-- Topline Verification Bar -->
+        <div class="detail-topline">
+          <div>
+            <span>Dossier Archive // ID: <b>9253</b></span>
+            <span style="margin-left: 12px; color: var(--quiet);">● CANONICAL TRANSMISSION</span>
+          </div>
+          <div>
+            <span>Global Standing: <b>Rank #02 All-Time</b></span>
+          </div>
+        </div>
+
+        <div class="detail-inner">
+          <!-- Pillar 1: Cover & Quick Actions -->
+          <div class="detail-cover-wrap">
+            <div class="detail-cover">
+              <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx9253-xndChKdK2Oeb.jpg" alt="Steins Gate cover">
+              <span class="cover-rank">#02</span>
+            </div>
+            <div class="cover-actions">
+              <button class="watch" type="button">▶ Watch Ep 1</button>
+              <button type="button" aria-label="Add Steins Gate to favorites">＋</button>
+            </div>
+          </div>
+
+          <!-- Pillar 2: Core Narrative & Typographic Dossier -->
+          <div class="identity">
+            <p class="identity-kicker"><span>#02 All-Time</span> White Fox · Spring 2011</p>
+            <h1>Steins;Gate</h1>
+            <span class="native-title">シュタインズ・ゲート · STEINS;GATE</span>
+
+            <div class="identity-signals">
+              <span class="rating">★ 91% Audience Score</span>
+              <span>24 Episodes (Finished)</span>
+              <span>24 Min / Ep</span>
+              <span>TV Series</span>
+            </div>
+
+            <p class="synopsis">
+              A self-proclaimed mad scientist accidentally discovers a way to send messages into the past. Each intervention fractures the present, pulling his friends into a conspiracy that spans time itself.
+            </p>
+
+            <div class="genre-line">
+              <a href="#"># Science Fiction</a>
+              <a href="#"># Psychological</a>
+              <a href="#"># Thriller</a>
+              <a href="#"># Time Travel</a>
+            </div>
+          </div>
+
+          <!-- Pillar 3: Technical Production Spec Table -->
+          <dl class="fact-sheet">
+            <div class="fact-head">Production Record</div>
+            <div class="fact">
+              <dt>Format</dt>
+              <dd>TV Series</dd>
+            </div>
+            <div class="fact">
+              <dt>Source Material</dt>
+              <dd>Visual Novel (5pb.)</dd>
+            </div>
+            <div class="fact">
+              <dt>Main Studio</dt>
+              <dd>White Fox</dd>
+            </div>
+            <div class="fact">
+              <dt>Broadcast Run</dt>
+              <dd>Apr 2011 → Sep 2011</dd>
+            </div>
+            <div class="fact">
+              <dt>Country of Origin</dt>
+              <dd>Japan (JP)</dd>
+            </div>
+          </dl>
+
+          <!-- Bottom Metric Strip -->
+          <div class="rankings">
+            <div class="ranking">
+              <small>Critic Score</small>
+              <strong>91% Rating</strong>
+            </div>
+            <div class="ranking">
+              <small>Audience Reach</small>
+              <strong>2.71M Viewers</strong>
+            </div>
+            <div class="ranking">
+              <small>Favorite Library</small>
+              <strong>190,442 Saves</strong>
+            </div>
+            <div class="ranking">
+              <small>AniList Ranking</small>
+              <strong>#2 of All Time</strong>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

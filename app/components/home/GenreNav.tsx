@@ -1,0 +1,49 @@
+import { createResource, For, Show } from 'solid-js'
+import { Link } from '@tanstack/solid-router'
+import { alGenres } from '../../data/anilist/queries'
+import { makeBrowseSearch } from '../../lib/browse'
+
+const ACCENTS = [
+  { surface: 'from-violet/35 via-white/85 to-plum/48', accent: '#7665e8' },
+  { surface: 'from-mint/75 via-white/85 to-acid/60', accent: '#00c853' },
+  { surface: 'from-orange/55 via-white/85 to-plum/48', accent: '#fa775f' },
+] as const
+
+function accentFor(index: number) {
+  return ACCENTS[index % ACCENTS.length]!
+}
+
+export function GenreNav() {
+  const [genres] = createResource(alGenres)
+
+  return (
+    <Show when={!genres.loading} fallback={<p class="mono-signal">Loading genres…</p>}>
+      <Show when={!genres.error} fallback={<p class="mono-signal" role="alert">Couldn't load genres.</p>}>
+        <Show when={genres()} fallback={<p class="mono-signal">No genres available.</p>}>
+          <div class="genre-grid material-panel grid overflow-hidden sm:grid-cols-2 lg:grid-cols-3">
+            <For each={genres()}>
+              {(genre, index) => {
+                const accent = () => accentFor(index())
+                return (
+                  <Link
+                    class={`genre-tile group bg-gradient-to-br p-5 ${index() < 3 ? 'lg:min-h-[172px]' : ''} ${accent().surface}`}
+                    style={{ '--genre-accent': accent().accent }}
+                    to="/explore"
+                    search={makeBrowseSearch({ genre })}
+                  >
+                    <span class="relative z-10 flex items-start justify-between gap-4">
+                      <span class="grid size-7 place-items-center rounded-[6px] border border-black/12 bg-white/65 font-mono text-[9px] font-medium text-text-muted transition-colors group-hover:border-ink group-hover:text-ink">{String(index() + 1).padStart(2, '0')}</span>
+                      <span class="font-mono text-[16px] font-normal leading-none text-text-muted transition-transform duration-300 group-hover:translate-x-1 group-hover:text-ink" aria-hidden="true">↗</span>
+                    </span>
+                    <span class="relative z-10 mt-8 block text-[17px] font-bold tracking-[-.035em]">{genre}</span>
+                    <span class="relative z-10 mt-2 block font-mono text-[8px] uppercase tracking-[.14em] text-text-muted transition-colors group-hover:text-ink">Browse anime</span>
+                  </Link>
+                )
+              }}
+            </For>
+          </div>
+        </Show>
+      </Show>
+    </Show>
+  )
+}

@@ -1,0 +1,64 @@
+:root {
+  --ink: #09090b;
+  --paper: #f8f8fa;
+  --line: rgb(9 9 11 / .13);
+  --line-strong: rgb(9 9 11 / .2);
+  --line-light: rgb(255 255 255 / .18);
+  --text-primary: #09090b;
+  --text-secondary: #42404b;
+  --text-muted: #4f4e57;
+  --text-quiet: #777580;
+  --muted: #62616b;
+  --quiet: #8b8993;
+  --surface-panel: rgb(255 255 255 / .64);
+  --surface-control: rgb(255 255 255 / .78);
+  --surface-soft: rgb(255 255 255 / .48);
+  --shadow-panel: 0 28px 80px -50px rgb(0 0 0 / .35);
+  --radius-control: 10px;
+  --radius-panel: 22px;
+  --radius-shell: 26px;
+  --control-height: 42px;
+  --prominent-control-height: 54px;
+  --violet: #7665e8;
+  --plum: #ae6a8d;
+  --mint: #9de4c4;
+  --acid: #d9f56a;
+  --orange: #fa775f;
+  --emerald: #00c853;
+  --ease: cubic-bezier(.16, 1, .3, 1);
+  --font-display: "Instrument Serif", Georgia, serif;
+  --font-body: "Manrope", system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, monospace;
+}
+
+@theme {
+  --color-ink: #09090b;
+  --color-paper: #f8f8fa;
+  --color-line: rgb(9 9 11 / .13);
+  --color-line-strong: rgb(9 9 11 / .2);
+  --color-line-light: rgb(255 255 255 / .18);
+  --color-surface-panel: rgb(255 255 255 / .64);
+  --color-surface-control: rgb(255 255 255 / .78);
+  --color-surface-soft: rgb(255 255 255 / .48);
+  --color-text-primary: #09090b;
+  --color-text-secondary: #42404b;
+  --color-text-muted: #4f4e57;
+  --color-text-quiet: #777580;
+  --color-muted: #62616b;
+  --color-quiet: #8b8993;
+  --color-violet: #7665e8;
+  --color-plum: #ae6a8d;
+  --color-mint: #9de4c4;
+  --color-acid: #d9f56a;
+  --color-orange: #fa775f;
+  --color-emerald: #00c853;
+  --font-display: "Instrument Serif", Georgia, serif;
+  --font-body: "Manrope", system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, monospace;
+  --ease-fluid: cubic-bezier(.16, 1, .3, 1);
+  --radius-catalog-rank: 6px;
+  --radius-panel: 22px;
+  --radius-shell: 26px;
+  --shadow-glass: 0 38px 110px -40px rgb(0 0 0 / .38), inset 0 1.5px rgb(255 255 255);
+  --shadow-cover-inset: inset -1px 0 rgb(255 255 255 / .3), inset 0 0 0 1px rgb(0 0 0 / .08);
+}

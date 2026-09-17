@@ -1,0 +1,370 @@
+ # AnimeSource Product Roadmap
+
+**Last reviewed:** 2026-09-17  
+**Roadmap status:** Active  
+**Product target:** A production-grade anime discovery, library, schedule, and playback platform.
+
+This is the product roadmap for AnimeSource. It tracks user-visible capability and the engineering work required to support it. It is intentionally separate from the visual reference files and from `anisource.html`: production behavior, real AniList data, the current route tree, `CLAUDE.md`, and the accepted ADR remain authoritative.
+
+## How to maintain this file
+
+1. Work from the current highest-priority incomplete phase unless a dependency requires otherwise.
+2. Change a checkbox only when the behavior exists on the real application path and has been exercised at the appropriate verification depth.
+3. Keep each item small enough to finish as a coherent user-visible slice. Split an item rather than marking a partial implementation complete.
+4. Record material scope or sequencing changes in the changelog at the bottom of this file.
+5. Link implementation issues or pull requests beside an item when they exist. Deferred work belongs in GitHub Issues as required by `docs/agents/issue-tracker.md`.
+6. Reassess this document after each milestone. Remove stale assumptions instead of accumulating another layer of plans.
+
+### Status legend
+
+- `[x]` Shipped and verified.
+- `[~]` Partially implemented; the remaining acceptance criteria still matter.
+- `[ ]` Not started or not yet verified.
+- `Blocked:` A dependency or product decision must be resolved before implementation.
+
+---
+
+## Definition of full-scale
+
+AnimeSource is full-scale for this project when a viewer can:
+
+- discover anime through search, filters, genres, schedule, relationships, and recommendations;
+- inspect complete and trustworthy metadata;
+- save anime to a durable account-backed library;
+- see watch history and progress;
+- resume and complete episodes across devices;
+- recover from source, stream, and network failures;
+- manage playback, content, notification, and appearance preferences;
+- receive useful release updates;
+- use the product with reliable SEO, accessibility, performance, monitoring, privacy, and operational controls.
+
+The current application is a **working discovery plus watch vertical slice**. The next major milestone is to turn isolated persistence and playback capabilities into a coherent viewer product: **Library, Continue Watching, Schedule, and playback progress**.
+
+---
+
+## Current baseline
+
+### Shipped foundation
+
+- `[x]` SolidJS + TanStack Start + TanStack Router application structure.
+- `[x]` Home discovery backed by validated AniList data.
+- `[ ]` Explore search, typed URL search state, filters, sorting, pagination, loading, error, and empty states.
+- `[x]` Anime detail route with validated metadata, synopsis, trailer, characters, relations, recommendations, rankings, and information fields.
+- `[x]` Functional detail-page genre links that preserve Explore route intent.
+- `[x]` Separate nested Watch route: `/anime/$animeId/watch/$episodeId`.
+- `[x]` AniSource client-only, interaction-triggered watch boundary with validated payloads.
+- `[x]` Source selection, AniList-to-AniSource title matching, saved matches, manual match selection, episodes, servers, streams, subtitles, HLS/direct playback, retries, and cold-start messaging.
+- `[x]` Typed, versioned, Zod-validated IndexedDB persistence for favorites, continue-watching records, preferred source, and saved source matches.
+- `[x]` Focused Vitest coverage and mocked vertical-slice Playwright coverage.
+- `[x]` Shared paper/ink/frosted material system, responsive route compositions, semantic controls, visible focus behavior, reduced-motion guidance, and updated design documentation.
+
+### Partial or missing today
+
+- `[~]` Favorites and continue-watching data can be persisted locally, but there is no complete application library/history experience around them.
+- `[~]` A schedule query and query option exist, but there is no current application schedule route and full schedule product.
+- `[~]` Watch resolves and plays streams, but playback position, completion state, and next-episode behavior are not a complete product model.
+- `[ ]` No account, server-side library, or cross-device synchronization model.
+- `[ ]` No profile, settings, notification, or content-preference surfaces.
+- `[ ]` No production operations layer for monitoring, error reporting, source health, privacy, or deployment policy.
+- `[ ]` No systematic SEO, performance, or full accessibility hardening pass.
+
+### Current routes
+
+```text
+/
+/explore
+/anime/$animeId
+/anime/$animeId/watch/$episodeId
+```
+
+### Current data seams
+
+- **AniList:** discovery and metadata through `app/data/anilist/queries.ts` and Zod schemas in `app/data/anilist/schema.ts`.
+- **AniSource:** on-demand playback resolution through `app/data/anisource/client.ts`; never use it during SSR or initial page load.
+- **Matching:** source-title candidate ranking in `app/data/matching.ts`.
+- **Local persistence:** typed IndexedDB module in `app/lib/persistence/store.ts`.
+- **Browse intent:** typed Explore search state in `app/lib/browse.ts`.
+
+---
+
+# Roadmap phases
+
+## Phase 0 — Stabilize the product foundation
+
+**Priority:** P0  
+**Goal:** Make the existing vertical slice a dependable base for larger product work.
+
+### Repository and delivery baseline
+
+- `[x]` Resolve the repository/Git baseline so application files have a dependable tracked history before release work begins.
+- `[x]` Make lint, typecheck, build, and mocked tests repeatable in a clean checkout.
+- `[x]` Define the deployment target, runtime environment variables, and production start procedure.
+- `[x]` Add a lightweight release checklist covering route smoke checks, external-boundary checks, and rollback ownership.
+
+### Module and data discipline
+
+- `[x]` Document route ownership and data ownership for Home, Explore, detail, Watch, persistence, and future library routes.
+- `[x]` Audit SSR versus client-only behavior, especially IndexedDB and AniSource access.
+- `[x]` Document every query key, stale time, garbage-collection policy, invalidation trigger, and failure behavior.
+- `[x]` Keep local persistence behind a small library/progress interface so a future remote adapter can be added without coupling account behavior to UI components.
+- `[x]` Split Watch orchestration into maintainable internal modules or seams before adding substantial playback behavior. Preserve the current public route behavior while improving locality and testability.
+- `[x]` Remove duplicated Hero image styling declarations and keep the visual contract in one maintainable source of truth.
+
+### Phase 0 completion criteria
+
+- A clean checkout can run the documented verification commands without generated artifacts or machine-specific configuration.
+- The existing Home → Explore → detail → Watch flow is still functional after the foundation work.
+- AniSource is demonstrably absent from SSR and initial page-load execution.
+- Future library/progress work has a narrow interface that can support both local and remote implementations.
+- Any deferred foundation issue is recorded in GitHub Issues rather than left as an undocumented stub.
+
+**Depends on:** None.  
+**Unblocks:** All subsequent phases.
+
+---
+
+## Phase 1 — Complete the core viewer product
+
+**Priority:** P0  
+**Goal:** Turn discovery and local persistence into a site viewers can return to every day.
+
+### Library and My List
+
+- `[ ]` Add a first-class `/library` or `/watchlist` route with a clear navigation entry.
+- `[ ]` Render persisted favorites with real AniList metadata, loading, empty, stale, and unavailable-title states.
+- `[ ]` Support removing a favorite and updating the library immediately without requiring a full reload.
+- `[ ]` Add useful library filters or views: all saved, currently watching, completed, planned, paused, and dropped where the underlying model supports them.
+- `[ ]` Add recently added and recently watched ordering with deterministic empty states.
+- `[ ]` Add migration behavior for records whose AniList metadata or source match is no longer available.
+
+### Continue Watching and history
+
+- `[ ]` Add a dedicated Continue Watching surface or a clearly substantial library section.
+- `[ ]` Display episode number, title, source, progress, last-watched time, and a direct resume action.
+- `[ ]` Add remove-from-history and clear-history behavior with confirmation where destructive.
+- `[ ]` Distinguish an active progress record from a completed episode and from a saved source match.
+- `[ ]` Define retention and ordering rules for history instead of relying on incidental array order.
+
+### Schedule
+
+- `[ ]` Add a dedicated schedule route backed by the existing validated AniList schedule query.
+- `[ ]` Add timezone-aware day and week views with a clear current-time context.
+- `[ ]` Link schedule items to detail and the correct Watch entry when playback is available.
+- `[ ]` Represent airing, delayed, skipped, completed, and unavailable states without inventing data.
+- `[ ]` Add filters for the viewer's library and relevant anime status or genre.
+- `[ ]` Define refresh and cache behavior for countdowns and schedule changes.
+
+### Detail and discovery completeness
+
+- `[x]` Add intentional season, sequel, remake, franchise, and relation navigation.
+- `[x]` Add staff, studios, voice actors, and character detail navigation where AniList data supports it.
+- `[x]` Make supported themes, tags, and external links meaningful without turning unsupported metadata into dead controls.
+- `[x]` Improve alternate-title and language presentation.
+- `[ ]` Add search history and a stronger mobile search entry point.
+- `[ ]` Improve suggestion grouping and exact query/result semantics.
+- `[ ]` Add dedicated genre/discovery views only when they provide behavior beyond a filter shortcut.
+
+### Phase 1 completion criteria
+
+- A viewer can save an anime, leave the site, return to a first-class library, remove it, and navigate back to detail or Watch.
+- A viewer can resume from a Continue Watching surface and understand whether an item is in progress or complete.
+- A viewer can open a schedule view, change the displayed time window, and navigate from an airing item to its anime detail.
+- Detail relationships and supported metadata are navigable through real routes or semantic controls with no dead buttons.
+- Library, schedule, and discovery states have focused tests for persistence, route intent, error/empty behavior, and the relevant schema boundary.
+
+**Depends on:** Phase 0.  
+**Unblocks:** A coherent daily-use viewer experience and account synchronization design.
+
+---
+
+## Phase 2 — Make playback a complete product
+
+**Priority:** P0  
+**Goal:** Make watching reliable, resumable, and understandable across normal source failures.
+
+### Progress and episode lifecycle
+
+- `[ ]` Persist playback position while a stream is playing with throttling and a defined write-failure behavior.
+- `[ ]` Restore playback position when a viewer resumes an episode.
+- `[ ]` Define episode completion thresholds and record completed episodes explicitly.
+- `[ ]` Add previous-episode, next-episode, and continue-to-next behavior where episode ordering is reliable.
+- `[ ]` Keep route state, player state, and persistence state consistent when a viewer changes episode quickly.
+
+### Player preferences and controls
+
+- `[ ]` Persist quality preference with a safe fallback when a stream does not support it.
+- `[ ]` Persist subtitle, audio, and caption preferences where the resolved stream exposes those capabilities.
+- `[ ]` Improve mobile controls, touch targets, orientation/fullscreen behavior, and keyboard shortcuts.
+- `[ ]` Add stream expiry handling and a clear recovery path.
+- `[ ]` Add skip-intro/outro only if reliable timing data exists; do not fake markers.
+
+### Source and request resilience
+
+- `[ ]` Define source health and fallback behavior based on observed availability rather than arbitrary preference.
+- `[ ]` Cancel or ignore stale source, episode, server, and stream requests after route or selection changes.
+- `[ ]` Preserve useful error kinds for network failure, timeout/cold start, invalid payload, unavailable server, and expired stream.
+- `[ ]` Add bounded retry behavior only where it improves recovery and does not hide a provider failure.
+- `[ ]` Add source attribution and provider failure diagnostics suitable for a public product.
+- `[ ]` Establish AniSource capacity, uptime, and observability expectations before public launch.
+
+### Phase 2 completion criteria
+
+- A viewer can start an episode, leave, return, and resume near the previous position.
+- Completing an episode updates history and offers the next episode without losing route intent.
+- Rapid episode/source changes cannot cause an older request to overwrite current UI or persistence state.
+- A failed server or expired stream produces a recoverable state with a useful alternative when one exists.
+- The one required Playwright smoke test covers search → detail → Watch → player mounting after the watch pipeline is feature-complete; broad media E2E expansion remains out of scope.
+
+**Depends on:** Phase 0; Phase 1 library/history model should be available for visible progress.  
+**Unblocks:** Account sync and reliable daily watching.
+
+---
+
+## Phase 3 — Add identity and cross-device synchronization
+
+**Priority:** P1  
+**Goal:** Move from browser-local utility to a durable viewer account without losing offline resilience.
+
+### Identity and account lifecycle
+
+- `[ ]` Choose and document the authentication model, session policy, and account recovery behavior.
+- `[ ]` Add sign-in, sign-out, session expiry, and account deletion flows.
+- `[ ]` Add a profile route and a settings route with accessible navigation and clear destructive-action handling.
+- `[ ]` Define adult-content, language, timezone, and notification preferences at the account level.
+
+### Remote library and progress model
+
+- `[ ]` Define a server-side interface for favorites, lists, progress, history, preferences, and source matches.
+- `[ ]` Keep IndexedDB as a local cache/offline adapter rather than silently replacing it with UI-owned remote calls.
+- `[ ]` Add local-to-account migration for an existing anonymous viewer.
+- `[ ]` Define conflict resolution for edits made on multiple devices or while offline.
+- `[ ]` Add sync status, retry, and partial-failure states that explain what is and is not saved.
+- `[ ]` Add export and deletion semantics for viewer data.
+- `[ ]` Add import from AniList or another supported list provider only after the internal model is stable.
+
+### Phase 3 completion criteria
+
+- A signed-in viewer sees the same library, progress, preferences, and history on two devices.
+- Offline/local changes have a documented conflict policy and do not disappear silently.
+- Sign-out, account deletion, data export, and session expiry leave no ambiguous stale account state.
+- The UI calls a small data interface; it does not know whether local or remote persistence is active.
+
+**Depends on:** Phase 1 library/history model and Phase 2 progress model.  
+**Unblocks:** Personalization, notifications, and social features.
+
+---
+
+## Phase 4 — Personalization and community (conditional)
+
+**Priority:** P1/P2  
+**Goal:** Add retention and social value only after the core product and identity model are trustworthy.
+
+### Personalization
+
+- `[ ]` Define recommendation inputs, privacy expectations, and an explanation for why an anime is recommended.
+- `[ ]` Add personalized discovery rails based on explicit library and viewing signals.
+- `[ ]` Add release notifications or reminders with account-level opt-in, timezone handling, and unsubscribe behavior.
+- `[ ]` Add useful schedule and library notifications without creating notification noise.
+
+### Community and sharing
+
+- `[ ]` Decide whether reviews, ratings, comments, shared lists, or follows are part of the product scope.
+- `[ ]` Define moderation, reporting, blocking, privacy, and abuse-prevention requirements before exposing user-generated content.
+- `[ ]` Add shareable canonical anime and list URLs without exposing private library data.
+- `[ ]` Add social features incrementally, each with a complete moderation and deletion path.
+
+### Phase 4 completion criteria
+
+- Personalization is opt-in or transparently explained and can be disabled.
+- Recommendations degrade gracefully for a new viewer and never present fabricated reasons or data.
+- Every community feature has moderation, reporting, privacy, and deletion behavior before release.
+
+**Depends on:** Phase 3.  
+**Optional:** This phase is not required for a strong full-scale solo viewing product.
+
+---
+
+## Phase 5 — Production hardening
+
+**Priority:** P0 before public launch; execute incrementally from Phase 0 onward.  
+**Goal:** Make the product safe, discoverable, observable, and maintainable in production.
+
+### SEO and metadata
+
+- `[ ]` Add canonical URLs for discovery and anime detail routes.
+- `[ ]` Add route-specific title, description, Open Graph, and social metadata.
+- `[ ]` Add safe dynamic social preview images where the runtime supports them.
+- `[ ]` Add sitemap and robots behavior appropriate to discovery, detail, and Watch routes.
+- `[ ]` Add JSON-LD structured data where the data is accurate and supported.
+- `[ ]` Decide whether Watch routes should be indexed; do not expose provider-specific stream details as search content by accident.
+
+### Performance
+
+- `[ ]` Audit route-level code splitting, especially the Watch player and HLS/YouTube code.
+- `[ ]` Optimize image loading, dimensions, aspect ratios, responsive sizes, and below-the-fold lazy loading.
+- `[ ]` Add prefetch-on-intent for high-value route transitions where it improves real navigation.
+- `[ ]` Document and verify every cache's key, lifetime, invalidation trigger, and failure mode.
+- `[ ]` Measure Core Web Vitals and regressions on representative desktop and approximately 390px mobile layouts.
+
+### Accessibility and quality
+
+- `[ ]` Perform a screen-reader review of Home, Explore, detail, library, schedule, and Watch.
+- `[ ]` Exercise the core routes keyboard-only, including search, filters, pagination, episode selection, server selection, and player controls.
+- `[ ]` Measure contrast for normal, hover, focus, loading, error, empty, and imagery-backed states.
+- `[ ]` Audit mobile touch targets, focus visibility, reduced-motion behavior, and no-horizontal-overflow behavior.
+- `[ ]` Keep tests focused on actual seams: schemas, persistence, matching, query clients, route intent, and high-value regressions.
+- `[ ]` Keep live AniList/AniSource calls out of CI. Use mocked transports; live checks, if needed, must be non-blocking operational checks.
+
+### Operations, policy, and legal readiness
+
+- `[ ]` Add structured error reporting and logs with provider failures distinguishable from application failures.
+- `[ ]` Add uptime and latency monitoring for the application and AniSource dependency.
+- `[ ]` Add rate limiting, abuse protection, and a clear external-API failure policy.
+- `[ ]` Define environment, secret, backup, rollback, and incident-response procedures.
+- `[ ]` Publish privacy, terms, source attribution, content policy, and contact/takedown processes as required by the deployment context.
+- `[ ]` Define adult-content filtering and age/content controls without relying on hidden or misleading defaults.
+
+### Phase 5 completion criteria
+
+- A production deployment can be observed, rolled back, and diagnosed without relying on local console output.
+- Public routes have correct metadata, indexing behavior, accessible interaction, and measured responsive behavior.
+- External failures are visible, bounded, and communicated to viewers without fabricated success states.
+- Privacy, content, source attribution, and data-retention decisions are documented before public launch.
+
+**Depends on:** Phase 0; feature-specific checks can ship alongside Phases 1–4.  
+**Unblocks:** Public launch confidence and sustainable maintenance.
+
+---
+
+## Explicitly deferred decisions
+
+These are intentional sequencing decisions, not forgotten tasks:
+
+- **AniList genre artwork:** The current AniList genre collection returns names, not artwork. Do not invent genre imagery or add an unlicensed artwork source until there is a real source and a product decision.
+- **Multiple AniSource adapters:** The current transport seam is valuable for tests. Do not build a broader provider abstraction until a second materially different Source implementation is real.
+- **Community features:** Do not add comments, ratings, reviews, or social lists before identity, moderation, privacy, reporting, and deletion are designed.
+- **Large visual redesigns:** Prefer product capability, data-model, and reliability work while the current approved paper/ink/frosted system is coherent.
+- **Broad snapshot suites:** Prefer focused tests at module interfaces and real regression cases over snapshots that make visual change expensive without proving behavior.
+- **Prototype markup/content copying:** `anisource.html` is a functional reference and the design-preview files are visual references; neither supplies production placeholder data, route contracts, or exact markup.
+
+## Milestone release gates
+
+Before marking a milestone `[x]`:
+
+1. The user-visible path exists in production application code, not only in a schema, query, fixture, or prototype.
+2. Real loader-backed data and unsupported states are represented honestly.
+3. The feature works without a mouse and does not introduce hydration, SSR, focus, reduced-motion, or horizontal-overflow regressions.
+4. The relevant external and persistence boundaries validate their inputs.
+5. Focused tests cover the highest-risk regression or seam, using mocked transports where external calls are involved.
+6. The documented completion criteria for that milestone are all true.
+
+## Changelog
+
+### 2026-09-17
+
+- Created the roadmap from the repository assessment.
+- Recorded the current state as a working discovery plus Watch vertical slice.
+- Prioritized Library, Continue Watching, Schedule, and playback progress as the next major product milestone.
+- Completed Anime detail completeness: expanded validated AniList metadata, alternate titles, canonical entity/resource links, structured themes and tags, Japanese voice-actor identity links, and ordered relation navigation.
+- Completed search/discovery depth: typed Home and mobile header search surfaces, bounded IndexedDB search history, grouped exact-title suggestions, and explicit query-versus-suggestion navigation semantics. Dedicated genre routes remain deferred because canonical Explore genre filters already provide the supported behavior.
+- Completed Phase 0 (foundation stabilization): initial tracked commit on `feature/solid-tanstack-vertical-slice`; `npm run verify` gate (lint, strict typecheck, Vercel/Nitro build, Vitest, mocked Playwright) reproducible in a clean checkout; `npm start` documented as the Vite preview of the built Vercel/Nitro output; release checklist, deployment procedure, route/data ownership, cache policy, and SSR/client-only boundary audit documented under `docs/`; persistence kept behind the `ViewerData`/`SearchHistory` interfaces; Watch orchestration extracted into tested `createWatchSession`; header search made fully client-side (no reloads, no focus loss); duplicate Hero image styling consolidated; unused AniSource query-key family removed. Deployment itself remains intentionally unexecuted pending a real Vercel release.

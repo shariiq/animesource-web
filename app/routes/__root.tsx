@@ -21,6 +21,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: 'AniSource — Discover & Watch Anime' },
       { name: 'description', content: 'Browse trending, seasonal and top-rated anime with rich AniList metadata, then watch instantly through live-resolved streams.' },
     ],
+    links: [
+      { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+      { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
+      {
+        rel: 'stylesheet',
+        href: 'https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap',
+      },
+    ],
   }),
   component: RootLayout,
   errorComponent: RootError,

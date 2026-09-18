@@ -48,7 +48,7 @@ The current application is a **working discovery plus watch vertical slice**. Th
 
 - `[x]` SolidJS + TanStack Start + TanStack Router application structure.
 - `[x]` Home discovery backed by validated AniList data.
-- `[ ]` Explore search, typed URL search state, filters, sorting, pagination, loading, error, and empty states.
+- `[x]` Explore search, typed URL search state, filters, sorting, pagination, loading, error, and empty states.
 - `[x]` Anime detail route with validated metadata, synopsis, trailer, characters, relations, recommendations, rankings, and information fields.
 - `[x]` Functional detail-page genre links that preserve Explore route intent.
 - `[x]` Separate nested Watch route: `/anime/$animeId/watch/$episodeId`.
@@ -60,9 +60,9 @@ The current application is a **working discovery plus watch vertical slice**. Th
 
 ### Partial or missing today
 
-- `[~]` Favorites and continue-watching data can be persisted locally, but there is no complete application library/history experience around them.
-- `[~]` A schedule query and query option exist, but there is no current application schedule route and full schedule product.
-- `[~]` Watch resolves and plays streams, but playback position, completion state, and next-episode behavior are not a complete product model.
+- `[x]` Favorites and Continue Watching are a complete local library experience with status filters, metadata refresh, unavailable-title handling, progress, completion, resume, and history management.
+- `[x]` The schedule route provides timezone-aware day/week views, library/status/genre filters, truthful airing states, and detail/Watch navigation.
+- `[~]` Watch persists and restores playback position and completion state, but previous/next episode behavior and rapid request cancellation remain Phase 2 work.
 - `[ ]` No account, server-side library, or cross-device synchronization model.
 - `[ ]` No profile, settings, notification, or content-preference surfaces.
 - `[ ]` No production operations layer for monitoring, error reporting, source health, privacy, or deployment policy.
@@ -73,6 +73,8 @@ The current application is a **working discovery plus watch vertical slice**. Th
 ```text
 /
 /explore
+/library
+/schedule
 /anime/$animeId
 /anime/$animeId/watch/$episodeId
 ```
@@ -130,29 +132,29 @@ The current application is a **working discovery plus watch vertical slice**. Th
 
 ### Library and My List
 
-- `[ ]` Add a first-class `/library` or `/watchlist` route with a clear navigation entry.
-- `[ ]` Render persisted favorites with real AniList metadata, loading, empty, stale, and unavailable-title states.
-- `[ ]` Support removing a favorite and updating the library immediately without requiring a full reload.
-- `[ ]` Add useful library filters or views: all saved, currently watching, completed, planned, paused, and dropped where the underlying model supports them.
-- `[ ]` Add recently added and recently watched ordering with deterministic empty states.
-- `[ ]` Add migration behavior for records whose AniList metadata or source match is no longer available.
+- `[x]` Add a first-class `/library` or `/watchlist` route with a clear navigation entry.
+- `[x]` Render persisted favorites with real AniList metadata, loading, empty, stale, and unavailable-title states.
+- `[x]` Support removing a favorite and updating the library immediately without requiring a full reload.
+- `[x]` Add useful library filters or views: all saved, currently watching, completed, planned, paused, and dropped where the underlying model supports them.
+- `[x]` Add recently added and recently watched ordering with deterministic empty states.
+- `[x]` Add migration behavior for records whose AniList metadata or source match is no longer available.
 
 ### Continue Watching and history
 
-- `[ ]` Add a dedicated Continue Watching surface or a clearly substantial library section.
-- `[ ]` Display episode number, title, source, progress, last-watched time, and a direct resume action.
-- `[ ]` Add remove-from-history and clear-history behavior with confirmation where destructive.
-- `[ ]` Distinguish an active progress record from a completed episode and from a saved source match.
-- `[ ]` Define retention and ordering rules for history instead of relying on incidental array order.
+- `[x]` Add a dedicated Continue Watching surface or a clearly substantial library section.
+- `[x]` Display episode number, title, source, progress, last-watched time, and a direct resume action.
+- `[x]` Add remove-from-history and clear-history behavior with confirmation where destructive.
+- `[x]` Distinguish an active progress record from a completed episode and from a saved source match.
+- `[x]` Define retention and ordering rules for history instead of relying on incidental array order.
 
 ### Schedule
 
-- `[ ]` Add a dedicated schedule route backed by the existing validated AniList schedule query.
-- `[ ]` Add timezone-aware day and week views with a clear current-time context.
-- `[ ]` Link schedule items to detail and the correct Watch entry when playback is available.
-- `[ ]` Represent airing, delayed, skipped, completed, and unavailable states without inventing data.
-- `[ ]` Add filters for the viewer's library and relevant anime status or genre.
-- `[ ]` Define refresh and cache behavior for countdowns and schedule changes.
+- `[x]` Add a dedicated schedule route backed by the existing validated AniList schedule query.
+- `[x]` Add timezone-aware day and week views with a clear current-time context.
+- `[x]` Link schedule items to detail and the correct Watch entry when playback is available.
+- `[x]` Represent airing, delayed, skipped, completed, and unavailable states without inventing data.
+- `[x]` Add filters for the viewer's library and relevant anime status or genre.
+- `[x]` Define refresh and cache behavior for countdowns and schedule changes.
 
 ### Detail and discovery completeness
 
@@ -160,9 +162,9 @@ The current application is a **working discovery plus watch vertical slice**. Th
 - `[x]` Add staff, studios, voice actors, and character detail navigation where AniList data supports it.
 - `[x]` Make supported themes, tags, and external links meaningful without turning unsupported metadata into dead controls.
 - `[x]` Improve alternate-title and language presentation.
-- `[ ]` Add search history and a stronger mobile search entry point.
-- `[ ]` Improve suggestion grouping and exact query/result semantics.
-- `[ ]` Add dedicated genre/discovery views only when they provide behavior beyond a filter shortcut.
+- `[x]` Add search history and a stronger mobile search entry point.
+- `[x]` Improve suggestion grouping and exact query/result semantics.
+- `[x]` Add dedicated genre/discovery views only when they provide behavior beyond a filter shortcut.
 
 ### Phase 1 completion criteria
 
@@ -194,7 +196,7 @@ The current application is a **working discovery plus watch vertical slice**. Th
 
 - `[ ]` Persist quality preference with a safe fallback when a stream does not support it.
 - `[ ]` Persist subtitle, audio, and caption preferences where the resolved stream exposes those capabilities.
-- `[ ]` Improve mobile controls, touch targets, orientation/fullscreen behavior, and keyboard shortcuts.
+- `[ ]` Improve mobile controls, alighnment issues, design, touch targets, orientation/fullscreen behavior, and keyboard shortcuts.
 - `[ ]` Add stream expiry handling and a clear recovery path.
 - `[ ]` Add skip-intro/outro only if reliable timing data exists; do not fake markers.
 
@@ -358,6 +360,15 @@ Before marking a milestone `[x]`:
 6. The documented completion criteria for that milestone are all true.
 
 ## Changelog
+
+### 2026-09-18
+
+- Completed Phase 1 (Core Viewer Product):
+  - Library: completed full state handling for unavailable metadata, local persistence migration behavior, and full accessibly-mapped filtering. Tab structures migrated to proper tab semantics.
+  - Schedule: added timezone-aware day/week views, genre and status filters, library integration, real-time local countdowns, deep Watch linking, and cache invalidation policies. Documented AniList's missing delay/skipping metadata in empty states.
+  - Search: ensured mobile navigation and search history behavior matches exact exact-match and deduplication behaviors.
+  - Persistence: integrated stale match cleanup by purging source pairings when AniSource removes an upstream source.
+  - Verification: component, persistence, and mocked E2E Playwright coverage achieved and tested via full CI gate.
 
 ### 2026-09-17
 

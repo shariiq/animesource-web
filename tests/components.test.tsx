@@ -508,6 +508,67 @@ describe("LazyPlayer", () => {
     expect(screen.getByText("2:00")).toBeInTheDocument();
   });
 
+  it("restores playback and throttles progress while flushing lifecycle boundaries", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(0);
+      const onProgress = vi.fn(async () => undefined);
+      const onEnded = vi.fn(async () => undefined);
+      const { container, unmount } = render(() => (
+        <LazyPlayer
+          streams={[direct]}
+          resumeAt={45}
+          onProgress={onProgress}
+          onEnded={onEnded}
+        />
+      ));
+      const video = container.querySelector("video")!;
+      Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+      fireEvent.loadedMetadata(video);
+      expect(video.currentTime).toBe(45);
+
+      video.currentTime = 46;
+      fireEvent.timeUpdate(video);
+      expect(onProgress).toHaveBeenLastCalledWith(46, 120);
+
+      vi.setSystemTime(2000);
+      video.currentTime = 48;
+      fireEvent.timeUpdate(video);
+      expect(onProgress).toHaveBeenCalledTimes(1);
+
+      vi.setSystemTime(4000);
+      video.currentTime = 50;
+      fireEvent.timeUpdate(video);
+      expect(onProgress).toHaveBeenLastCalledWith(50, 120);
+
+      video.currentTime = 51;
+      fireEvent.pause(video);
+      expect(onProgress).toHaveBeenLastCalledWith(51, 120);
+
+      fireEvent.ended(video);
+      expect(onEnded).toHaveBeenCalledOnce();
+
+      video.currentTime = 52;
+      unmount();
+      expect(onProgress).toHaveBeenLastCalledWith(52, 120);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("surfaces progress persistence failures in the player", async () => {
+    const failingProgress = () => Promise.reject(new Error("database unavailable"));
+    const { container } = render(() => (
+      <LazyPlayer streams={[direct]} onProgress={failingProgress} />
+    ));
+    const video = container.querySelector("video")!;
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    fireEvent.loadedMetadata(video);
+    video.currentTime = 10;
+    fireEvent.timeUpdate(video);
+    expect(await screen.findByText(/Playback progress could not be saved/)).toHaveAttribute("role", "status");
+  });
+
   it("surfaces a media element error as a playable fallback", () => {
     const { container } = render(() => <LazyPlayer streams={[direct]} />);
     fireEvent.error(container.querySelector("video")!);

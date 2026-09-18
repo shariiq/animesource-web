@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { anilistClient, AniListError } from './client'
 import type { AniListMedia, AniListDetail, AniListHome, AniListScheduleItem } from './types'
-import { mediaShape, detailShape, homeShape, genreCollectionShape, scheduleShape, pageInfoShape } from './schema'
+import { mediaShape, detailShape, homeShape, genreCollectionShape, schedulePageShape, pageInfoShape } from './schema'
 import type { BrowseFormat, BrowseSeason, BrowseSort, BrowseStatus } from '../../lib/browse'
 
 /**
@@ -32,6 +32,11 @@ export function nextSeasonOf(date: Date = new Date()): { season: 'WINTER' | 'SPR
 /**
  * Media fragment shared by all queries.
  */
+export const HOME_TRENDING_PAGE_SIZE = 12
+export const HOME_SEASON_PAGE_SIZE = 12
+export const HOME_TOP_RATED_PAGE_SIZE = 12
+export const HOME_COMPACT_PAGE_SIZE = 3
+
 export const MEDIA_FRAGMENT = `
   fragment media on Media {
     id
@@ -53,6 +58,27 @@ export const MEDIA_FRAGMENT = `
     genres
     countryOfOrigin
     isAdult
+    nextAiringEpisode { episode airingAt timeUntilAiring }
+  }
+`
+
+/** Home cards use a deliberately narrow fragment to keep the SSR payload small. */
+const HOME_MEDIA_FRAGMENT = `
+  fragment homeMedia on Media {
+    id
+    title { romaji english native }
+    coverImage { extraLarge large color }
+    bannerImage
+    averageScore
+    meanScore
+    popularity
+    favourites
+    format
+    status
+    episodes
+    seasonYear
+    genres
+    countryOfOrigin
     nextAiringEpisode { episode airingAt timeUntilAiring }
   }
 `
@@ -80,13 +106,13 @@ export async function alHome(): Promise<AniListHome> {
   const n = nextSeasonOf()
   const query = `
     query($season:MediaSeason,$year:Int,$nseason:MediaSeason,$nyear:Int){
-      trending: Page(perPage:14){ media(sort:TRENDING_DESC, type:ANIME, isAdult:false){ ...media } }
-      season: Page(perPage:14){ media(sort:POPULARITY_DESC, type:ANIME, isAdult:false, season:$season, seasonYear:$year){ ...media } }
-      allTime: Page(perPage:14){ media(sort:POPULARITY_DESC, type:ANIME, isAdult:false){ ...media } }
-      topRated: Page(perPage:14){ media(sort:SCORE_DESC, type:ANIME, isAdult:false){ ...media } }
-      upcoming: Page(perPage:14){ media(sort:POPULARITY_DESC, type:ANIME, isAdult:false, status:NOT_YET_RELEASED, season:$nseason, seasonYear:$nyear){ ...media } }
+      trending: Page(perPage:${HOME_TRENDING_PAGE_SIZE}){ media(sort:TRENDING_DESC, type:ANIME, isAdult:false){ ...homeMedia } }
+      season: Page(perPage:${HOME_SEASON_PAGE_SIZE}){ media(sort:POPULARITY_DESC, type:ANIME, isAdult:false, season:$season, seasonYear:$year){ ...homeMedia } }
+      allTime: Page(perPage:${HOME_COMPACT_PAGE_SIZE}){ media(sort:POPULARITY_DESC, type:ANIME, isAdult:false){ ...homeMedia } }
+      topRated: Page(perPage:${HOME_TOP_RATED_PAGE_SIZE}){ media(sort:SCORE_DESC, type:ANIME, isAdult:false){ ...homeMedia } }
+      upcoming: Page(perPage:${HOME_COMPACT_PAGE_SIZE}){ media(sort:POPULARITY_DESC, type:ANIME, isAdult:false, status:NOT_YET_RELEASED, season:$nseason, seasonYear:$nyear){ ...homeMedia } }
     }
-    ${MEDIA_FRAGMENT}
+    ${HOME_MEDIA_FRAGMENT}
   `
   const variables = { season: s.season, year: s.year, nseason: n.season, nyear: n.year }
   const raw = await anilistClient.request(query, variables)
@@ -159,18 +185,25 @@ export async function alGenres(): Promise<string[]> {
  */
 export async function alSchedule(start: number, end: number): Promise<AniListScheduleItem[]> {
   const query = `
-    query($start:Int,$end:Int){
-      Page(perPage:50){
+    query($start:Int,$end:Int,$page:Int){
+      Page(page:$page,perPage:50){
+        pageInfo{ currentPage lastPage hasNextPage total }
         airingSchedules(airingAt_greater:$start, airingAt_lesser:$end, sort:TIME){
           episode airingAt
-          media{ id title{ romaji english } coverImage{ large } format }
+          media{ id title{ romaji english } coverImage{ large } format status genres }
         }
       }
     }
   `
-  const variables = { start, end }
-  const raw = await anilistClient.request(query, variables)
-  return parsePayload(scheduleShape, raw, 'the airing schedule')
+  const items: AniListScheduleItem[] = []
+  let page = 1
+  while (true) {
+    const raw = await anilistClient.request(query, { start, end, page })
+    const parsed = parsePayload(schedulePageShape, raw, 'the airing schedule')
+    items.push(...parsed.Page.airingSchedules)
+    if (!parsed.Page.pageInfo?.hasNextPage) return items
+    page += 1
+  }
 }
 
 /**
@@ -178,11 +211,23 @@ export async function alSchedule(start: number, end: number): Promise<AniListSch
  * Mirrors alByIds() from prototype exactly.
  */
 export async function alByIds(ids: number[]): Promise<AniListMedia[]> {
-  if (!ids.length) return []
-  const query = `query($ids:[Int]){ Page(perPage:50){ media(id_in:$ids, type:ANIME){ ...media } } } ${MEDIA_FRAGMENT}`
-  const variables = { ids }
-  const raw = await anilistClient.request(query, variables)
-  return parsePayload(z.object({ Page: z.object({ media: z.array(mediaShape) }) }), raw, 'the id batch').Page.media
+  const uniqueIds = [...new Set(ids)]
+  if (!uniqueIds.length) return []
+
+  const batches = Array.from(
+    { length: Math.ceil(uniqueIds.length / 50) },
+    (_, index) => uniqueIds.slice(index * 50, (index + 1) * 50),
+  )
+  const declarations = batches.map((_, index) => `$ids${index}:[Int]`).join(',')
+  const pages = batches.map((_, index) => `batch${index}: Page(perPage:50){ media(id_in:$ids${index}, type:ANIME){ ...media } }`).join('\n')
+  const query = `query(${declarations}){ ${pages} } ${MEDIA_FRAGMENT}`
+  const variables = Object.fromEntries(batches.map((batch, index) => [`ids${index}`, batch]))
+  const shape = z.object(Object.fromEntries(batches.map((_, index) => [
+    `batch${index}`,
+    z.object({ media: z.array(mediaShape) }),
+  ])))
+  const parsed = parsePayload(shape, await anilistClient.request(query, variables), 'the id batches')
+  return batches.flatMap((_, index) => parsed[`batch${index}`]?.media ?? [])
 }
 
 /**

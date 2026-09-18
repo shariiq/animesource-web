@@ -142,13 +142,27 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
     }
   }
 
+  /** In-memory cache for the source listing — it rarely changes within a session. */
+  let cachedSources: { promise: Promise<SourceListResponse>; ts: number } | null = null
+  const SOURCE_CACHE_TTL = 10 * 60 * 1000 // 10 minutes
+
   return {
     health(onSlow?: () => void): Promise<HealthResponse> {
       return request('/health', healthResponseSchema, onSlow)
     },
 
     sources(onSlow?: () => void): Promise<SourceListResponse> {
-      return request('/api/v1/sources', sourceListResponseSchema, onSlow)
+      const now = Date.now()
+      if (cachedSources && now - cachedSources.ts < SOURCE_CACHE_TTL) {
+        return cachedSources.promise
+      }
+      const promise = request('/api/v1/sources', sourceListResponseSchema, onSlow)
+      cachedSources = { promise, ts: now }
+      // Evict the cache on failure so subsequent calls retry.
+      promise.catch(() => {
+        if (cachedSources?.promise === promise) cachedSources = null
+      })
+      return promise
     },
 
     search(sourceId: string, q: string, page = 1, onSlow?: () => void): Promise<SearchResponse> {

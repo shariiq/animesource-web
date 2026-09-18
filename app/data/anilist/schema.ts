@@ -263,6 +263,8 @@ export const scheduleItemShape = z.object({
       title: z.object({ romaji: nullableString, english: nullableString }).nullish(),
       coverImage: z.object({ large: nullableString }).nullish(),
       format: nullableString,
+      status: nullableString,
+      genres: z.array(nullableString).nullish(),
     })
     .nullish(),
 })
@@ -271,3 +273,11 @@ export type AniListScheduleItem = z.infer<typeof scheduleItemShape>
 
 export const scheduleShape = z.array(scheduleItemShape)
 export type AniListSchedule = z.infer<typeof scheduleShape>
+
+export const schedulePageShape = z.object({
+  Page: z.object({
+    pageInfo: pageInfoShape.optional(),
+    airingSchedules: z.array(scheduleItemShape),
+  }),
+})
+export type AniListSchedulePage = z.infer<typeof schedulePageShape>

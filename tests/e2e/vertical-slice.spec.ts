@@ -23,6 +23,41 @@ test("header search stays client-side and renders matching Explore results", asy
   )).toBe(true);
 });
 
+test("explore result cards expose a keyboard-reachable watch action without overflow", async ({ page }) => {
+  await page.goto("/explore");
+  await expect(page.getByRole("heading", { name: "Explore anime" })).toBeVisible();
+
+  const card = page.locator("article").filter({ hasText: "Test Anime" }).first();
+  const detail = card.getByRole("link", { name: /Test Anime/ });
+  const watch = card.getByRole("link", { name: "Watch now" });
+
+  // The detail destination and the watch action must be siblings, not nested
+  // links, so both stay individually reachable and announceable.
+  await expect(detail).toHaveAttribute("href", "/anime/1");
+  await expect(watch).toHaveAttribute("href", /^\/anime\/1\/watch\/next/);
+  expect(await watch.evaluate((node) => node.closest("a") === node)).toBe(true);
+
+  await detail.focus();
+  await page.keyboard.press("Tab");
+  await expect(watch).toBeFocused();
+  await page.screenshot({ path: "test-results/explore-watch-focus.png" });
+
+  await watch.hover();
+  const box = (await watch.boundingBox())!;
+  expect(box.width).toBeGreaterThan(100);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/explore-desktop.png", fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(watch).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/explore-mobile.png", fullPage: true });
+
+  await watch.click();
+  await expect(page).toHaveURL(/\/anime\/1\/watch\//);
+});
+
 test("home to detail to watch resolves a stream and mounts the player", async ({
   page,
 }) => {
@@ -58,10 +93,11 @@ test("shows a specific empty-stream state for a selected server", async ({
   ).not.toBeVisible();
 });
 
-test("favorite persists after reload", async ({ page }) => {
+test("favorite persists after reload and allows changing library status", async ({ page }) => {
   await page.goto("/anime/1");
   const addFavorite = page.getByRole("button", { name: "Add to favorites" });
   const removeFavorite = page.getByRole("button", { name: "Remove from favorites" });
+  const statusSelect = page.getByRole("combobox", { name: "Library status" });
   await expect(addFavorite.or(removeFavorite)).toBeVisible();
 
   // Leave the browser context in a known state so this test remains valid when
@@ -71,10 +107,91 @@ test("favorite persists after reload", async ({ page }) => {
     await expect(addFavorite).toBeVisible();
   }
 
+  await expect(statusSelect).not.toBeVisible();
   await addFavorite.click();
   await expect(removeFavorite).toBeVisible();
+  await expect(statusSelect).toBeVisible();
+  await expect(statusSelect).toHaveValue("PLANNING");
+
+  await statusSelect.selectOption("WATCHING");
+  await expect(statusSelect).toHaveValue("WATCHING");
+
   await page.reload();
   await expect(removeFavorite).toBeVisible();
+  await expect(statusSelect).toBeVisible();
+  await expect(statusSelect).toHaveValue("WATCHING");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/detail-library-status-desktop.png", fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(statusSelect).toHaveValue("WATCHING");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/detail-library-status-mobile.png", fullPage: true });
+
+  await removeFavorite.click();
+  await expect(addFavorite).toBeVisible();
+  await expect(statusSelect).not.toBeVisible();
+});
+
+test("library hydrates saved metadata and resumes its opaque episode", async ({ page }) => {
+  await page.goto("/anime/1");
+  const addFavorite = page.getByRole("button", { name: "Add to favorites" });
+  const removeFavorite = page.getByRole("button", { name: "Remove from favorites" });
+  await expect(addFavorite.or(removeFavorite)).toBeVisible();
+  if (await addFavorite.isVisible()) {
+    await addFavorite.click();
+    await expect(removeFavorite).toBeVisible();
+  }
+
+  await page.goto("/anime/1/watch/next");
+  await page.getByRole("button", { name: "Episode 1: Pilot" }).click();
+  await page.getByRole("button", { name: "Test server" }).click();
+  await expect(page.locator("video")).toBeVisible();
+
+  await page.goto("/library");
+  await expect(page.getByRole("heading", { name: "Your library.", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Test Anime", exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: /Continue Watching/ }).click();
+  const resume = page.getByRole("link", { name: "Resume" });
+  await expect(resume).toHaveAttribute("href", /episode-1%26eps%3D1/);
+  await resume.click();
+  await expect(page).toHaveURL(/episode-1%26eps%3D1/);
+});
+
+test("library stays within desktop and mobile viewports", async ({ page }) => {
+  await page.goto("/library");
+  await expect(page.getByRole("heading", { name: "Your library.", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/library-desktop.png", fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Your library.", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/library-mobile.png", fullPage: true });
+});
+
+test("schedule switches views and stays within desktop and mobile viewports", async ({ page }) => {
+  await page.goto("/schedule");
+  await expect(page.getByRole("heading", { name: "What’s airing." })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Schedule" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("combobox", { name: "Genre" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Status" })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Saved only" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/schedule-desktop.png", fullPage: true });
+
+  await page.getByRole("button", { name: "Day", exact: true }).click();
+  await expect(page).toHaveURL(/view=day/);
+  await page.getByRole("button", { name: "Next period" }).click();
+  await expect(page.getByRole("heading", { name: "A quiet stretch." })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Genre" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/schedule-mobile.png", fullPage: true });
 });
 
 test("discovery initial load does not call AniSource", async ({ page }) => {

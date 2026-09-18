@@ -10,7 +10,7 @@ The QueryClient is created per router instance in `app/router.tsx`; no query cac
 | Browse | `['anilist', 'browse', params]` | 5 minutes | Explore loader and page; SSR allowed | Key changes with typed filters/search; Explore presents loading, empty, and error states |
 | Suggestions | `['anilist', 'suggest', query]` | 10 minutes | Header SearchSurface only; client query, never a route loader | Enabled for queries longer than one character; SearchSurface presents pending, empty, or temporary-unavailable state |
 | Genres | `['anilist', 'genres']` | 24 hours | Explore loader and page; SSR allowed | Refetch when stale or invalidated; Explore keeps the filter control usable with its error state |
-| Schedule | `['anilist', 'schedule', start, end]` | 10 minutes | Reserved for the future schedule route | Refetch when stale or invalidated; schedule consumer must present unavailable data distinctly |
+| Schedule | `['anilist', 'schedule', start, end]` | 5 minutes | Schedule route client query over a padded local day/week range | Refetch every five minutes and when stale; local countdowns tick every 30 seconds; the route presents loading, empty, and failure states |
 
 ## Invalidation and transport rules
 

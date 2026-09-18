@@ -54,6 +54,12 @@ export interface KeyValueStore {
     value: T,
     schema: z.ZodType<Versioned<T>>,
   ): Promise<void>
+  update<T>(
+    key: string,
+    version: number,
+    schema: z.ZodType<Versioned<T>>,
+    updateValue: (value: T | null) => T,
+  ): Promise<T>
   remove(key: string): Promise<void>
 }
 
@@ -79,6 +85,25 @@ export const indexedDbStore: KeyValueStore = {
     const completion = transactionToPromise(tx)
     tx.objectStore(STORE).put(parsed.data, key)
     await completion
+  },
+  async update<T>(
+    key: string,
+    version: number,
+    schema: z.ZodType<Versioned<T>>,
+    updateValue: (value: T | null) => T,
+  ) {
+    const db = await openDb()
+    const tx = db.transaction(STORE, 'readwrite')
+    const store = tx.objectStore(STORE)
+    const raw = await requestToPromise(store.get(key) as IDBRequest<unknown>)
+    const existing = raw !== undefined ? schema.safeParse(raw) : null
+    const current = existing && existing.success ? existing.data.data : null
+    const updated = updateValue(current)
+    const validated = schema.safeParse({ v: version, data: updated })
+    if (!validated.success) throw new Error('Cannot persist an invalid viewer record.')
+    store.put(validated.data, key)
+    await transactionToPromise(tx)
+    return updated
   },
   async remove(key) {
     const db = await openDb()

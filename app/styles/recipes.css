@@ -53,6 +53,17 @@
 }
 
 @layer components {
+  .home-deferred-section {
+    content-visibility: auto;
+    contain-intrinsic-size: 0 1100px;
+  }
+
+  .editorial-field-group {
+    display: grid;
+    gap: 8px;
+  }
+
+  .editorial-field-group > label,
   .editorial-label {
     color: var(--text-muted);
     font: 500 9px/1.4 var(--font-mono);
@@ -60,6 +71,8 @@
     text-transform: uppercase;
   }
 
+  .editorial-field-group input,
+  .editorial-field-group select,
   .editorial-field {
     min-width: 0;
     min-height: var(--control-height);

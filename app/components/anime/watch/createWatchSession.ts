@@ -14,9 +14,11 @@ import {
   titleVariants,
   type MatchResult,
 } from '../../../data/matching'
-import type {
-  ContinueItem,
-  MatchItem,
+import {
+  type ContinueDraft,
+  type ContinueItem,
+  type MatchItem,
+  type PlaybackProgress,
 } from '../../../lib/persistence/viewer'
 import { titleOf } from '../../../lib/format'
 
@@ -62,7 +64,10 @@ export interface WatchPersistence {
   getSavedMatch(anilistId: number): Promise<MatchItem | null>
   saveMatch(anilistId: number, match: MatchItem): Promise<void>
   clearSavedMatch(anilistId: number): Promise<void>
-  recordContinue(item: ContinueItem): Promise<void>
+  getContinue(): Promise<ContinueItem[]>
+  recordContinue(item: ContinueDraft): Promise<void>
+  updateProgress(progress: PlaybackProgress): Promise<void>
+  markEpisodeComplete(id: number, episodeId: string): Promise<void>
 }
 
 export interface WatchSessionOptions {
@@ -97,10 +102,13 @@ export interface WatchSession {
   statusText: Accessor<string>
   playerStage: Accessor<WatchStage>
   selectedServerName: Accessor<string>
+  resumeAt: Accessor<number>
   initialize: () => Promise<void>
   chooseSource: (sourceId: string) => Promise<void>
   chooseEpisode: (episodeId: string) => Promise<void>
   chooseServer: (serverId: string) => Promise<void>
+  updatePlaybackProgress: (position: number, duration: number) => Promise<void>
+  markPlaybackComplete: () => Promise<void>
   changeMatch: (candidate: AniSourceAnime) => Promise<void>
   openMatchPicker: () => void
   searchManualMatch: (query: string) => Promise<void>
@@ -180,13 +188,23 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
   const [servers, setServers] = createSignal<Server[]>([])
   const [selectedServer, setSelectedServer] = createSignal<string | null>(null)
   const [streams, setStreams] = createSignal<Stream[]>([])
+  const [playbackEpisodeId, setPlaybackEpisodeId] = createSignal<string | null>(null)
   const [loading, setLoading] = createSignal('')
   const [error, setError] = createSignal<string | null>(null)
   const [slow, setSlow] = createSignal(false)
   const [manualQuery, setManualQuery] = createSignal('')
   const [pickerLoading, setPickerLoading] = createSignal(false)
+  const [continueItems, setContinueItems] = createSignal<ContinueItem[]>([])
 
   const variants = () => titleVariants(options.anime)
+  const currentContinue = () =>
+    continueItems().find(
+      (entry) => entry.id === options.anime.id && entry.episodeId === playbackEpisodeId(),
+    )
+  const resumeAt = () => {
+    const entry = currentContinue()
+    return entry && !entry.completed ? entry.position : 0
+  }
   const sourceName = () =>
     sources().find((source) => source.id === selectedSource())?.name ??
     selectedSource()
@@ -247,7 +265,11 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
         serverId,
         () => setSlow(true),
       )
-      setStreams(orderStreams(result))
+      const orderedStreams = orderStreams(result)
+      if (!orderedStreams.length) {
+        setStreams([])
+        return
+      }
       await options.persistence.recordContinue({
         id: options.anime.id,
         title: titleOf(options.anime),
@@ -261,13 +283,33 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
         episodeId,
         episodeNumber:
           episodes().find((episode) => episode.id === episodeId)?.number ?? 0,
-        ts: Date.now(),
       })
+      const freshContinue = await options.persistence.getContinue()
+      setContinueItems(freshContinue)
+      setPlaybackEpisodeId(episodeId)
+      setStreams(orderedStreams)
     } catch (cause) {
       reportError('Failed to load streams.', cause)
     } finally {
       setLoading('')
     }
+  }
+
+  const updatePlaybackProgress = async (position: number, duration: number) => {
+    const episodeId = playbackEpisodeId()
+    if (!episodeId) return
+    await options.persistence.updateProgress({
+      id: options.anime.id,
+      episodeId,
+      position,
+      duration,
+    })
+  }
+
+  const markPlaybackComplete = async () => {
+    const episodeId = playbackEpisodeId()
+    if (!episodeId) return
+    await options.persistence.markEpisodeComplete(options.anime.id, episodeId)
   }
 
   const loadEpisodes = async (sourceId: string, anime: AniSourceAnime) => {
@@ -318,19 +360,48 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     try {
       const titles = variants().map((variant) => variant.title)
       const found = new Map<string, AniSourceAnime>()
-      let successfulSearches = 0
-      let lastFailure: unknown
-      for (const query of titles) {
+
+      // Fast path: search the primary title first, short-circuit on a confident auto-match.
+      const primaryTitle = titles[0]
+      if (primaryTitle) {
         try {
-          const result = await options.api.search(sourceId, query, 1, () => setSlow(true))
-          successfulSearches += 1
+          const result = await options.api.search(sourceId, primaryTitle, 1, () => setSlow(true))
           for (const candidate of result.items) found.set(candidate.id, candidate)
         } catch (cause) {
-          lastFailure = cause
-          console.warn(`Search for title “${query}” failed; continuing with the remaining titles.`, cause)
+          console.warn(`Search for primary title “${primaryTitle}” failed.`, cause)
+        }
+
+        if (found.size > 0) {
+          const earlyResult = matchFlow(titles, [...found.values()])
+          if (earlyResult.kind === 'auto') {
+            setMatch(earlyResult)
+            const candidate = earlyResult.match.candidate
+            setMatchedAnime(candidate)
+            await options.persistence.saveMatch(options.anime.id, {
+              sourceId,
+              animeId: candidate.id,
+              title: candidate.title,
+            })
+            await loadEpisodes(sourceId, candidate)
+            return
+          }
         }
       }
-      if (!successfulSearches && lastFailure) throw lastFailure
+
+      // Slow path: search remaining title variants concurrently.
+      const remaining = titles.slice(1)
+      if (remaining.length > 0) {
+        const results = await Promise.allSettled(
+          remaining.map((query) =>
+            options.api.search(sourceId, query, 1, () => setSlow(true)),
+          ),
+        )
+        for (const settled of results) {
+          if (settled.status === 'fulfilled') {
+            for (const candidate of settled.value.items) found.set(candidate.id, candidate)
+          }
+        }
+      }
 
       const result = matchFlow(titles, [...found.values()])
       setMatch(result)
@@ -343,6 +414,8 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
           title: candidate.title,
         })
         await loadEpisodes(sourceId, candidate)
+      } else {
+        setManualQuery(titleOf(options.anime))
       }
     } catch (cause) {
       reportError('Failed to match this title.', cause)
@@ -429,10 +502,19 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     setError(null)
     setSlow(false)
     try {
-      const result = await options.api.sources(() => setSlow(true))
+      const [result, storedContinue] = await Promise.all([
+        options.api.sources(() => setSlow(true)),
+        options.persistence.getContinue(),
+      ])
+      setContinueItems(storedContinue)
       setSources(result.sources)
       if (!result.sources.length) return
-      const saved = await options.persistence.getSavedMatch(options.anime.id)
+      let saved = await options.persistence.getSavedMatch(options.anime.id)
+      const savedSourceId = saved?.sourceId
+      if (savedSourceId && !result.sources.some((source) => source.id === savedSourceId)) {
+        await options.persistence.clearSavedMatch(options.anime.id)
+        saved = null
+      }
       const preferred =
         options.sourceSearchParam() ??
         saved?.sourceId ??
@@ -496,10 +578,13 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     statusText,
     playerStage,
     selectedServerName,
+    resumeAt,
     initialize,
     chooseSource,
     chooseEpisode,
     chooseServer,
+    updatePlaybackProgress,
+    markPlaybackComplete,
     changeMatch,
     openMatchPicker,
     searchManualMatch,

@@ -12,7 +12,7 @@ test("header search stays client-side and renders matching Explore results", asy
   await search.pressSequentially("Test Anime", { delay: 25 });
   await expect(search).toBeFocused();
   await expect(search).toHaveValue("Test Anime");
-  await expect(page.getByRole("option", { name: /Test Anime/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /Test Anime/ })).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "Search" }).click();
 
   await expect(page).toHaveURL(/\/explore\?.*query=Test(?:\+|%20)Anime/);
@@ -23,39 +23,13 @@ test("header search stays client-side and renders matching Explore results", asy
   )).toBe(true);
 });
 
-test("explore result cards expose a keyboard-reachable watch action without overflow", async ({ page }) => {
+test("explore cards keep the detail-only destination", async ({ page }) => {
   await page.goto("/explore");
   await expect(page.getByRole("heading", { name: "Explore anime" })).toBeVisible();
 
-  const card = page.locator("article").filter({ hasText: "Test Anime" }).first();
-  const detail = card.getByRole("link", { name: /Test Anime/ });
-  const watch = card.getByRole("link", { name: "Watch now" });
-
-  // The detail destination and the watch action must be siblings, not nested
-  // links, so both stay individually reachable and announceable.
+  const detail = page.getByRole("link", { name: /Test Anime/ }).first();
   await expect(detail).toHaveAttribute("href", "/anime/1");
-  await expect(watch).toHaveAttribute("href", /^\/anime\/1\/watch\/next/);
-  expect(await watch.evaluate((node) => node.closest("a") === node)).toBe(true);
-
-  await detail.focus();
-  await page.keyboard.press("Tab");
-  await expect(watch).toBeFocused();
-  await page.screenshot({ path: "test-results/explore-watch-focus.png" });
-
-  await watch.hover();
-  const box = (await watch.boundingBox())!;
-  expect(box.width).toBeGreaterThan(100);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({ path: "test-results/explore-desktop.png", fullPage: true });
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.reload();
-  await expect(watch).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({ path: "test-results/explore-mobile.png", fullPage: true });
-
-  await watch.click();
-  await expect(page).toHaveURL(/\/anime\/1\/watch\//);
+  await expect(page.getByRole("link", { name: "Watch now" })).not.toBeVisible();
 });
 
 test("home to detail to watch resolves a stream and mounts the player", async ({

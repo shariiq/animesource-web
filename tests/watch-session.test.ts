@@ -97,7 +97,10 @@ function persistence(over: Partial<WatchPersistence> = {}): WatchPersistence {
     getSavedMatch: vi.fn(async () => null),
     saveMatch: vi.fn(async () => undefined),
     clearSavedMatch: vi.fn(async () => undefined),
+    getContinue: vi.fn(async () => []),
     recordContinue: vi.fn(async () => undefined),
+    updateProgress: vi.fn(async () => undefined),
+    markEpisodeComplete: vi.fn(async () => undefined),
     ...over,
   }
 }
@@ -165,6 +168,63 @@ describe('Watch session', () => {
     })
   })
 
+  it('short-circuits remaining synonym searches when the primary title finds a confident auto-match', async () => {
+    const multiTitleAnime = detailShape.parse({
+      ...anime,
+      synonyms: ['Synonym 1', 'Synonym 2', 'Synonym 3'],
+    })
+    const searchMock = vi.fn(async () => ({
+      items: [candidate()],
+      page: 1,
+      has_next: false,
+      total_returned: 1,
+    }))
+    const sourceApi = api({ search: searchMock })
+    const session = createWatchSession({
+      anime: multiTitleAnime,
+      routeEpisodeId: () => 'next',
+      sourceSearchParam: () => undefined,
+      navigateToEpisode: vi.fn(),
+      api: sourceApi,
+      persistence: persistence(),
+    })
+
+    await session.initialize()
+
+    // It should have only searched once for the primary title "Signal" and short-circuited
+    expect(searchMock).toHaveBeenCalledTimes(1)
+    expect(searchMock).toHaveBeenCalledWith('source-a', 'Signal', 1, expect.any(Function))
+    expect(session.match()?.kind).toBe('auto')
+  })
+
+  it('searches remaining title variants in parallel if the primary title is not an auto-match', async () => {
+    const multiTitleAnime = detailShape.parse({
+      ...anime,
+      title: { english: 'Unknown Primary', romaji: null, native: null },
+      synonyms: ['Real Match'],
+    })
+    const searchMock = vi.fn(async (_source: string, query: string) => {
+      if (query === 'Unknown Primary') {
+        return { items: [], page: 1, has_next: false, total_returned: 0 }
+      }
+      return { items: [candidate({ id: 'real-1', title: 'Real Match' })], page: 1, has_next: false, total_returned: 1 }
+    })
+    const sourceApi = api({ search: searchMock })
+    const session = createWatchSession({
+      anime: multiTitleAnime,
+      routeEpisodeId: () => 'next',
+      sourceSearchParam: () => undefined,
+      navigateToEpisode: vi.fn(),
+      api: sourceApi,
+      persistence: persistence(),
+    })
+
+    await session.initialize()
+
+    expect(searchMock).toHaveBeenCalledTimes(2)
+    expect(session.matchedAnime()?.id).toBe('real-1')
+  })
+
   it('reuses a saved Match without searching the source', async () => {
     const { session, api, persistence } = sessionParts({
       persistence: {
@@ -178,6 +238,44 @@ describe('Watch session', () => {
     expect(session.matchedAnime()).toMatchObject({ id: 'saved-42', title: 'Saved Signal' })
     expect(api.episodes).toHaveBeenCalledWith('source-a', 'saved-42', expect.any(Function))
     expect(persistence.saveMatch).not.toHaveBeenCalled()
+  })
+
+  it('opens the manual match picker when automatic searches return no candidates', async () => {
+    const { session } = sessionParts({
+      api: {
+        search: vi.fn(async () => ({
+          items: [],
+          page: 1,
+          has_next: false,
+          total_returned: 0,
+        })),
+      },
+    })
+
+    await session.initialize()
+
+    expect(session.match()).toEqual({ kind: 'empty', ranked: [] })
+    expect(session.error()).toBeNull()
+    expect(session.pickerCandidates()).toEqual([])
+  })
+
+  it('drops a stale saved Match when its source is no longer available and continues mapping normally', async () => {
+    const { session, api, persistence } = sessionParts({
+      persistence: {
+        getSavedMatch: vi.fn(async () => ({ sourceId: 'source-removed', animeId: 'saved-42', title: 'Saved Signal' })),
+      },
+      api: {
+        // Only source-a is available
+        sources: vi.fn(async () => ({ sources: [{ id: 'source-a', name: 'Source A', base_url: '' }], count: 1 })),
+      },
+    })
+
+    await session.initialize()
+
+    // The stale match logic clears the bad savedMatch and falls back to normal matching
+    expect(persistence.clearSavedMatch).toHaveBeenCalledWith(42)
+    expect(api.search).toHaveBeenCalledWith('source-a', 'Signal', 1, expect.any(Function))
+    expect(persistence.saveMatch).toHaveBeenCalledWith(42, expect.objectContaining({ sourceId: 'source-a' }))
   })
 
   it('exposes a manual picker after an ambiguous match and records the chosen candidate', async () => {
@@ -249,6 +347,94 @@ describe('Watch session', () => {
       episodeId: 'episode-1&eps=1',
       episodeNumber: 1,
     }))
+  })
+
+  it('exposes the stored resume position only once the episode is actually playable', async () => {
+    const stored = {
+      id: 42,
+      title: 'Signal',
+      cover: '',
+      sourceId: 'source-a',
+      sourceName: 'Source A',
+      animeId: 'signal-42',
+      episodeId: 'episode-1&eps=1',
+      episodeNumber: 1,
+      position: 610,
+      duration: 1440,
+      completed: false,
+      ts: Date.now(),
+    }
+    const { session } = sessionParts({
+      persistence: { getContinue: vi.fn(async () => [stored]) },
+    })
+
+    await session.initialize()
+    // The episode is selected, but no stream is playing yet.
+    expect(session.resumeAt()).toBe(0)
+
+    await session.chooseServer('server-a')
+    expect(session.resumeAt()).toBe(610)
+  })
+
+  it('does not resume an episode that was already watched to completion', async () => {
+    const stored = {
+      id: 42,
+      title: 'Signal',
+      cover: '',
+      sourceId: 'source-a',
+      sourceName: 'Source A',
+      animeId: 'signal-42',
+      episodeId: 'episode-1&eps=1',
+      episodeNumber: 1,
+      position: 1400,
+      duration: 1440,
+      completed: true,
+      ts: Date.now(),
+    }
+    const { session } = sessionParts({
+      persistence: { getContinue: vi.fn(async () => [stored]) },
+    })
+
+    await session.initialize()
+    await session.chooseServer('server-a')
+    expect(session.resumeAt()).toBe(0)
+  })
+
+  it('attributes playback progress and completion to the playing episode only', async () => {
+    const { session, persistence } = sessionParts()
+
+    await session.initialize()
+    // Nothing is playing yet, so a stray progress tick must not be persisted.
+    await session.updatePlaybackProgress(30, 1440)
+    await session.markPlaybackComplete()
+    expect(persistence.updateProgress).not.toHaveBeenCalled()
+    expect(persistence.markEpisodeComplete).not.toHaveBeenCalled()
+
+    await session.chooseServer('server-a')
+    await session.updatePlaybackProgress(300, 1440)
+    await session.markPlaybackComplete()
+
+    expect(persistence.updateProgress).toHaveBeenCalledWith({
+      id: 42,
+      episodeId: 'episode-1&eps=1',
+      position: 300,
+      duration: 1440,
+    })
+    expect(persistence.markEpisodeComplete).toHaveBeenCalledWith(42, 'episode-1&eps=1')
+  })
+
+  it('keeps the player unmounted and the episode unplayable when a server returns no streams', async () => {
+    const { session, persistence } = sessionParts({
+      api: { streams: vi.fn(async () => []) },
+    })
+
+    await session.initialize()
+    await session.chooseServer('server-a')
+
+    expect(session.playerStage()).toBe('streams-empty')
+    expect(persistence.recordContinue).not.toHaveBeenCalled()
+    await session.updatePlaybackProgress(120, 1440)
+    expect(persistence.updateProgress).not.toHaveBeenCalled()
   })
 })
 

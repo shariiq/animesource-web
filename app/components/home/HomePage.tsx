@@ -52,7 +52,7 @@ export function HomePage() {
                   </div>
                 </div>
               </section>
-              <section class="mt-[104px]" aria-labelledby="season-heading">
+              <section class="home-deferred-section mt-[104px]" aria-labelledby="season-heading">
                 <SectionHeading id="season-heading" title="Seasonal Anime" description="Popular now / all-time favorites / coming next" />
                 <div class="grid gap-5 lg:grid-cols-3">
                   <AnimeColumn title="Trending now" items={data.trending.media} search={makeBrowseSearch({ sort: 'TRENDING_DESC' })} />
@@ -61,7 +61,7 @@ export function HomePage() {
                 </div>
                 <div class="mt-5"><AnimeColumn title="Coming next season" items={data.upcoming.media} search={makeBrowseSearch({ sort: 'POPULARITY_DESC', status: 'NOT_YET_RELEASED', season: nextSeason.season, year: nextSeason.year })} /></div>
               </section>
-              <section class="mt-[104px]" aria-labelledby="genre-heading">
+              <section class="home-deferred-section mt-[104px]" aria-labelledby="genre-heading">
                 <SectionHeading id="genre-heading" title="Browse by Genre" description="Find your next anime" />
                 <GenreNav />
               </section>

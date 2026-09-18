@@ -8,6 +8,8 @@ export interface MediaRailItem {
   cover: string
   format: string | null | undefined
   score: number | null | undefined
+  type: string | null | undefined
+  siteUrl: string | null
   // Optional label shown as an overline (e.g. "Sequel", "Recommended").
   label?: string
 }
@@ -23,8 +25,8 @@ export function MediaRail(props: { heading: string; items: MediaRailItem[] }) {
         </div>
         <div class="detail-media-grid" role="list">
           <For each={props.items}>
-            {(item) => (
-              <Link class="card detail-relation-card" to="/anime/$animeId" params={{ animeId: String(item.id) }} role="listitem">
+            {(item) => {
+              const content = <>
                 <div class="card-media">
                   <Show when={item.cover} fallback={<div />}>
                     <img src={item.cover} alt={`${item.title} cover`} loading="lazy" />
@@ -34,8 +36,12 @@ export function MediaRail(props: { heading: string; items: MediaRailItem[] }) {
                 <Show when={item.label}><span class="card-meta">{item.label}</span></Show>
                 <h3 class="card-title">{item.title}</h3>
                 <span class="card-meta">{formatEnum(item.format)}</span>
-              </Link>
-            )}
+              </>
+
+              return item.type === 'ANIME'
+                ? <Link class="card detail-relation-card" to="/anime/$animeId" params={{ animeId: String(item.id) }} role="listitem">{content}</Link>
+                : <a class="card detail-relation-card" href={item.siteUrl ?? `https://anilist.co/manga/${item.id}`} target="_blank" rel="noopener noreferrer" role="listitem">{content}</a>
+            }}
           </For>
         </div>
       </section>
@@ -55,6 +61,8 @@ export function toRailItem(
     cover: node.coverImage?.large || node.coverImage?.extraLarge || '',
     format: node.format,
     score: node.averageScore,
+    type: 'ANIME',
+    siteUrl: null,
     label,
   }
 }

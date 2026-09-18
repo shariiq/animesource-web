@@ -77,6 +77,9 @@ export function HeroCarousel(props: { items: AniListMedia[] }) {
                   classList={{ 'opacity-100': index() === activeIndex(), 'opacity-0': index() !== activeIndex() }}
                   src={image(media)}
                   alt=""
+                  loading={index() === activeIndex() ? 'eager' : 'lazy'}
+                  fetchpriority={index() === activeIndex() ? 'high' : 'low'}
+                  decoding="async"
                 />
               )}
             </For>

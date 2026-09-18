@@ -5,6 +5,8 @@ import { Link } from '@tanstack/solid-router'
 import type { AniListDetail } from '../../data/anilist/types'
 import { formatAniDate, formatCompactNumber, formatEnum, formatRank, formatScore, formatSeason, formatStatus, renderDescription, titleOf } from '../../lib/format'
 import { BROWSE_SEASONS, makeBrowseSearch, type BrowseSeason } from '../../lib/browse'
+import { FAVORITE_STATUSES } from '../../lib/library'
+import type { FavoriteStatus } from '../../lib/persistence/schema'
 import { browserViewerData } from '../../lib/persistence/viewer'
 import { CharacterRail } from './detail/CharacterRail'
 import { getDetailLinks, getDetailTags, getDetailTitles, getOrderedRelations, getStaffMembers, getStudios, isSafeExternalUrl } from './detail/model'
@@ -36,13 +38,19 @@ function TagGroup(props: { heading: string; tags: ReturnType<typeof getDetailTag
 export function AnimeDetailPage(props: { anime: AniListDetail }) {
   const [expanded, setExpanded] = createSignal(false)
   const [favorite, setFavorite] = createSignal<boolean | undefined>(undefined)
+  const [favoriteStatus, setFavoriteStatus] = createSignal<FavoriteStatus | undefined>(undefined)
   const [persistenceError, setPersistenceError] = createSignal<string | null>(null)
   const [savingFavorite, setSavingFavorite] = createSignal(false)
+  const [savingStatus, setSavingStatus] = createSignal(false)
 
   onMount(() => {
     const animeId = props.anime.id
     void browserViewerData.getFavorites()
-      .then((items) => setFavorite(items.some((item) => item.id === animeId)))
+      .then((items) => {
+        const saved = items.find((item) => item.id === animeId)
+        setFavorite(Boolean(saved))
+        setFavoriteStatus(saved?.status)
+      })
       .catch(() => setPersistenceError('Your browser could not load saved favorites. Reload to try again.'))
   })
 
@@ -57,13 +65,29 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
         cover: anime.coverImage?.large || anime.coverImage?.extraLarge || '',
         format: anime.format ?? null,
         averageScore: anime.averageScore ?? null,
+        status: 'PLANNING',
       })
       setFavorite(nextFavorite)
+      setFavoriteStatus(nextFavorite ? 'PLANNING' : undefined)
       setPersistenceError(null)
     } catch {
       setPersistenceError('Your browser could not save this favorite.')
     } finally {
       setSavingFavorite(false)
+    }
+  }
+
+  const changeFavoriteStatus = async (status: FavoriteStatus) => {
+    if (!favorite() || savingStatus()) return
+    setSavingStatus(true)
+    try {
+      await browserViewerData.updateFavoriteStatus(props.anime.id, status)
+      setFavoriteStatus(status)
+      setPersistenceError(null)
+    } catch {
+      setPersistenceError('Your browser could not update the library status.')
+    } finally {
+      setSavingStatus(false)
     }
   }
 
@@ -101,6 +125,8 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
     format: relation.format,
     score: relation.score,
     label: relation.label,
+    type: relation.type,
+    siteUrl: relation.siteUrl,
   })))
 
   return (
@@ -139,6 +165,25 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
               >
                 {favorite() ? '♥ Saved to favorites' : '♡ Add to favorites'}
               </button>
+              <Show when={favorite()}>
+                <div class="material-panel mt-3 min-w-0 p-5" aria-busy={savingStatus()}>
+                  <div class="mb-4 flex min-w-0 items-baseline justify-between gap-3">
+                    <p class="mono-signal font-semibold text-text-primary">In your library</p>
+                    <span class="truncate text-xs font-bold text-text-primary">{formatEnum(favoriteStatus() ?? 'PLANNING')}</span>
+                  </div>
+                  <label class="editorial-field-group min-w-0">
+                    <span class="editorial-label">Library status</span>
+                    <select
+                      class="editorial-field min-w-0 w-full px-3 text-sm font-semibold"
+                      value={favoriteStatus() ?? 'PLANNING'}
+                      disabled={savingStatus() || savingFavorite()}
+                      onChange={(e) => { void changeFavoriteStatus(e.currentTarget.value as FavoriteStatus) }}
+                    >
+                      <For each={FAVORITE_STATUSES}>{(s) => <option value={s}>{formatEnum(s)}</option>}</For>
+                    </select>
+                  </label>
+                </div>
+              </Show>
             </div>
 
             <div class="pt-2">

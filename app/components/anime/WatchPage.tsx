@@ -173,6 +173,9 @@ export function WatchPage(props: { anime: AniListDetail }) {
               <LazyPlayer
                 streams={session.streams()}
                 serverName={session.selectedServerName()}
+                resumeAt={session.resumeAt()}
+                onProgress={session.updatePlaybackProgress}
+                onEnded={session.markPlaybackComplete}
               />
             </Match>
             <Match when={session.playerStage() === 'streams-loading'}>

@@ -66,5 +66,7 @@ export const scheduleQuery = (start: number, end: number) =>
   queryOptions({
     queryKey: queryKeys.schedule(start, end),
     queryFn: () => alSchedule(start, end),
-    staleTime: 1000 * 60 * 10,
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 30,
+    refetchInterval: 1000 * 60 * 5,
   })

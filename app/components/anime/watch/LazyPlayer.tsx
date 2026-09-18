@@ -49,7 +49,13 @@ function formatTime(seconds: number): string {
  * hls.js cannot run, because Chromium's `canPlayType` claims HLS support it
  * does not actually deliver for these proxied playlists.
  */
-export function LazyPlayer(props: { streams: Stream[]; serverName?: string }) {
+export function LazyPlayer(props: {
+  streams: Stream[]
+  serverName?: string
+  resumeAt?: number
+  onProgress?: (position: number, duration: number) => Promise<void> | void
+  onEnded?: () => Promise<void> | void
+}) {
   const [video, setVideo] = createSignal<HTMLVideoElement>()
   const [activeIndex, setActiveIndex] = createSignal(0)
   const [failure, setFailure] = createSignal<string | null>(null)
@@ -72,6 +78,12 @@ export function LazyPlayer(props: { streams: Stream[]; serverName?: string }) {
   let trackElements: HTMLTrackElement[] = []
   let subtitleObjectUrls: string[] = []
   let loadGeneration = 0
+  let initialResumeUsed = false
+  let mediaReady = false
+  let removeRestoreListener: (() => void) | undefined
+  let lastReportedPosition = 0
+  let lastReportedDuration = 0
+  let lastReportedAt = -Infinity
   let networkRecoveryUsed = false
   let mediaRecoveryUsed = false
 
@@ -176,6 +188,37 @@ export function LazyPlayer(props: { streams: Stream[]; serverName?: string }) {
     setFailure(message)
   }
 
+  const reportProgress = (position: number, totalDuration: number) => {
+    const onProgress = props.onProgress
+    if (!onProgress) return
+    if (!Number.isFinite(position) || position < 0 || !Number.isFinite(totalDuration) || totalDuration <= 0) return
+    lastReportedPosition = position
+    lastReportedDuration = totalDuration
+    lastReportedAt = Date.now()
+    void Promise.resolve(onProgress(position, totalDuration)).catch((cause) => {
+      console.error('Failed to persist playback progress.', cause)
+      setPlayerNotice('Playback progress could not be saved. Keep this tab open and try again.')
+    })
+  }
+
+  const flushProgress = () => {
+    const element = video()
+    if (!element || !mediaReady) return
+    const position = element.currentTime
+    const totalDuration = element.duration
+    if (!Number.isFinite(position) || position < 0 || !Number.isFinite(totalDuration) || totalDuration <= 0) return
+    if (position === lastReportedPosition && totalDuration === lastReportedDuration) return
+    reportProgress(position, totalDuration)
+  }
+
+  const reportThrottledProgress = (element: HTMLVideoElement) => {
+    const position = element.currentTime
+    const totalDuration = element.duration
+    if (!Number.isFinite(position) || position < 0 || !Number.isFinite(totalDuration) || totalDuration <= 0) return
+    if (Date.now() - lastReportedAt < 4000) return
+    reportProgress(position, totalDuration)
+  }
+
   const loadStream = async (index: number, resumeAt = 0, resumePlayback = false) => {
     const stream = props.streams[index]
     const element = video()
@@ -188,8 +231,11 @@ export function LazyPlayer(props: { streams: Stream[]; serverName?: string }) {
     setCurrentTime(0)
     setDuration(0)
     setBufferedTo(0)
+    mediaReady = false
     networkRecoveryUsed = false
     mediaRecoveryUsed = false
+    removeRestoreListener?.()
+    removeRestoreListener = undefined
     destroyHls()
     element.removeAttribute('src')
     element.load()
@@ -198,6 +244,7 @@ export function LazyPlayer(props: { streams: Stream[]; serverName?: string }) {
     const url = streamUrl(stream)
     const restore = () => {
       if (generation !== loadGeneration) return
+      mediaReady = true
       if (resumeAt > 0 && Number.isFinite(resumeAt)) {
         const total = element.duration
         element.currentTime = Number.isFinite(total) && total > 0 ? Math.min(resumeAt, total - 0.25) : resumeAt
@@ -206,9 +253,12 @@ export function LazyPlayer(props: { streams: Stream[]; serverName?: string }) {
       if (resumePlayback) void element.play().catch(() => setPlaying(false))
     }
 
+    // eslint-disable-next-line solid/reactivity -- cleanup captures this stream's native listener.
+    removeRestoreListener = () => element.removeEventListener('loadedmetadata', restore)
+    element.addEventListener('loadedmetadata', restore, { once: true })
+
     const playNatively = () => {
       element.src = url
-      element.addEventListener('loadedmetadata', restore, { once: true })
     }
 
     if (!(stream.is_hls || url.toLowerCase().includes('.m3u8'))) {
@@ -239,11 +289,6 @@ export function LazyPlayer(props: { streams: Stream[]; serverName?: string }) {
       })
       hls = instance
 
-      // eslint-disable-next-line solid/reactivity -- hls.js owns this imperative media lifecycle.
-      instance.on(HlsClass.Events.MANIFEST_PARSED, () => {
-        if (generation !== loadGeneration) return
-        restore()
-      })
       // eslint-disable-next-line solid/reactivity -- hls.js owns this imperative media lifecycle.
       instance.on(HlsClass.Events.SUBTITLE_TRACKS_UPDATED, () => {
         if (generation !== loadGeneration) return
@@ -284,12 +329,16 @@ export function LazyPlayer(props: { streams: Stream[]; serverName?: string }) {
     }
   }
 
-  // A new stream list means a new server or episode: always restart at the
-  // highest-quality variant rather than carrying over the previous position.
+  // Progress changes must never retrigger stream loading.
   createEffect(() => {
     const streams = props.streams
     const element = video()
-    if (element && streams.length > 0) void loadStream(0)
+    if (element && streams.length > 0) untrack(() => {
+      flushProgress()
+      const resume = initialResumeUsed ? element.currentTime : (props.resumeAt ?? 0)
+      initialResumeUsed = true
+      void loadStream(0, resume)
+    })
   })
 
   onMount(() => {
@@ -310,7 +359,10 @@ export function LazyPlayer(props: { streams: Stream[]; serverName?: string }) {
   })
 
   onCleanup(() => {
+    flushProgress()
     loadGeneration += 1
+    removeRestoreListener?.()
+    removeRestoreListener = undefined
     destroyHls()
     for (const url of subtitleObjectUrls) URL.revokeObjectURL(url)
     subtitleObjectUrls = []
@@ -332,6 +384,7 @@ export function LazyPlayer(props: { streams: Stream[]; serverName?: string }) {
   }
 
   const changeQuality = (index: number) => {
+    flushProgress()
     const element = video()
     void loadStream(index, element?.currentTime ?? 0, Boolean(element && !element.paused))
   }
@@ -431,10 +484,23 @@ export function LazyPlayer(props: { streams: Stream[]; serverName?: string }) {
             onPlaying={() => setStatus('ready')}
             onWaiting={() => setStatus((current) => (current === 'ready' ? 'buffering' : current))}
             onPlay={() => setPlaying(true)}
-            onPause={() => setPlaying(false)}
+            onPause={() => {
+              setPlaying(false)
+              flushProgress()
+            }}
+            onEnded={() => {
+              flushProgress()
+              const onEnded = props.onEnded
+              if (!onEnded) return
+              void Promise.resolve(onEnded()).catch((cause) => {
+                console.error('Failed to mark this episode complete.', cause)
+                setPlayerNotice('This episode could not be marked complete. Keep this tab open and try again.')
+              })
+            }}
             onTimeUpdate={(event) => {
               setCurrentTime(event.currentTarget.currentTime)
               syncBuffered(event.currentTarget)
+              reportThrottledProgress(event.currentTarget)
             }}
             onProgress={(event) => syncBuffered(event.currentTarget)}
             onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}

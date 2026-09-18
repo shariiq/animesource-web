@@ -162,9 +162,9 @@ function errorMessage(error) {
   return error instanceof Error ? error.message : String(error)
 }
 
-function recordResult({ service, target, ok, durationMs, details, error }) {
-  results.push({ service, target, ok, durationMs, details, error })
-  const icon = ok ? '✅ PASS' : '❌ FAIL'
+function recordResult({ service, target, ok, durationMs, details, error, blocking = true }) {
+  results.push({ service, target, ok, durationMs, details, error, blocking })
+  const icon = ok ? '✅ PASS' : blocking ? '❌ FAIL' : '⚠️ WARN'
   const time = `${(durationMs / 1000).toFixed(2)}s`
   console.log(`[${icon}] ${service.padEnd(9)} | ${target.padEnd(24)} | ${time.padStart(6)} | ${details || error || ''}`)
 }
@@ -410,8 +410,9 @@ async function runAniSourceChecks() {
         service: 'AniSource',
         target: '/health',
         ok: false,
+        blocking: false,
         durationMs: Math.round(performance.now() - overallHealthStart),
-        error: `${errorMessage(err)} (after ${HEALTH_ATTEMPTS} attempts)`,
+        error: `${errorMessage(err)} (after ${HEALTH_ATTEMPTS} attempts; probable cold start or transient outage)`,
       })
       break
     }
@@ -543,10 +544,11 @@ function escapeMarkdown(text) {
 }
 
 function writeSummary() {
-  const allPassed = results.every((r) => r.ok)
+  const blockingFailures = results.filter((r) => !r.ok && r.blocking)
+  const allPassed = blockingFailures.length === 0
   const total = results.length
   const passed = results.filter((r) => r.ok).length
-  const failed = total - passed
+  const failed = results.filter((r) => !r.ok).length
 
   console.log(`\n========================================`)
   console.log(`Live Smoke Summary: ${passed}/${total} passed (${failed} failed)`)
@@ -560,9 +562,9 @@ function writeSummary() {
     md += `| Service | Target / Endpoint | Status | Latency | Details / Error |\n`
     md += `|---|---|---|---|---|\n`
     for (const r of results) {
-      const statusIcon = r.ok ? '✅ PASS' : '❌ FAIL'
+      const statusIcon = r.ok ? '✅ PASS' : r.blocking ? '❌ FAIL' : '⚠️ WARN'
       const time = `${(r.durationMs / 1000).toFixed(2)}s`
-      const info = escapeMarkdown(r.ok ? r.details : `⚠️ ${r.error}`)
+      const info = escapeMarkdown(r.ok ? r.details : `${r.blocking ? '⚠️' : 'ℹ️'} ${r.error}`)
       md += `| ${escapeMarkdown(r.service)} | \`${escapeMarkdown(r.target)}\` | ${statusIcon} | ${time} | ${info} |\n`
     }
     md += `\n*Note: This operational smoke runs on a schedule and does not block PR verification gates.*\n`

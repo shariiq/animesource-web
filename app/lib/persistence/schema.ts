@@ -5,12 +5,17 @@ export interface Versioned<T> {
   data: T
 }
 
+export const favoriteStatusSchema = z.enum(['WATCHING', 'COMPLETED', 'PLANNING', 'PAUSED', 'DROPPED'])
+export type FavoriteStatus = z.infer<typeof favoriteStatusSchema>
+
 export const favoriteItemSchema = z.object({
   id: z.number(),
   title: z.string(),
   cover: z.string().default(''),
   format: z.string().nullable().default(null),
   averageScore: z.number().nullable().default(null),
+  // Version-1 records created before status support are planning by default.
+  status: favoriteStatusSchema.default('PLANNING'),
   ts: z.number(),
 })
 export type FavoriteItem = z.infer<typeof favoriteItemSchema>
@@ -24,6 +29,9 @@ export const continueItemSchema = z.object({
   animeId: z.string(),
   episodeId: z.string(),
   episodeNumber: z.number(),
+  position: z.number().nonnegative().default(0),
+  duration: z.number().nonnegative().default(0),
+  completed: z.boolean().default(false),
   ts: z.number(),
 })
 export type ContinueItem = z.infer<typeof continueItemSchema>

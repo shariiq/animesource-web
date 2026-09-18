@@ -52,6 +52,8 @@ export interface DetailRelation {
   format: string | null | undefined
   score: number | null | undefined
   label: string | undefined
+  type: string | null | undefined
+  siteUrl: string | null
 }
 
 export function isSafeExternalUrl(value: string | null | undefined): value is string {
@@ -181,6 +183,8 @@ export function getOrderedRelations(detail: AniListDetail): DetailRelation[] {
         format: node.format,
         score: node.averageScore,
         label: relation ? formatEnum(relation) : undefined,
+        type: node.type,
+        siteUrl: isSafeExternalUrl(node.siteUrl) ? node.siteUrl! : null,
         priority: relation ? relationPriority[relation] ?? 99 : 99,
         index,
       }]

@@ -10,11 +10,11 @@ AnimeSource uses Tailwind CSS v4 through the official `@tailwindcss/vite` plugin
 
 The accepted visual language is a **stark editorial and liquid-glass material system** characterized by:
 
-- **Maximum stark minimalist contrast**: Crisp ink (`--ink: #09090b`) against luminous paper (`--paper: #f8f8fa`) and canvas (`#fafafd`), anchored by razor-sharp hairlines and high-contrast typography.
+- **Maximum stark minimalist contrast**: E.g. Crisp ink (`--ink: #09090b`) against luminous paper (`--paper: #f8f8fa`) and canvas (`#fafafd`), anchored by razor-sharp hairlines and high-contrast typography.
 - **Liquid glass depth and exceptional polish**: Heavy optical refraction through frosted glass (`backdrop-filter: blur(54px) saturate(180%)`), white specular edge highlights (`inset 0 1.5px rgb(255 255 255)`), layered ambient shadows (`--shadow-glass`), and tactile multi-layer atmospheric depth with subtle static film grain.
 - **British industrial minimalism (inspired by nothing.tech)**: Transparent structural layers, raw monospace signal instrumentation (`DM Mono`), dot-matrix precision, and stark monochromatic discipline punctuated by deliberate accent pops.
 - **High-density, super-responsive components (inspired by comick.dev and MangaDex)**: Dense, beautifully articulated catalog metadata, fluid multi-rail discovery, comprehensive character/staff/relation graphs, instantaneous client-side search, and frictionless responsive layouts from mobile (390px) to ultra-wide desktop.
-- **Niche semantic accent coloring**: Purposeful, vibrant accent roles (`violet`, `plum`, `mint`, `acid`, `orange`, `emerald`) used with surgical restraint rather than overwhelming full-screen tints.
+- **Niche semantic accent coloring**: Purposeful, vibrant accent roles (`violet`, `plum`, `mint`, `acid`, `orange`, `emerald` etc ) used with surgical restraint rather than overwhelming full-screen tints.
 
 It is distinctly an editorial, liquid-glass, and industrial-minimalist system—not a retro Y2K chrome, Frutiger Aero bubble, skeuomorphic bevel, or dark-glass system. Those early explorations survive only as superseded research history.
 
@@ -64,7 +64,7 @@ The semantic values in `theme.css` are the production baseline.
 
 ### Accent palette
 
-Accents communicate hierarchy or state and should remain localized rather than becoming full-screen themes:
+Accents communicate hierarchy or state and should remain localized rather than becoming full-screen themes unless required for better design:
 
 - violet `#7665e8` — focus, editorial emphasis, and selected accents;
 - plum `#ae6a8d` — atmospheric warmth;
@@ -130,9 +130,9 @@ The shared shape and control metrics are:
 
 Use these named values before inventing local geometry. A route-specific measurement is acceptable only when it expresses a real composition constraint rather than duplicating an existing token.
 
-`ink-control` is the decisive action: ink fill, white label, mono signal typography, and a compact radius. `paper-control` is the secondary action: translucent paper, strong hairline, and ink label. `editorial-field` is the standard input/select treatment and receives an ink border, white fill, and violet focus halo on keyboard focus.
+`ink-control` is the decisive action: ink fill, white label, mono signal typography, and a compact radius. `paper-control` is the secondary action: translucent paper, strong hairline, and ink label. `editorial-field` is the input/select control primitive and receives an ink border, white fill, and violet focus halo on keyboard focus. Form fields must be wrapped in `editorial-field-group` (or equivalent grid composition with the standard 8px gap and mono label typography) to ensure full-width alignment, cursor behavior, and consistent vertical rhythm across Explore, Schedule, and Detail surfaces.
 
-Controls composed as one visual unit share height and baseline. Prominent search or input/action pairs use the prominent control height; ordinary controls use the standard control height. Rounded pill geometry is reserved for search, tags, and compact categorical controls rather than applied indiscriminately.
+Do not override standard control heights (e.g. `h-9` or `h-8`) with ad-hoc utility classes. Controls composed as one visual unit share height and baseline. Prominent search or input/action pairs use the prominent control height; ordinary controls use the standard control height (`42px`). Rounded pill geometry is reserved for search, tags, and compact categorical controls rather than applied indiscriminately.
 
 ## Atmospheric composition
 
@@ -153,12 +153,22 @@ New screens should begin with the existing vocabulary:
 - `editorial-page` / `PageShell` establish the centered page width, side gutters, and vertical rhythm.
 - `SectionHeading` establishes the shared section title and description hierarchy without decorative numbering by default.
 - `frosted-shell` and `material-panel` establish primary and nested surface depth.
-- `ink-control`, `paper-control`, and `editorial-field` establish actions and form controls.
+- `ink-control`, `paper-control`, and `editorial-field` establish actions and form controls. `editorial-field-group` composes a labeled form field with standard typography, gap, and sizing; use it instead of restating label, gap, and width classes per consumer.
 - `editorial-row` establishes repeated list and result behavior.
 - `search-surface` recipes establish compact and full query composition, popovers, result states, and keyboard-focused selection.
 - `genre-tile`, `card`, `detail-section`, `detail-panel`, and `explore-grid` provide the existing discovery and detail compositions.
 
 Recipes may be combined with Tailwind utilities for layout, but consumers should not restate the recipe's color, blur, border, radius, shadow, typography, or interaction contract. When several consumers need the same variation, deepen the shared recipe instead of copying a literal class sequence.
+
+### Field placement contexts
+
+A CSS primitive such as `editorial-field` is not a finished component. Its visual quality depends on the surrounding field-group composition. Three placement contexts use the same field primitive and control height but differ in surrounding composition:
+
+- **Filter deck** (Explore, Schedule): Horizontal grid of labeled fields inside a `material-panel`. Labels and fields are evenly spaced via route-specific grid columns. Fields are full-width within each column.
+- **Dense row editor** (Library cards): Compact inline label and select within an `editorial-row`. The field group fits alongside a remove action within limited row depth. Use `editorial-field-group` at the narrower width.
+- **Hero-side action module** (Detail page poster column): A quiet nested translucent surface beneath a primary action button. The field sits inside a visually distinct container with its own border, radius, backdrop blur, and ambient shadow. A status signal above the select shows the current value before the select is opened.
+
+All three share: `editorial-field` as the primitive, `--control-height` (`42px`), `--radius-control` (`10px`), `--line-strong` border, `--surface-control` fill, mono uppercase label typography, violet focus halo, and the standard custom select arrow. Matching class names between contexts does not guarantee visual equivalence; rendered inspection at desktop and ~390px is required.
 
 ## Responsive and image-led composition
 
@@ -207,3 +217,12 @@ Check:
 - typed route intent and client-side navigation for interactive discovery surfaces.
 
 Behavioral regression tests should cover reported failures and route intent rather than asserting only that a parent section renders. External transports use mocks in CI; live AniList and AniSource calls do not.
+
+## Design improvement and justified exceptions
+
+Visual specifications, recipes, and constraints exist to ensure cohesive quality, not to preserve accidental awkwardness. When an existing recipe or layout constraint produces an inferior, cluttered, or inconsistent result in a specific context:
+
+1. **Design quality over slavish repetition:** Prioritize the overall aesthetic principles (clean typographic contrast, optical depth, disciplined spacing, and crisp edge delineation) over mechanically copying a poorly-fitted component recipe.
+2. **Deepen recipes over isolated hacks:** When a new placement context reveals a gap in the shared system (such as missing field-group wrappers or context-specific container treatments), generalize and formalize the solution in shared recipes rather than writing isolated inline style overrides.
+3. **Preserve invariants:** Every design variation must still honor foundational invariants: WCAG AA contrast, explicit keyboard focus visibility, zero horizontal overflow at 390px, standard semantic token usage, and reliance on validated production data.
+4. **Side-by-side rendered inspection:** Any exception or improvement must be evaluated side by side with existing routes in real browser viewports (desktop and mobile) to confirm visual harmony across the application.

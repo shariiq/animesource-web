@@ -3,7 +3,9 @@ import { appendFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 const ANILIST_URL = process.env.LIVE_ANILIST_URL || 'https://graphql.anilist.co'
-const ANISOURCE_BASE = (process.env.LIVE_ANISOURCE_BASE || 'https://anisource-api.onrender.com').replace(/\/+$/, '')
+const configuredAniSourceBase = process.env.LIVE_ANISOURCE_BASE || process.env.VITE_ANISOURCE_BASE
+if (!configuredAniSourceBase?.trim()) throw new Error('Set LIVE_ANISOURCE_BASE or VITE_ANISOURCE_BASE before running live smoke.')
+const ANISOURCE_BASE = configuredAniSourceBase.trim().replace(/\/+$/, '')
 const STEP_SUMMARY_FILE = process.env.GITHUB_STEP_SUMMARY
 
 // ---- Zod Boundary Schemas (matching production contracts) ----

@@ -1,19 +1,64 @@
+# Dependencies
 node_modules/
+.pnpm-store/
+
+# Build and framework output
 dist/
 .output/
 .vercel/
 .tanstack/
-dev.log
-*.log
+.vite/
+.cache/
+.turbo/
+
+# Environment and secrets
 .env
 .env.*
 !.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Test and coverage artifacts
+coverage/
 test-results/
 playwright-report/
-coverage/
-.claude/settings.json
+blob-report/
+playwright/.cache/
+
+# Local tooling and agent state
+.agents/
+.claude/
+skills-lock.json
+scripts/debug-subtitles.mjs
+
+# Tool caches and generated metadata
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+
+# Editor and OS metadata
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Root-level generated screenshots
 /*.png
 /*.jpg
 /*.jpeg
 /*.webp
 /*.gif
+
+# Temporary patch and scratch files
+*.orig
+*.rej
+/~/

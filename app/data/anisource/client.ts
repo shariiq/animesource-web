@@ -229,28 +229,64 @@ export function normalizeSubtitleText(raw: string): string {
   if (!/\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->/m.test(text)) {
     throw new AniSourceError('The subtitle source returned an unsupported caption format.', 'invalid')
   }
-  return `WEBVTT\n\n${text.replaceAll(',', '.')}`
+  const webVttText = text.replace(
+    /^(\s*\d{2}:\d{2}:\d{2}),(\d{3})(\s*-->\s*)(\d{2}:\d{2}:\d{2}),(\d{3})(.*)$/gm,
+    '$1.$2$3$4.$5$6',
+  )
+  return `WEBVTT\n\n${webVttText}`
+}
+
+function relaySubtitleHeaders(headers: Record<string, string>): { referer?: string; origin?: string } {
+  const relayHeaders: { referer?: string; origin?: string } = {}
+  for (const [name, value] of Object.entries(headers)) {
+    const normalized = name.toLowerCase()
+    if (normalized === 'referer') relayHeaders.referer = value
+    if (normalized === 'origin') relayHeaders.origin = value
+  }
+  return relayHeaders
 }
 
 /** Fetches a subtitle payload and returns browser-ready WebVTT text. */
-export async function loadSubtitle(url: string): Promise<string> {
+export async function loadSubtitle(url: string, headers: Record<string, string> = {}): Promise<string> {
   const resolved = resolveUrl(url) ?? url
-  let text: string
-  try {
+  const relayHeaders = relaySubtitleHeaders(headers)
+  const fetchDirect = async (): Promise<string> => {
     const response = await fetch(resolved, { headers: { Accept: 'text/vtt, text/plain;q=0.9, */*;q=0.1' } })
     if (!response.ok) throw new AniSourceError(`Subtitle request failed (${response.status}).`, 'http', response.status)
     const length = Number(response.headers.get('content-length') ?? 0)
     if (Number.isFinite(length) && length > MAX_SUBTITLE_BYTES) {
       throw new AniSourceError('The subtitle track is too large to load safely.', 'invalid')
     }
-    text = await response.text()
-  } catch (error) {
-    if (!resolved.startsWith('http')) throw error
+    return response.text()
+  }
+
+  const fetchViaRelay = async (): Promise<string> => {
+    if (!resolved.startsWith('http')) throw new AniSourceError('The subtitle URL is not relayable.', 'invalid')
     const { fetchSubtitleText } = await import('./subtitle-server')
+    return fetchSubtitleText({ data: { url: resolved, headers: relayHeaders } })
+  }
+
+  let text: string
+  if (Object.keys(relayHeaders).length > 0 && resolved.startsWith('http')) {
     try {
-      text = await fetchSubtitleText({ data: { url: resolved } })
-    } catch {
-      throw error
+      text = await fetchViaRelay()
+    } catch (relayError) {
+      try {
+        text = await fetchDirect()
+      } catch {
+        throw relayError
+      }
+    }
+  } else {
+    try {
+      text = await fetchDirect()
+    } catch (error) {
+      if (!resolved.startsWith('http')) throw error
+      try {
+        text = await fetchViaRelay()
+      } catch {
+        throw error
+      }
     }
   }
   if (new Blob([text]).size > MAX_SUBTITLE_BYTES) {

@@ -189,13 +189,14 @@ export function LazyPlayer(props: {
     for (const subtitle of stream.subtitles) {
       const trackElement = document.createElement('track')
       trackElement.kind = 'subtitles'
-      trackElement.src = resolveUrl(subtitle.url) ?? subtitle.url
+      const hasProviderHeaders = Object.keys(stream.headers).some((name) => /^(?:origin|referer)$/i.test(name))
+      if (!hasProviderHeaders) trackElement.src = resolveUrl(subtitle.url) ?? subtitle.url
       trackElement.label = subtitle.label || subtitle.language || 'Subtitle'
       if (subtitle.language) trackElement.srclang = subtitle.language
       element.appendChild(trackElement)
       trackElements.push(trackElement)
       register(trackElement, subtitle.language)
-      void loadSubtitle(subtitle.url)
+      void loadSubtitle(subtitle.url, stream.headers)
         .then((captionText) => {
           if (generation !== loadGeneration) return
           const objectUrl = URL.createObjectURL(new Blob([captionText], { type: 'text/vtt' }))
@@ -207,7 +208,10 @@ export function LazyPlayer(props: {
         .catch(() => {
           // Keep the direct URL as a fallback: some subtitle hosts allow native
           // track loading even when script fetches are blocked by CORS.
-          if (generation === loadGeneration) setSubtitleFailure('One subtitle language could not be normalized; native captions may still be available.')
+          if (generation === loadGeneration) {
+            trackElement.src = resolveUrl(subtitle.url) ?? subtitle.url
+            setSubtitleFailure('One subtitle language could not be normalized; native captions may still be available.')
+          }
         })
     }
   }

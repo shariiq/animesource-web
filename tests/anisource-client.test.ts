@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AniSourceError, createAniSourceClient, normalizeSubtitleText } from '../app/data/anisource/client'
+
+const subtitleRelay = vi.hoisted(() => ({
+  fetchSubtitleText: vi.fn(),
+}))
+
+vi.mock('../app/data/anisource/subtitle-server', () => subtitleRelay)
+
+import { AniSourceError, createAniSourceClient, loadSubtitle, normalizeSubtitleText } from '../app/data/anisource/client'
 
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 const transport = (fetch: (input: string, init?: RequestInit) => Promise<Response>) => ({
@@ -105,6 +112,37 @@ describe('AniSource client', () => {
     expect(normalizeSubtitleText('1\r\n00:00:01,250 --> 00:00:02,500\r\nHello')).toBe(
       'WEBVTT\n\n1\n00:00:01.250 --> 00:00:02.500\nHello',
     )
+    expect(normalizeSubtitleText('1\n00:00:01,250 --> 00:00:02,500\nHello, world')).toContain('Hello, world')
     expect(() => normalizeSubtitleText('<html>Access denied</html>')).toThrow(AniSourceError)
+  })
+
+  it('uses the provider relay before a browser fetch for protected subtitles', async () => {
+    const url = 'https://f0ja7.example/episode-1.vtt'
+    const browserFetch = vi.fn()
+    vi.stubGlobal('fetch', browserFetch)
+    subtitleRelay.fetchSubtitleText.mockResolvedValue(
+      'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nRelayed caption',
+    )
+
+    await expect(
+      loadSubtitle(url, {
+        Referer: 'https://anikototv.to/',
+        Origin: 'https://anikototv.to',
+        Cookie: 'must-not-forward',
+      }),
+    ).resolves.toContain('Relayed caption')
+
+    expect(browserFetch).not.toHaveBeenCalled()
+    expect(subtitleRelay.fetchSubtitleText).toHaveBeenCalledWith({
+      data: {
+        url,
+        headers: {
+          referer: 'https://anikototv.to/',
+          origin: 'https://anikototv.to',
+        },
+      },
+    })
+    vi.unstubAllGlobals()
+    subtitleRelay.fetchSubtitleText.mockReset()
   })
 })

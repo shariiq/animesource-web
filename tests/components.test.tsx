@@ -49,9 +49,17 @@ const hls = vi.hoisted(() => {
   return { state, instances, FakeHls };
 });
 
+const subtitleLoader = vi.hoisted(() => ({
+  load: vi.fn(),
+}));
+
 // jsdom media elements report no native HLS support (canPlayType returns ''),
 // so HLS streams take the dynamic hls.js import path — which this mock controls.
 vi.mock("hls.js", () => ({ default: hls.FakeHls }));
+vi.mock("../app/data/anisource/client", () => ({
+  loadSubtitle: subtitleLoader.load,
+  resolveUrl: (url: string) => url,
+}));
 
 // Keep these tests independent of a mounted TanStack Router and AniList.
 vi.mock("@tanstack/solid-router", () => ({
@@ -332,6 +340,8 @@ describe("LazyPlayer", () => {
   beforeEach(() => {
     hls.state.supported = true;
     hls.instances.length = 0;
+    subtitleLoader.load.mockReset();
+    subtitleLoader.load.mockRejectedValue(new Error("subtitle relay not configured"));
     Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false });
     Object.defineProperty(document, "fullscreenElement", { configurable: true, value: null });
   });
@@ -469,6 +479,30 @@ describe("LazyPlayer", () => {
 
     fireEvent.change(select, { target: { value: "-1" } });
     expect(track.track.mode).toBe("disabled");
+  });
+
+  it("passes the stream's provider headers to the subtitle loader", async () => {
+    const headers = {
+      Referer: "https://anikototv.to/",
+      Origin: "https://anikototv.to",
+    };
+    const stream = { ...subtitled, headers };
+    subtitleLoader.load.mockResolvedValue(
+      "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nRelayed caption",
+    );
+
+    const { container } = render(() => <LazyPlayer streams={[stream]} />);
+    expect(container.querySelector("track")?.getAttribute("src")).toBeNull();
+
+    await waitFor(() =>
+      expect(subtitleLoader.load).toHaveBeenCalledWith(
+        stream.subtitles[0]!.url,
+        headers,
+      ),
+    );
+    await waitFor(() =>
+      expect(container.querySelector("track")?.getAttribute("src")).toMatch(/^blob:/),
+    );
   });
 
   it("restores the saved subtitle preference when the stream exposes it", async () => {

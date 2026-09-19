@@ -31,6 +31,7 @@ Tier by impact; shared tokens, multiple consumers, or an explicit fidelity targe
 - Stopping rules constrain side quests, not completeness. After three failed attempts at one failure, stop and report attempts/evidence; seek another approach or direction. Defer unrelated work after ~15 minutes via GitHub Issues. Read failure rules below before blaming infrastructure or modifying a failing test.
 - No secrets or unrelated changes in commits. Branch + PR; no direct pushes to main. Commit/push only when asked.
 - Use 0 subagents
+- Prefer directly writing working code over writing ANY tests. NEVER write redundant tests by default, tests are written only when critically needed or when testing TRUE Core Logical Flow of the website.
 
 ## Context and skills
 
@@ -46,4 +47,4 @@ Tier by impact; shared tokens, multiple consumers, or an explicit fidelity targe
 
 ## Done
 
-Requested behavior works in real execution at the tier's depth, including rendered UI inspection and milestone/regression tests where applicable. Compilation alone is insufficient; broken requested behavior is not a deferral.
+Requested behavior works in real execution at the tier's depth, including rendered UI inspection and milestone/regression tests ONLY when critically required and where applicable. Compilation alone is insufficient; broken requested behavior is not a deferral.

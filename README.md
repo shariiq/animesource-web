@@ -20,7 +20,7 @@ Copy `.env.example` to `.env` when local endpoint overrides are needed:
 
 ```dotenv
 VITE_ANILIST_API_URL=https://graphql.anilist.co
-VITE_ANISOURCE_BASE=https://anisource-api.onrender.com
+VITE_ANISOURCE_BASE=https://anisource-api.vercel.app/
 ```
 
 These are public endpoint values. Never put credentials or private tokens in `VITE_` variables because Vite embeds them in browser assets.

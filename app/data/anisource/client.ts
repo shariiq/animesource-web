@@ -14,8 +14,6 @@ import {
   type Stream,
 } from './schema'
 
-export const ANISOURCE_DEFAULT_BASE_URL = 'https://anisource-api.onrender.com'
-
 /** A slow first response beyond this delay is surfaced as a probable cold start. */
 export const AS_COLD_START_DELAY_MS = 4_500
 export const AS_FETCH_TIMEOUT_MS = 25_000
@@ -61,7 +59,7 @@ export interface AniSourceClientOptions {
 
 function baseUrlFromEnv(): string {
   const fromEnv = import.meta.env.VITE_ANISOURCE_BASE
-  return typeof fromEnv === 'string' && fromEnv.trim() !== '' ? fromEnv.trim() : ANISOURCE_DEFAULT_BASE_URL
+  return typeof fromEnv === 'string' ? fromEnv.trim() : ''
 }
 
 /**
@@ -71,7 +69,7 @@ function baseUrlFromEnv(): string {
  */
 export function createAniSourceClient(options: AniSourceClientOptions = {}) {
   const transport: AniSourceTransport = { ...defaultTransport, ...options.transport }
-  const baseUrl = (options.baseUrl ?? baseUrlFromEnv()).replace(/\/+$/, '')
+  const baseUrl = (options.baseUrl ?? baseUrlFromEnv()).trim().replace(/\/+$/, '')
   const timeoutMs = options.fetchTimeoutMs ?? AS_FETCH_TIMEOUT_MS
 
   async function request<T>(
@@ -80,6 +78,8 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
     onSlow?: () => void,
     signal?: AbortSignal,
   ): Promise<T> {
+    if (!baseUrl) throw new AniSourceError('VITE_ANISOURCE_BASE is not configured.', 'invalid')
+
     const controller = new AbortController()
     let callerAborted = signal?.aborted ?? false
     const abortFromCaller = () => {

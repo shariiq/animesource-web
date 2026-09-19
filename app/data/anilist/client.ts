@@ -173,7 +173,6 @@ export function createAniListClient(options: AniListClientOptions = {}) {
             throw error
           }
           if (error.status !== 429 || attempt >= maxRetries) throw error
-          await waitForRateLimit(signal)
         }
       }
     },

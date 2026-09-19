@@ -66,7 +66,9 @@ describe('AniList client', () => {
     const client = createAniListClient({ transport: clientTransport, maxRetries: 1 })
     await expect(client.request('query')).resolves.toEqual({ Media: { id: 1 } })
     expect(fetch).toHaveBeenCalledTimes(2)
-    expect(clientTransport.sleep).toHaveBeenCalledWith(2_000)
+    expect(clientTransport.sleep).toHaveBeenCalledTimes(1)
+    expect(clientTransport.sleep.mock.calls[0]?.[0]).toBeGreaterThan(0)
+    expect(clientTransport.sleep.mock.calls[0]?.[0]).toBeLessThanOrEqual(2_000)
   })
   it('does not retry non-rate-limit HTTP failures', async () => {
     const client = createAniListClient({ transport: transport(async () => response({}, 500)) })

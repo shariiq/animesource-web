@@ -29,7 +29,7 @@ export const AS_MAX_RETRIES = 0 // AniSource failures are surfaced, not silently
 export class AniSourceError extends Error {
   constructor(
     message: string,
-    readonly kind: 'network' | 'http' | 'timeout' | 'invalid',
+    readonly kind: 'network' | 'http' | 'timeout' | 'invalid' | 'cancelled',
     readonly status?: number,
   ) {
     super(message)
@@ -78,8 +78,18 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
     path: string,
     schema: z.ZodType<T>,
     onSlow?: () => void,
+    signal?: AbortSignal,
   ): Promise<T> {
     const controller = new AbortController()
+    let callerAborted = signal?.aborted ?? false
+    const abortFromCaller = () => {
+      callerAborted = true
+      controller.abort()
+    }
+    if (signal) {
+      if (signal.aborted) controller.abort()
+      else signal.addEventListener('abort', abortFromCaller, { once: true })
+    }
     const timeout = transport.setTimeout(() => controller.abort(), timeoutMs)
     const slowTimer = onSlow ? transport.setTimeout(onSlow, AS_COLD_START_DELAY_MS) : null
     try {
@@ -127,6 +137,7 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
     } catch (error) {
       if (error instanceof AniSourceError) throw error
       if (error instanceof Error && error.name === 'AbortError') {
+        if (callerAborted) throw new AniSourceError('The streaming request was cancelled.', 'cancelled')
         throw new AniSourceError(
           'The streaming backend took too long to respond. It may still be waking up — try again in a moment.',
           'timeout',
@@ -139,6 +150,7 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
     } finally {
       transport.clearTimeout(timeout)
       if (slowTimer !== null) transport.clearTimeout(slowTimer)
+      signal?.removeEventListener('abort', abortFromCaller)
     }
   }
 
@@ -147,16 +159,16 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
   const SOURCE_CACHE_TTL = 10 * 60 * 1000 // 10 minutes
 
   return {
-    health(onSlow?: () => void): Promise<HealthResponse> {
-      return request('/health', healthResponseSchema, onSlow)
+    health(onSlow?: () => void, signal?: AbortSignal): Promise<HealthResponse> {
+      return request('/health', healthResponseSchema, onSlow, signal)
     },
 
-    sources(onSlow?: () => void): Promise<SourceListResponse> {
+    sources(onSlow?: () => void, signal?: AbortSignal): Promise<SourceListResponse> {
       const now = Date.now()
       if (cachedSources && now - cachedSources.ts < SOURCE_CACHE_TTL) {
         return cachedSources.promise
       }
-      const promise = request('/api/v1/sources', sourceListResponseSchema, onSlow)
+      const promise = request('/api/v1/sources', sourceListResponseSchema, onSlow, signal)
       cachedSources = { promise, ts: now }
       // Evict the cache on failure so subsequent calls retry.
       promise.catch(() => {
@@ -165,21 +177,21 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
       return promise
     },
 
-    search(sourceId: string, q: string, page = 1, onSlow?: () => void): Promise<SearchResponse> {
+    search(sourceId: string, q: string, page = 1, onSlow?: () => void, signal?: AbortSignal): Promise<SearchResponse> {
       const path =
         `/api/v1/${encodeURIComponent(sourceId)}/search` +
         `?q=${encodeURIComponent(q)}&page=${encodeURIComponent(page)}`
-      return request(path, searchResponseSchema, onSlow)
+      return request(path, searchResponseSchema, onSlow, signal)
     },
 
-    episodes(sourceId: string, animeId: string, onSlow?: () => void): Promise<Episode[]> {
+    episodes(sourceId: string, animeId: string, onSlow?: () => void, signal?: AbortSignal): Promise<Episode[]> {
       const path = `/api/v1/${encodeURIComponent(sourceId)}/episodes/${encodeURIComponent(animeId)}`
-      return request(path, episodeSchema.array(), onSlow)
+      return request(path, episodeSchema.array(), onSlow, signal)
     },
 
-    servers(sourceId: string, episodeId: string, onSlow?: () => void): Promise<Server[]> {
+    servers(sourceId: string, episodeId: string, onSlow?: () => void, signal?: AbortSignal): Promise<Server[]> {
       const path = `/api/v1/${encodeURIComponent(sourceId)}/servers/${encodeURIComponent(episodeId)}`
-      return request(path, serverSchema.array(), onSlow)
+      return request(path, serverSchema.array(), onSlow, signal)
     },
 
     streams(
@@ -187,11 +199,12 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
       episodeId: string,
       serverId: string,
       onSlow?: () => void,
+      signal?: AbortSignal,
     ): Promise<Stream[]> {
       const path =
         `/api/v1/${encodeURIComponent(sourceId)}/streams/${encodeURIComponent(episodeId)}` +
         `?server_id=${encodeURIComponent(serverId)}`
-      return request(path, streamSchema.array(), onSlow)
+      return request(path, streamSchema.array(), onSlow, signal)
     },
   }
 }

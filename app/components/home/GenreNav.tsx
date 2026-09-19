@@ -1,6 +1,7 @@
-import { createResource, For, Show } from 'solid-js'
+import { createQuery } from '@tanstack/solid-query'
+import { For, Show } from 'solid-js'
 import { Link } from '@tanstack/solid-router'
-import { alGenres } from '../../data/anilist/queries'
+import { genresQuery } from '../../data/options'
 import { makeBrowseSearch } from '../../lib/browse'
 
 const ACCENTS = [
@@ -14,14 +15,14 @@ function accentFor(index: number) {
 }
 
 export function GenreNav() {
-  const [genres] = createResource(alGenres)
+  const genres = createQuery(genresQuery)
 
   return (
-    <Show when={!genres.loading} fallback={<p class="mono-signal">Loading genres…</p>}>
-      <Show when={!genres.error} fallback={<p class="mono-signal" role="alert">Couldn't load genres.</p>}>
-        <Show when={genres()} fallback={<p class="mono-signal">No genres available.</p>}>
+    <Show when={!genres.isPending} fallback={<p class="mono-signal">Loading genres…</p>}>
+      <Show when={!genres.isError} fallback={<p class="mono-signal" role="alert">Couldn't load genres.</p>}>
+        <Show when={genres.data} fallback={<p class="mono-signal">No genres available.</p>}>
           <div class="genre-grid material-panel grid overflow-hidden sm:grid-cols-2 lg:grid-cols-3">
-            <For each={genres()}>
+            <For each={genres.data}>
               {(genre, index) => {
                 const accent = () => accentFor(index())
                 return (

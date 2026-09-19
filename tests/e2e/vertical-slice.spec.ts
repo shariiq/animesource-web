@@ -51,6 +51,19 @@ test("home to detail to watch resolves a stream and mounts the player", async ({
   await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
 });
 
+test("search to detail to watch mounts the player", async ({ page }) => {
+  await page.goto("/");
+  const search = page.getByRole("combobox", { name: "Search anime" });
+  await search.fill("Test Anime");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page).toHaveURL(/\/explore\?.*query=Test(?:\+|%20)Anime/);
+  await page.getByRole("link", { name: "Test Anime" }).first().click();
+  await page.getByRole("link", { name: /Watch now/i }).click();
+  await page.getByRole("button", { name: "Episode 1: Pilot" }).click();
+  await page.getByRole("button", { name: "Test server" }).click();
+  await expect(page.locator("video")).toBeVisible();
+});
+
 test("shows a specific empty-stream state for a selected server", async ({
   page,
 }) => {

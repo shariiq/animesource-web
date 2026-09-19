@@ -1,6 +1,8 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js'
 import type Hls from 'hls.js'
 import type { Stream } from '../../../data/anisource/schema'
+import type { PlaybackPreferenceValues } from '../../../lib/persistence/viewer'
+import type { PlaybackIdentity } from './createWatchSession'
 import { loadSubtitle, resolveUrl } from '../../../data/anisource/client'
 
 type PlayerStatus = 'connecting' | 'buffering' | 'ready' | 'reconnecting' | 'error'
@@ -27,6 +29,18 @@ type VideoWithNativeFullscreen = HTMLVideoElement & {
   webkitExitFullscreen?: () => void
 }
 
+type HlsErrorDetails = {
+  response?: { code?: number } | null
+  details?: string
+}
+
+function isExpiredStreamFailure(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false
+  const details = data as HlsErrorDetails
+  const status = details.response?.code
+  return status === 401 || status === 403 || status === 410 || /(?:401|403|410)/.test(details.details ?? '')
+}
+
 function browserSafeHeaders(headers: Record<string, string>): [string, string][] {
   return Object.entries(headers).filter(([name]) => !FORBIDDEN_HEADER.test(name))
 }
@@ -51,10 +65,14 @@ function formatTime(seconds: number): string {
  */
 export function LazyPlayer(props: {
   streams: Stream[]
+  identity?: PlaybackIdentity
   serverName?: string
   resumeAt?: number
-  onProgress?: (position: number, duration: number) => Promise<void> | void
-  onEnded?: () => Promise<void> | void
+  preferences?: PlaybackPreferenceValues
+  onPreferencesChange?: (preferences: PlaybackPreferenceValues) => Promise<void> | void
+  onProgress?: (identity: PlaybackIdentity, position: number, duration: number) => Promise<void> | void
+  onEnded?: (identity: PlaybackIdentity) => Promise<void> | void
+  onMediaError?: (identity: PlaybackIdentity, message: string, expired?: boolean) => void
 }) {
   const [video, setVideo] = createSignal<HTMLVideoElement>()
   const [activeIndex, setActiveIndex] = createSignal(0)
@@ -73,6 +91,7 @@ export function LazyPlayer(props: {
   const [subtitleFailure, setSubtitleFailure] = createSignal<string | null>(null)
   const [playerNotice, setPlayerNotice] = createSignal<string | null>(null)
   const [copyState, setCopyState] = createSignal<'idle' | 'copied' | 'unavailable'>('idle')
+  const [resumePrompt, setResumePrompt] = createSignal<number | null>(null)
 
   let hls: Hls | null = null
   let trackElements: HTMLTrackElement[] = []
@@ -86,6 +105,9 @@ export function LazyPlayer(props: {
   let lastReportedAt = -Infinity
   let networkRecoveryUsed = false
   let mediaRecoveryUsed = false
+  let progressWrite: Promise<void> = Promise.resolve()
+  let pendingProgress: { identity: PlaybackIdentity; position: number; duration: number } | null = null
+  let resumeDecisionIdentity: string | undefined
 
   const activeStream = () => props.streams[activeIndex()]
   const streamUrl = (stream: Stream) => resolveUrl(stream.url) ?? stream.url
@@ -109,6 +131,26 @@ export function LazyPlayer(props: {
       hls.subtitleDisplay = selected?.kind === 'hls'
       hls.subtitleTrack = selected?.kind === 'hls' ? selected.id : -1
     }
+  }
+
+  const matchesSavedSubtitle = (option: SubtitleOption): boolean => {
+    const language = props.preferences?.subtitleLanguage
+    const label = props.preferences?.subtitleLabel
+    if (!language && !label) return false
+    return (!language || option.language === language) && (!label || option.label === label)
+  }
+
+  const restoredSubtitleIndex = (
+    options: SubtitleOption[],
+    previous: SubtitleOption | undefined,
+  ): number => {
+    if (previous) {
+      const previousIndex = options.findIndex(
+        (option) => option.language === previous.language && option.label === previous.label,
+      )
+      if (previousIndex >= 0) return previousIndex
+    }
+    return options.findIndex(matchesSavedSubtitle)
   }
 
   /**
@@ -138,10 +180,7 @@ export function LazyPlayer(props: {
       if (options.some((current) => current.kind === 'external' && current.track === option.track)) return
       option.track.mode = 'disabled'
       options.push(option)
-      const restored = previous
-        ? options.findIndex((current) => current.label === previous.label && current.language === previous.language)
-        : -1
-      const nextIndex = restored >= 0 ? restored : -1
+      const nextIndex = restoredSubtitleIndex(options, previous)
       setSubtitleOptions([...options])
       setSubtitleIndex(nextIndex)
       applySubtitleSelection(nextIndex, options)
@@ -157,14 +196,13 @@ export function LazyPlayer(props: {
       trackElements.push(trackElement)
       register(trackElement, subtitle.language)
       void loadSubtitle(subtitle.url)
-        // eslint-disable-next-line solid/reactivity -- subtitle fetch completion is guarded by the stream generation.
         .then((captionText) => {
           if (generation !== loadGeneration) return
           const objectUrl = URL.createObjectURL(new Blob([captionText], { type: 'text/vtt' }))
           subtitleObjectUrls.push(objectUrl)
           trackElement.src = objectUrl
           trackElement.track.mode = 'disabled'
-          applySubtitleSelection(subtitleIndex(), subtitleOptions())
+          untrack(() => applySubtitleSelection(subtitleIndex(), subtitleOptions()))
         })
         .catch(() => {
           // Keep the direct URL as a fallback: some subtitle hosts allow native
@@ -189,16 +227,26 @@ export function LazyPlayer(props: {
   }
 
   const reportProgress = (position: number, totalDuration: number) => {
+    const identity = props.identity ?? { key: 'legacy-player', sourceId: '', episodeId: '', serverId: '' }
     const onProgress = props.onProgress
     if (!onProgress) return
     if (!Number.isFinite(position) || position < 0 || !Number.isFinite(totalDuration) || totalDuration <= 0) return
     lastReportedPosition = position
     lastReportedDuration = totalDuration
     lastReportedAt = Date.now()
-    void Promise.resolve(onProgress(position, totalDuration)).catch((cause) => {
-      console.error('Failed to persist playback progress.', cause)
-      setPlayerNotice('Playback progress could not be saved. Keep this tab open and try again.')
-    })
+    pendingProgress = { identity, position, duration: totalDuration }
+    const write = async () => {
+      const pending = pendingProgress
+      pendingProgress = null
+      if (!pending) return
+      try {
+        if (props.identity) await onProgress(pending.identity, pending.position, pending.duration)
+        else await (onProgress as unknown as (position: number, duration: number) => Promise<void> | void)(pending.position, pending.duration)
+      }
+      catch (cause) { console.error('Failed to persist playback progress.', cause); pendingProgress = pending; setPlayerNotice('Playback progress could not be saved. Keep this tab open and try again.') }
+    }
+    if (!props.identity) { void write(); return }
+    progressWrite = progressWrite.then(write)
   }
 
   const flushProgress = () => {
@@ -245,9 +293,11 @@ export function LazyPlayer(props: {
     const restore = () => {
       if (generation !== loadGeneration) return
       mediaReady = true
-      if (resumeAt > 0 && Number.isFinite(resumeAt)) {
-        const total = element.duration
-        element.currentTime = Number.isFinite(total) && total > 0 ? Math.min(resumeAt, total - 0.25) : resumeAt
+      const savedPosition = resumeAt > 0 && Number.isFinite(resumeAt) ? Math.min(resumeAt, element.duration - 0.25) : 0
+      const identityKey = props.identity?.key ?? 'legacy-player'
+      if (savedPosition > 5 && savedPosition < element.duration - 5 && identityKey !== resumeDecisionIdentity) {
+        resumeDecisionIdentity = identityKey
+        setResumePrompt(savedPosition)
       }
       applySubtitleSelection()
       if (resumePlayback) void element.play().catch(() => setPlaying(false))
@@ -300,12 +350,23 @@ export function LazyPlayer(props: {
         }))
         setSubtitleOptions((current) => {
           const options = [...current.filter((option) => option.kind === 'external'), ...manifestTracks]
-          applySubtitleSelection(subtitleIndex(), options)
+          const previous = current[subtitleIndex()]
+          const nextIndex = restoredSubtitleIndex(options, previous)
+          setSubtitleIndex(nextIndex)
+          applySubtitleSelection(nextIndex, options)
           return options
         })
       })
+      // eslint-disable-next-line solid/reactivity -- hls.js invokes this handler for the active stream generation.
       instance.on(HlsClass.Events.ERROR, (_event, data) => {
-        if (generation !== loadGeneration || !data.fatal) return
+        if (generation !== loadGeneration) return
+        if (isExpiredStreamFailure(data)) {
+          const message = 'This stream link has expired. Refresh this server to request a new stream.'
+          showFailure(message)
+          if (props.identity) props.onMediaError?.(props.identity, message, true)
+          return
+        }
+        if (!data.fatal) return
         if (data.type === HlsClass.ErrorTypes.NETWORK_ERROR && !networkRecoveryUsed) {
           networkRecoveryUsed = true
           setStatus('reconnecting')
@@ -318,7 +379,9 @@ export function LazyPlayer(props: {
           instance.recoverMediaError()
           return
         }
-        showFailure('This stream could not be played. Try another server, or open the stream directly.')
+        const message = 'This stream could not be played. Try another server, or open the stream directly.'
+        showFailure(message)
+        if (props.identity) props.onMediaError?.(props.identity, message, false)
       })
 
       instance.loadSource(url)
@@ -337,7 +400,9 @@ export function LazyPlayer(props: {
       flushProgress()
       const resume = initialResumeUsed ? element.currentTime : (props.resumeAt ?? 0)
       initialResumeUsed = true
-      void loadStream(0, resume)
+      const preferred = props.preferences?.quality
+      const preferredIndex = preferred ? streams.findIndex((stream) => stream.quality === preferred) : -1
+      void loadStream(preferredIndex >= 0 ? preferredIndex : 0, resume)
     })
   })
 
@@ -345,7 +410,11 @@ export function LazyPlayer(props: {
     const element = video()
     const nativeVideo = element as VideoWithNativeFullscreen | undefined
     setFullscreenAvailable(Boolean(element?.requestFullscreen || nativeVideo?.webkitEnterFullscreen))
-    const syncFullscreen = () => setFullscreen(document.fullscreenElement === element?.closest('.player'))
+    const syncFullscreen = () => {
+      const active = document.fullscreenElement === element?.closest('.player')
+      setFullscreen(active)
+      if (!active) void unlockOrientation()
+    }
     const syncNativeFullscreen = () => setFullscreen(true)
     const syncNativeExit = () => setFullscreen(false)
     document.addEventListener('fullscreenchange', syncFullscreen)
@@ -383,15 +452,26 @@ export function LazyPlayer(props: {
     }
   }
 
+  const persistPreferences = (next: PlaybackPreferenceValues) => {
+    void Promise.resolve(props.onPreferencesChange?.(next)).catch((cause) => {
+      console.error('Failed to persist playback preferences.', cause)
+      setPlayerNotice('The playback preference could not be saved.')
+    })
+  }
+
   const changeQuality = (index: number) => {
     flushProgress()
     const element = video()
+    const quality = props.streams[index]?.quality ?? null
+    persistPreferences({ ...(props.preferences ?? { quality: null, subtitleLanguage: null, subtitleLabel: null }), quality })
     void loadStream(index, element?.currentTime ?? 0, Boolean(element && !element.paused))
   }
 
   const changeSubtitle = (index: number) => {
     setSubtitleIndex(index)
     applySubtitleSelection(index, subtitleOptions())
+    const option = subtitleOptions()[index]
+    persistPreferences({ ...(props.preferences ?? { quality: null, subtitleLanguage: null, subtitleLabel: null }), subtitleLanguage: option?.language ?? null, subtitleLabel: option?.label ?? null })
   }
 
   const seekTo = (value: string) => {
@@ -418,6 +498,24 @@ export function LazyPlayer(props: {
     element.muted = !element.muted
   }
 
+  const lockOrientation = async () => {
+    if (typeof screen === 'undefined' || !screen.orientation?.lock) return
+    try {
+      await screen.orientation.lock('landscape')
+    } catch {
+      // Orientation locking is an optional browser capability.
+    }
+  }
+
+  const unlockOrientation = async () => {
+    if (typeof screen === 'undefined' || !screen.orientation?.unlock) return
+    try {
+      screen.orientation.unlock()
+    } catch {
+      // Orientation unlocking is an optional browser capability.
+    }
+  }
+
   const toggleFullscreen = async () => {
     const element = video()
     const stage = element?.closest('.player')
@@ -426,14 +524,17 @@ export function LazyPlayer(props: {
     try {
       if (document.fullscreenElement) {
         await document.exitFullscreen()
+        await unlockOrientation()
         return
       }
       if (stage.requestFullscreen) {
         await stage.requestFullscreen()
+        await lockOrientation()
         return
       }
       if (nativeVideo.webkitEnterFullscreen) {
         nativeVideo.webkitEnterFullscreen()
+        await lockOrientation()
         return
       }
       setFullscreenAvailable(false)
@@ -460,6 +561,13 @@ export function LazyPlayer(props: {
     }
   }
 
+  const chooseResume = (position: number) => {
+    const element = video()
+    if (element) element.currentTime = position
+    setCurrentTime(position)
+    setResumePrompt(null)
+  }
+  const formatRemaining = (position: number) => formatTime(Math.max(0, duration() - position))
   const playedPercent = () => (duration() > 0 ? (currentTime() / duration()) * 100 : 0)
   const bufferedPercent = () => (duration() > 0 ? (bufferedTo() / duration()) * 100 : 0)
   const busy = () => status() === 'connecting' || status() === 'buffering' || status() === 'reconnecting'
@@ -472,9 +580,17 @@ export function LazyPlayer(props: {
 
   return (
     <Show when={props.streams.length > 0}>
-      <section class="player overflow-hidden rounded-shell border border-black/20 bg-[#121217] shadow-[0_24px_60px_rgb(0_0_0/.22)]" aria-labelledby="player-title">
+      <section class="player overflow-hidden rounded-shell border border-black/20 bg-[#121217] shadow-[0_24px_60px_rgb(0_0_0/.22)]" aria-labelledby="player-title" aria-keyshortcuts="Space K ArrowLeft ArrowRight M F" onKeyDown={(event) => {
+        const target = event.target as HTMLElement
+        if (target.matches('input, select, textarea, button, [contenteditable="true"]')) return
+        if (event.key === ' ' || event.key.toLowerCase() === 'k') { event.preventDefault(); void togglePlayback() }
+        else if (event.key === 'ArrowLeft') { event.preventDefault(); seekTo(String(Math.max(0, currentTime() - 5))) }
+        else if (event.key === 'ArrowRight') { event.preventDefault(); seekTo(String(Math.min(duration(), currentTime() + 5))) }
+        else if (event.key.toLowerCase() === 'm') { event.preventDefault(); toggleMute() }
+        else if (event.key.toLowerCase() === 'f') { event.preventDefault(); void toggleFullscreen() }
+      }}>
         <h2 id="player-title" class="sr-only">{props.serverName ? `${props.serverName} player` : 'Video player'}</h2>
-        <div class="relative aspect-video bg-black">
+        <div class="relative aspect-video bg-black" tabIndex={0}>
           <video
             class="size-full cursor-pointer bg-black object-contain"
             playsinline
@@ -491,8 +607,12 @@ export function LazyPlayer(props: {
             onEnded={() => {
               flushProgress()
               const onEnded = props.onEnded
+              const identity = props.identity
               if (!onEnded) return
-              void Promise.resolve(onEnded()).catch((cause) => {
+              const completed = identity
+                ? onEnded(identity)
+                : (onEnded as unknown as () => Promise<void> | void)()
+              void Promise.resolve(completed).catch((cause) => {
                 console.error('Failed to mark this episode complete.', cause)
                 setPlayerNotice('This episode could not be marked complete. Keep this tab open and try again.')
               })
@@ -509,8 +629,25 @@ export function LazyPlayer(props: {
               setMuted(event.currentTarget.muted)
               setVolume(event.currentTarget.volume)
             }}
-            onError={() => showFailure('This stream could not be played. Try another server, or open the stream directly.')}
+            onError={() => {
+              const message = 'This stream could not be played. Try another server, or open the stream directly.'
+              showFailure(message)
+              if (props.identity) props.onMediaError?.(props.identity, message, false)
+            }}
           />
+          <Show when={resumePrompt() !== null}>
+            <div class="absolute inset-0 grid place-items-center bg-black/72 p-5 text-center text-white backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="resume-heading">
+              <div class="max-w-sm">
+                <p class="font-mono text-[9px] uppercase tracking-[.18em] text-white/60">Playback checkpoint</p>
+                <h3 id="resume-heading" class="mt-2 font-display text-4xl leading-none">Continue watching?</h3>
+                <p class="mt-3 text-sm text-white/75">You have {formatRemaining(resumePrompt()!)} remaining from {formatTime(resumePrompt()!)}.</p>
+                <div class="mt-5 flex flex-wrap justify-center gap-2">
+                  <button type="button" class="min-h-11 border border-white bg-white px-4 py-2 font-mono text-[10px] uppercase tracking-[.1em] text-black transition hover:bg-transparent hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white" onClick={() => chooseResume(resumePrompt()!)}>Continue from {formatTime(resumePrompt()!)}</button>
+                  <button type="button" class="min-h-11 border border-white/45 px-4 py-2 font-mono text-[10px] uppercase tracking-[.1em] transition hover:border-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white" onClick={() => chooseResume(0)}>Start from beginning</button>
+                </div>
+              </div>
+            </div>
+          </Show>
           <Show when={busy() && !failure()}>
             <div class="absolute inset-0 grid place-items-center gap-2 bg-black/55 font-mono text-[10px] uppercase tracking-[.12em] text-white" role="status">
               <span class="size-5 animate-spin rounded-full border-2 border-white/30 border-t-white" aria-hidden="true" />
@@ -537,10 +674,10 @@ export function LazyPlayer(props: {
             <span class="w-12 shrink-0 font-mono text-[10px] tabular-nums text-white/60">{formatTime(duration())}</span>
           </div>
 
-          <div class="mt-2 flex items-center gap-2">
+          <div class="mt-2 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              class="grid size-9 place-items-center rounded-[9px] border border-white bg-white text-black transition hover:bg-transparent hover:text-white"
+              class="grid size-11 shrink-0 place-items-center rounded-[9px] border border-white bg-white text-black transition hover:bg-transparent hover:text-white"
               aria-label={playing() ? 'Pause' : 'Play'}
               onClick={() => { void togglePlayback() }}
             >
@@ -550,7 +687,7 @@ export function LazyPlayer(props: {
             <div class="flex items-center gap-2">
               <button
                 type="button"
-                class="grid size-9 place-items-center rounded-[9px] border border-white/25 transition hover:border-white"
+                class="grid size-11 shrink-0 place-items-center rounded-[9px] border border-white/25 transition hover:border-white"
                 aria-label={muted() || volume() === 0 ? 'Unmute' : 'Mute'}
                 aria-pressed={muted() || volume() === 0}
                 onClick={toggleMute}
@@ -574,9 +711,9 @@ export function LazyPlayer(props: {
             <span class="flex-1" />
 
             <Show when={props.streams.length > 1}>
-              <label class="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/55">
+              <label class="flex min-w-0 items-center gap-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/55">
                 <span>Quality</span>
-                <select class="border border-white/20 bg-transparent px-2 py-1 text-white" value={activeIndex()} onChange={(event) => changeQuality(Number(event.currentTarget.value))}>
+                <select class="max-w-[8rem] border border-white/20 bg-transparent px-2 py-2 text-white" value={activeIndex()} onChange={(event) => changeQuality(Number(event.currentTarget.value))}>
                   <For each={props.streams}>
                     {(stream, index) => <option value={index()}>{stream.quality || `Variant ${index() + 1}`}</option>}
                   </For>
@@ -585,9 +722,9 @@ export function LazyPlayer(props: {
             </Show>
 
             <Show when={subtitleOptions().length > 0}>
-              <label class="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/55">
+              <label class="flex min-w-0 items-center gap-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/55">
                 <span>Subtitles</span>
-                <select class="border border-white/20 bg-transparent px-2 py-1 text-white" value={subtitleIndex()} onChange={(event) => changeSubtitle(Number(event.currentTarget.value))}>
+                <select class="max-w-[8rem] border border-white/20 bg-transparent px-2 py-2 text-white" value={subtitleIndex()} onChange={(event) => changeSubtitle(Number(event.currentTarget.value))}>
                   <option value="-1">Off</option>
                   <For each={subtitleOptions()}>
                     {(option, index) => <option value={index()}>{option.label}</option>}
@@ -599,7 +736,7 @@ export function LazyPlayer(props: {
             <Show when={fullscreenAvailable()}>
               <button
                 type="button"
-                class="grid size-9 place-items-center rounded-[9px] border border-white/25 transition hover:border-white"
+                class="grid size-11 shrink-0 place-items-center rounded-[9px] border border-white/25 transition hover:border-white"
                 aria-label={fullscreen() ? 'Exit fullscreen' : 'Enter fullscreen'}
                 aria-pressed={fullscreen()}
                 onClick={() => { void toggleFullscreen() }}

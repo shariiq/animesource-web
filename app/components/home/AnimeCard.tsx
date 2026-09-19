@@ -14,6 +14,7 @@ export function AnimeCard(props: { anime: AniListMedia; rank?: number }) {
   return (
     <Link
       class="group editorial-row grid min-h-[196px] min-w-0 grid-cols-[108px_minmax(0,1fr)_36px] text-inherit no-underline sm:grid-cols-[126px_minmax(0,1fr)_42px]"
+      preload={false}
       style={{ '--accent': accent() }}
       to="/anime/$animeId"
       params={{ animeId: String(props.anime.id) }}

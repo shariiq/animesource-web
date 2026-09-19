@@ -74,6 +74,11 @@ vi.mock("../app/data/options", () => ({
       mockHomeQueryFn ? mockHomeQueryFn() : new Promise<HomeData>(() => {}),
     staleTime: 1,
   }),
+  genresQuery: () => ({
+    queryKey: ["anilist", "genres"],
+    queryFn: () => ["Action", "Comedy"],
+    staleTime: 1,
+  }),
   suggestQuery: (query: string) => ({
     queryKey: ["anilist", "suggest", query],
     queryFn: () => searchMocks.suggest(),
@@ -296,10 +301,9 @@ describe("watch selectors", () => {
         loading={false}
       />
     ));
-    expect(screen.getByRole("button", { name: "Vidcloud" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    const selectedServer = screen.getByRole("button", { name: "Vidcloud" });
+    expect(selectedServer).toHaveAttribute("aria-pressed", "true");
+    expect(selectedServer).toHaveClass("border-black", "bg-black", "text-white");
   });
 });
 
@@ -410,6 +414,23 @@ describe("LazyPlayer", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("reports an expired HLS stream instead of hiding it as a generic media failure", async () => {
+    const identity = { key: "source:episode:server", sourceId: "source", episodeId: "episode", serverId: "server" };
+    const onMediaError = vi.fn();
+    render(() => <LazyPlayer streams={[hlsStream]} identity={identity} onMediaError={onMediaError} />);
+    await waitFor(() => expect(hls.instances).toHaveLength(1));
+
+    hls.instances[0]!.emit("hlsError", {
+      fatal: true,
+      type: "networkError",
+      details: "manifestLoadError",
+      response: { code: 403 },
+    });
+
+    expect(onMediaError).toHaveBeenCalledWith(identity, expect.stringContaining("expired"), true);
+    expect(screen.getByRole("alert")).toHaveTextContent("This stream link has expired");
+  });
+
   it("destroys the previous hls.js instance when the quality variant changes", async () => {
     const variants = [
       hlsStream,
@@ -448,6 +469,18 @@ describe("LazyPlayer", () => {
 
     fireEvent.change(select, { target: { value: "-1" } });
     expect(track.track.mode).toBe("disabled");
+  });
+
+  it("restores the saved subtitle preference when the stream exposes it", async () => {
+    const { container } = render(() => (
+      <LazyPlayer
+        streams={[subtitled]}
+        preferences={{ quality: null, subtitleLanguage: "en", subtitleLabel: "English" }}
+      />
+    ));
+    const select = await screen.findByLabelText("Subtitles");
+    expect(select).toHaveValue("0");
+    expect(container.querySelector("track")!.track.mode).toBe("showing");
   });
 
   it("adds subtitle tracks the HLS manifest declares and switches them through hls.js", async () => {
@@ -525,7 +558,14 @@ describe("LazyPlayer", () => {
       const video = container.querySelector("video")!;
       Object.defineProperty(video, "duration", { configurable: true, value: 120 });
       fireEvent.loadedMetadata(video);
+      // Saved progress is offered, never applied automatically.
+      expect(video.currentTime).toBe(0);
+      const resumeDialog = screen.getByRole("dialog", { name: /Continue watching/ });
+      expect(resumeDialog).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /Continue from 0:45/ }));
       expect(video.currentTime).toBe(45);
+      expect(screen.queryByRole("dialog", { name: /Continue watching/ })).not.toBeInTheDocument();
 
       video.currentTime = 46;
       fireEvent.timeUpdate(video);
@@ -554,6 +594,17 @@ describe("LazyPlayer", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("lets the viewer start from the beginning instead of applying saved progress", () => {
+    const { container } = render(() => <LazyPlayer streams={[direct]} resumeAt={45} />);
+    const video = container.querySelector("video")!;
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    fireEvent.loadedMetadata(video);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start from beginning" }));
+    expect(video.currentTime).toBe(0);
+    expect(screen.queryByRole("dialog", { name: /Continue watching/ })).not.toBeInTheDocument();
   });
 
   it("surfaces progress persistence failures in the player", async () => {
@@ -594,6 +645,25 @@ describe("LazyPlayer", () => {
     expect(player).toBe(container.querySelector(".player"));
     expect(screen.getByRole("button", { name: "Exit fullscreen" })).toBeInTheDocument();
   });
+
+  it("requests landscape orientation when fullscreen supports orientation locking", async () => {
+    const lock = vi.fn(async () => undefined);
+    Object.defineProperty(window.screen, "orientation", {
+      configurable: true,
+      value: { lock, unlock: vi.fn() },
+    });
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value: vi.fn(async function (this: HTMLElement) {
+        Object.defineProperty(document, "fullscreenElement", { configurable: true, value: this });
+        document.dispatchEvent(new Event("fullscreenchange"));
+      }),
+    });
+    render(() => <LazyPlayer streams={[direct]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
+    await waitFor(() => expect(lock).toHaveBeenCalledWith("landscape"));
+  });
 });
 
 describe("SearchSurface", () => {
@@ -621,6 +691,19 @@ describe("SearchSurface", () => {
       to: "/explore",
       search: expect.objectContaining({ query: "Cowboy Bebop", page: 1 }),
     }))
+  })
+
+  it("debounces suggestion requests until typing settles", async () => {
+    const searchClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } })
+    render(wrap(searchClient, () => <SearchSurface />))
+    const field = screen.getByRole("combobox", { name: "Search anime" })
+
+    fireEvent.input(field, { target: { value: "On" } })
+    fireEvent.input(field, { target: { value: "One" } })
+    fireEvent.input(field, { target: { value: "One P" } })
+    expect(searchMocks.suggest).not.toHaveBeenCalled()
+
+    await waitFor(() => expect(searchMocks.suggest).toHaveBeenCalledTimes(1), { timeout: 1_000 })
   })
 })
 

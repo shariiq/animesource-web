@@ -11,21 +11,21 @@ import type { BrowseFormat, BrowseSeason, BrowseStatus } from '../lib/browse'
 export const homeQuery = () =>
   queryOptions({
     queryKey: queryKeys.home,
-    queryFn: alHome,
+    queryFn: ({ signal }) => alHome(signal),
     staleTime: 1000 * 60 * 10,
   })
 
 export const detailQuery = (id: number) =>
   queryOptions({
     queryKey: queryKeys.detail(id),
-    queryFn: () => alDetail(id),
+    queryFn: ({ signal }) => alDetail(id, signal),
     staleTime: 1000 * 60 * 10,
   })
 
 export const byIdsQuery = (ids: readonly number[]) =>
   queryOptions({
     queryKey: queryKeys.byIds(ids),
-    queryFn: () => alByIds([...ids]),
+    queryFn: ({ signal }) => alByIds([...ids], signal),
     enabled: ids.length > 0,
     staleTime: 1000 * 60 * 10,
   })
@@ -43,14 +43,14 @@ export const browseQuery = (params: {
 }) =>
   queryOptions({
     queryKey: queryKeys.browse(params as Record<string, unknown>),
-    queryFn: () => alBrowse(params),
+    queryFn: ({ signal }) => alBrowse(params, signal),
     staleTime: 1000 * 60 * 5,
   })
 
 export const suggestQuery = (query: string) =>
   queryOptions({
     queryKey: queryKeys.suggest(query),
-    queryFn: () => alSuggest(query),
+    queryFn: ({ signal }) => alSuggest(query, signal),
     enabled: query.trim().length > 1,
     staleTime: 1000 * 60 * 10,
   })
@@ -58,14 +58,14 @@ export const suggestQuery = (query: string) =>
 export const genresQuery = () =>
   queryOptions({
     queryKey: queryKeys.genres,
-    queryFn: alGenres,
+    queryFn: ({ signal }) => alGenres(signal),
     staleTime: 1000 * 60 * 60 * 24,
   })
 
 export const scheduleQuery = (start: number, end: number) =>
   queryOptions({
     queryKey: queryKeys.schedule(start, end),
-    queryFn: () => alSchedule(start, end),
+    queryFn: ({ signal }) => alSchedule(start, end, signal),
     staleTime: 1000 * 60 * 5,
     gcTime: 1000 * 60 * 30,
     refetchInterval: 1000 * 60 * 5,

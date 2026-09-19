@@ -9,6 +9,7 @@ import {
   type WatchPersistence,
   type WatchSourceClient,
 } from '../app/components/anime/watch/createWatchSession'
+import { selectDefaultEpisode, selectDefaultEpisodeWithReason } from '../app/components/anime/watch/episodeNavigation'
 import type {
   AniSourceAnime,
   Episode,
@@ -436,9 +437,97 @@ describe('Watch session', () => {
     await session.updatePlaybackProgress(120, 1440)
     expect(persistence.updateProgress).not.toHaveBeenCalled()
   })
+
+  it('bounds repeated stream retries and exposes an observed alternate source', async () => {
+    const streams = vi.fn(async () => {
+      throw new Error('server unavailable')
+    })
+    const { session, api } = sessionParts({
+      api: {
+        sources: vi.fn(async () => ({
+          sources: [
+            { id: 'source-a', name: 'Source A', base_url: 'https://source-a.test' },
+            { id: 'source-b', name: 'Source B', base_url: 'https://source-b.test' },
+          ],
+          count: 2,
+        })),
+        streams,
+      },
+    })
+
+    await session.initialize()
+    await session.chooseServer('server-a')
+    expect(session.playbackIdentity()).toBeNull()
+    expect(session.fallbackSource()?.id).toBe('source-b')
+
+    await session.retryStreams()
+    await session.retryStreams()
+    await session.retryStreams()
+
+    expect(streams).toHaveBeenCalledTimes(3)
+    expect(session.watchError()?.retryable).toBe(false)
+    expect(api.sources).toHaveBeenCalledOnce()
+  })
+
+  it('ignores a stale stream response after the viewer changes server', async () => {
+    let releaseStale: ((streams: Stream[]) => void) | undefined
+    const streams = vi.fn((_source: string, _episode: string, serverId: string) => {
+      if (serverId === 'server-a') {
+        return new Promise<Stream[]>((resolve) => {
+          releaseStale = resolve
+        })
+      }
+      return Promise.resolve([stream('1080p')])
+    })
+    const { session } = sessionParts({
+      api: {
+        servers: vi.fn(async () => [server('server-a', 'Primary'), server('server-b', 'Backup')]),
+        streams,
+      },
+    })
+
+    await session.initialize()
+    const staleSelection = session.chooseServer('server-a')
+    await Promise.resolve()
+    await session.chooseServer('server-b')
+    releaseStale?.([stream('360p')])
+    await staleSelection
+
+    expect(session.selectedServer()).toBe('server-b')
+    expect(session.streams().map((item) => item.quality)).toEqual(['1080p'])
+  })
 })
 
 describe('Watch session helpers', () => {
+  const continueItem = (episodeId: string, episodeNumber: number, completed = false) => ({ id: 42, title: 'Signal', cover: '', sourceId: 'source-a', sourceName: 'Source A', animeId: 'signal-42', episodeId, episodeNumber, position: 20, duration: 100, completed, ts: 1 })
+
+  it('selects the first episode for a new generic next route even when airing metadata points later', () => {
+    const episodes = [episode({ id: 'episode-3&eps=3', number: 3 }), episode({ id: 'episode-1&eps=1', number: 1 })]
+    expect(selectDefaultEpisode(episodes, { requested: 'next', scheduleEpisode: 3 })?.id).toBe('episode-1&eps=1')
+  })
+
+  it('resumes the unfinished episode or advances after a completed episode', () => {
+    const episodes = [episode(), episode({ id: 'episode-2&eps=2', number: 2 }), episode({ id: 'episode-3&eps=3', number: 3 })]
+    const unfinished = continueItem('episode-2&eps=2', 2)
+    const completed = continueItem('episode-2&eps=2', 2, true)
+    expect(selectDefaultEpisode(episodes, { requested: 'next', latest: unfinished })?.number).toBe(2)
+    expect(selectDefaultEpisode(episodes, { requested: 'next', latest: completed })?.number).toBe(3)
+    expect(selectDefaultEpisode(episodes, { requested: 'next', latest: continueItem('episode-3&eps=3', 3, true) })?.number).toBe(3)
+  })
+
+  it('prioritizes schedule intent over playback history for next airing episode', () => {
+    const episodes = [episode(), episode({ id: 'episode-2&eps=2', number: 2 }), episode({ id: 'episode-3&eps=3', number: 3 })]
+    const latest = continueItem('episode-1&eps=1', 1)
+    expect(selectDefaultEpisode(episodes, { requested: 'next', latest, fromSchedule: true, scheduleEpisode: 3 })?.number).toBe(3)
+    expect(selectDefaultEpisodeWithReason(episodes, { requested: 'next', latest, fromSchedule: true, scheduleEpisode: 4 }).reason).toBe('schedule-source-lag')
+    expect(selectDefaultEpisodeWithReason(episodes, { requested: 'next', latest, fromSchedule: true, scheduleEpisode: 4 }).episode?.number).toBe(3)
+  })
+
+  it('preserves explicit episode routes over playback history', () => {
+    const episodes = [episode(), episode({ id: 'episode-2&eps=2', number: 2 })]
+    const latest = continueItem('episode-2&eps=2', 2)
+    expect(selectDefaultEpisode(episodes, { requested: 'episode-1', latest })?.number).toBe(1)
+  })
   it('resolves route tokens and preserves opaque episode IDs', () => {
     const opaque = episode()
     expect(episodeRouteToken(opaque)).toBe('episode-1')

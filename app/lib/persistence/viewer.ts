@@ -8,14 +8,20 @@ import {
   type FavoriteItem,
   type FavoriteStatus,
   type MatchItem,
+  playbackDoc,
+  playbackPrefsDoc,
+  type PlaybackPreferences as PlaybackPreferenceValues,
+  type PlaybackRecord,
 } from './schema'
 
 const FAVORITES = 'favorites'
 const CONTINUE = 'continue'
+const PLAYBACK_PREFIX = 'playback:'
+const PLAYBACK_PREFS = 'playbackPrefs'
 const PREF_SOURCE = 'prefSource'
 const MATCH_PREFIX = 'match:'
 
-export type { ContinueItem, FavoriteItem, FavoriteStatus, MatchItem }
+export type { ContinueItem, FavoriteItem, FavoriteStatus, MatchItem, PlaybackRecord, PlaybackPreferenceValues }
 
 export interface FavoriteDraft {
   id: number
@@ -44,6 +50,15 @@ export interface PlaybackProgress {
   duration: number
 }
 
+export interface PlaybackDraft extends PlaybackProgress {
+  title: string
+  cover: string
+  sourceId: string
+  sourceName: string
+  animeId: string
+  episodeNumber: number
+}
+
 export function isPlaybackComplete(position: number, duration: number): boolean {
   if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(position) || position <= 0) {
     return false
@@ -61,13 +76,17 @@ export interface ViewerLibrary {
   removeFavorite(id: number): Promise<void>
   getContinue(): Promise<ContinueItem[]>
   recordContinue(item: ContinueDraft): Promise<void>
+  getPlaybackRecord(id: number, episodeId: string): Promise<PlaybackRecord | null>
+  recordPlayback(item: PlaybackDraft): Promise<void>
   updateProgress(progress: PlaybackProgress): Promise<void>
   markEpisodeComplete(id: number, episodeId: string): Promise<void>
   removeContinue(id: number): Promise<void>
+  getPlaybackPreferences(): Promise<PlaybackPreferenceValues>
+  setPlaybackPreferences(preferences: PlaybackPreferenceValues): Promise<void>
   clearContinue(): Promise<void>
 }
 
-export interface PlaybackPreferences {
+export interface SourcePreferences {
   getPreferredSource(): Promise<string | null>
   setPreferredSource(sourceId: string): Promise<void>
   getSavedMatch(anilistId: number): Promise<MatchItem | null>
@@ -75,7 +94,7 @@ export interface PlaybackPreferences {
   clearSavedMatch(anilistId: number): Promise<void>
 }
 
-export interface ViewerData extends ViewerLibrary, PlaybackPreferences {}
+export interface ViewerData extends ViewerLibrary, SourcePreferences {}
 
 async function getFavorites(): Promise<FavoriteItem[]> {
   return (await indexedDbStore.read(FAVORITES, favoritesDoc)) ?? []
@@ -137,7 +156,57 @@ async function recordContinue(draft: ContinueDraft): Promise<void> {
   })
 }
 
+function playbackKey(id: number, episodeId: string): string {
+  return `${PLAYBACK_PREFIX}${id}:${episodeId}`
+}
+
+async function getPlaybackRecord(id: number, episodeId: string): Promise<PlaybackRecord | null> {
+  const stored = await indexedDbStore.read(playbackKey(id, episodeId), playbackDoc)
+  if (stored) return stored
+  const current = await getContinue()
+  const legacy = current.find((entry) => entry.id === id && entry.episodeId === episodeId)
+  if (!legacy) return null
+  return {
+    ...legacy,
+    completedAt: legacy.completed ? legacy.ts : null,
+  }
+}
+
+async function recordPlayback(item: PlaybackDraft): Promise<void> {
+  const now = Date.now()
+  await indexedDbStore.update(playbackKey(item.id, item.episodeId), 1, playbackDoc, (current) => ({
+    id: item.id,
+    title: item.title,
+    cover: item.cover,
+    sourceId: item.sourceId,
+    sourceName: item.sourceName,
+    animeId: item.animeId,
+    episodeId: item.episodeId,
+    episodeNumber: item.episodeNumber,
+    position: current?.position ?? 0,
+    duration: current?.duration ?? 0,
+    completed: current?.completed ?? false,
+    completedAt: current?.completedAt ?? null,
+    ts: now,
+  }))
+}
+
 async function updateProgress(progress: PlaybackProgress): Promise<void> {
+  const currentRecord = await getPlaybackRecord(progress.id, progress.episodeId)
+  if (currentRecord) {
+    const safeDuration = Number.isFinite(progress.duration) && progress.duration > 0 ? progress.duration : currentRecord.duration
+    const safePosition = Number.isFinite(progress.position) && progress.position >= 0 ? progress.position : currentRecord.position
+    const completed = currentRecord.completed || isPlaybackComplete(safePosition, safeDuration)
+    await indexedDbStore.write(playbackKey(progress.id, progress.episodeId), 1, {
+      ...currentRecord,
+      position: safePosition,
+      duration: safeDuration,
+      completed,
+      completedAt: completed ? (currentRecord.completedAt ?? Date.now()) : null,
+      ts: Date.now(),
+    }, playbackDoc)
+  }
+
   await indexedDbStore.update(CONTINUE, 1, continueDoc, (current) => {
     const list = current ?? []
     const index = list.findIndex((entry) => entry.id === progress.id && entry.episodeId === progress.episodeId)
@@ -147,29 +216,40 @@ async function updateProgress(progress: PlaybackProgress): Promise<void> {
     const safeDuration = Number.isFinite(progress.duration) && progress.duration > 0 ? progress.duration : existing.duration
     const safePosition = Number.isFinite(progress.position) && progress.position >= 0 ? progress.position : existing.position
     const completed = existing.completed || isPlaybackComplete(safePosition, safeDuration)
-
-    const updated: ContinueItem = {
-      ...existing,
-      position: safePosition,
-      duration: safeDuration,
-      completed,
-      ts: Date.now(),
-    }
-
-    // Keep most recently watched at top
+    const updated: ContinueItem = { ...existing, position: safePosition, duration: safeDuration, completed, ts: Date.now() }
     return [updated, ...list.filter((_, i) => i !== index)].slice(0, 20)
   })
 }
 
 async function markEpisodeComplete(id: number, episodeId: string): Promise<void> {
+  const currentRecord = await getPlaybackRecord(id, episodeId)
+  if (currentRecord) {
+    await indexedDbStore.write(playbackKey(id, episodeId), 1, {
+      ...currentRecord,
+      completed: true,
+      completedAt: currentRecord.completedAt ?? Date.now(),
+      ts: Date.now(),
+    }, playbackDoc)
+  }
   await indexedDbStore.update(CONTINUE, 1, continueDoc, (current) => {
     const list = current ?? []
     const index = list.findIndex((entry) => entry.id === id && entry.episodeId === episodeId)
     if (index < 0) return list
-
     const updated: ContinueItem = { ...list[index]!, completed: true, ts: Date.now() }
     return [updated, ...list.filter((_, i) => i !== index)].slice(0, 20)
   })
+}
+
+async function getPlaybackPreferences(): Promise<PlaybackPreferenceValues> {
+  return (await indexedDbStore.read(PLAYBACK_PREFS, playbackPrefsDoc)) ?? {
+    quality: null,
+    subtitleLanguage: null,
+    subtitleLabel: null,
+  }
+}
+
+async function setPlaybackPreferences(preferences: PlaybackPreferenceValues): Promise<void> {
+  await indexedDbStore.write(PLAYBACK_PREFS, 1, preferences, playbackPrefsDoc)
 }
 
 async function removeContinue(id: number): Promise<void> {
@@ -190,10 +270,14 @@ export const browserViewerData: ViewerData = {
   removeFavorite,
   getContinue,
   recordContinue,
+  getPlaybackRecord,
+  recordPlayback,
   updateProgress,
   markEpisodeComplete,
   removeContinue,
   clearContinue,
+  getPlaybackPreferences,
+  setPlaybackPreferences,
   getPreferredSource: () => indexedDbStore.read(PREF_SOURCE, prefSourceDoc),
   setPreferredSource: (sourceId) => indexedDbStore.write(PREF_SOURCE, 1, sourceId, prefSourceDoc),
   getSavedMatch: (anilistId) => indexedDbStore.read(MATCH_PREFIX + anilistId, matchDoc),

@@ -1,6 +1,6 @@
 # Engineering Standard
 
-Ship complete, working, maintainable features. For UI, composition, behavior, responsive layout, and accessibility are one implementation: establish hierarchy, typography, density, surfaces, and states early with real loader data; render during development and inspect the actual route at desktop and ~390px before declaring done. Compare approved references side by side; disclose missing rendering capability before starting a fidelity task. Efficiency comes from scope, never reduced correctness.
+Ship the **best** complete, working, maintainable, readable features. For UI, composition, behavior, responsive layout, and accessibility are one implementation: establish hierarchy, typography, density, surfaces, and states early with real loader data; render during development and inspect the actual route at desktop and ~390px before declaring done. Compare approved references side by side; disclose missing rendering capability before starting a fidelity task. Efficiency comes from scope, never reduced correctness.
 
 ## Tier once, out loud
 
@@ -30,6 +30,7 @@ Tier by impact; shared tokens, multiple consumers, or an explicit fidelity targe
 - Build the requested feature, not unrelated coverage improvements. Batch tests at milestone end; the milestone requires its test pass, and every real bug fix requires regression coverage. Batch reruns at natural stopping points.
 - Stopping rules constrain side quests, not completeness. After three failed attempts at one failure, stop and report attempts/evidence; seek another approach or direction. Defer unrelated work after ~15 minutes via GitHub Issues. Read failure rules below before blaming infrastructure or modifying a failing test.
 - No secrets or unrelated changes in commits. Branch + PR; no direct pushes to main. Commit/push only when asked.
+- Use 0 subagents
 
 ## Context and skills
 

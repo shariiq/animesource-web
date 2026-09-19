@@ -37,6 +37,7 @@ export function SearchSurface() {
   let root: HTMLDivElement | undefined
   let field: HTMLInputElement | undefined
   let debounceTimer: number | undefined
+  let queryGeneration = 0
 
   const suggestions = createQuery(() => suggestQuery(query()))
   // Solid Query's data accessor suspends while an enabled query has no data.
@@ -101,7 +102,16 @@ export function SearchSurface() {
   const applyValue = (value: string) => {
     setInput(value)
     setActiveIndex(-1)
-    setQuery(normalizeSearchQuery(value) ?? '')
+    if (debounceTimer !== undefined) window.clearTimeout(debounceTimer)
+    const generation = ++queryGeneration
+    setQuery('')
+
+    const normalized = normalizeSearchQuery(value)
+    if (value.trim().length <= 1 || !normalized) return
+
+    debounceTimer = window.setTimeout(() => {
+      if (generation === queryGeneration) setQuery(normalized)
+    }, SEARCH_DELAY_MS)
   }
 
   /** Programmatic text changes must also write the DOM the user types into. */
@@ -113,18 +123,9 @@ export function SearchSurface() {
   const updateInput = (event: InputEvent & { currentTarget: HTMLInputElement }) => {
     const value = event.currentTarget.value
     const trimmed = value.trim()
-    const normalized = normalizeSearchQuery(value)
     applyValue(value)
-    if (debounceTimer !== undefined) window.clearTimeout(debounceTimer)
 
     setOpen(trimmed.length > 1 || (trimmed.length === 0 && history().length > 0))
-    if (trimmed.length <= 1) return
-
-    // Retain a short quiet period before surfacing network state changes while
-    // the query itself remains fully reactive to the current Solid signal.
-    debounceTimer = window.setTimeout(() => {
-      setOpen(Boolean(normalized))
-    }, SEARCH_DELAY_MS)
   }
 
   const openAnime = async (anime: AniListMedia) => {

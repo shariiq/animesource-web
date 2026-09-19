@@ -36,6 +36,40 @@ export const continueItemSchema = z.object({
 })
 export type ContinueItem = z.infer<typeof continueItemSchema>
 
+/** Durable per-episode state. ContinueItem remains the latest-per-anime projection. */
+export const playbackRecordSchema = z.object({
+  id: z.number(),
+  title: z.string(),
+  cover: z.string().default(''),
+  sourceId: z.string(),
+  sourceName: z.string().default(''),
+  animeId: z.string(),
+  episodeId: z.string(),
+  episodeNumber: z.number(),
+  position: z.number().nonnegative().default(0),
+  duration: z.number().nonnegative().default(0),
+  completed: z.boolean().default(false),
+  completedAt: z.number().nullable().default(null),
+  ts: z.number(),
+})
+export type PlaybackRecord = z.infer<typeof playbackRecordSchema>
+
+export const playbackPreferencesSchema = z.object({
+  quality: z.string().nullable().default(null),
+  subtitleLanguage: z.string().nullable().default(null),
+  subtitleLabel: z.string().nullable().default(null),
+})
+export type PlaybackPreferences = z.infer<typeof playbackPreferencesSchema>
+
+export const playbackDoc = z.object({
+  v: z.literal(1),
+  data: playbackRecordSchema,
+})
+export const playbackPrefsDoc = z.object({
+  v: z.literal(1),
+  data: playbackPreferencesSchema,
+})
+
 export const matchItemSchema = z.object({
   sourceId: z.string(),
   animeId: z.string(),

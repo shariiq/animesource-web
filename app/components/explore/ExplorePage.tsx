@@ -208,17 +208,17 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
                 <span class="explore-pagination-label">Pages</span>
                 <div class="explore-page-controls">
                   <Show when={props.search().page > 1} fallback={<button class="explore-page-direction" type="button" disabled>← Previous</button>}>
-                    <Link class="explore-page-direction" to="/explore" search={searchAtPage(props.search(), props.search().page - 1)}>← Previous</Link>
+                    <Link preload={false} class="explore-page-direction" to="/explore" search={searchAtPage(props.search(), props.search().page - 1)}>← Previous</Link>
                   </Show>
                   <div class="explore-page-numbers">
                     <For each={pages()}>{(page) => (
                       <Show when={page !== props.search().page} fallback={<span class="explore-page-number active" aria-current="page">{String(page).padStart(2, '0')}</span>}>
-                        <Link class="explore-page-number" to="/explore" search={searchAtPage(props.search(), page)} aria-label={`Page ${page}`}>{String(page).padStart(2, '0')}</Link>
+                        <Link preload={false} class="explore-page-number" to="/explore" search={searchAtPage(props.search(), page)} aria-label={`Page ${page}`}>{String(page).padStart(2, '0')}</Link>
                       </Show>
                     )}</For>
                   </div>
                   <Show when={pageInfo()!.hasNextPage && props.search().page < BROWSE_MAX_PAGE} fallback={<button class="explore-page-direction" type="button" disabled>Next →</button>}>
-                    <Link class="explore-page-direction" to="/explore" search={searchAtPage(props.search(), props.search().page + 1)}>Next →</Link>
+                    <Link preload={false} class="explore-page-direction" to="/explore" search={searchAtPage(props.search(), props.search().page + 1)}>Next →</Link>
                   </Show>
                 </div>
                 <span class="explore-pagination-total">{pageInfo()!.lastPage.toLocaleString()} pages</span>

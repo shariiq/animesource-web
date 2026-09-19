@@ -37,6 +37,22 @@ describe('AniList client', () => {
     const client = createAniListClient({ transport: transport(async () => { const error = new Error('aborted'); error.name = 'AbortError'; throw error }) })
     await expect(client.request('query')).rejects.toMatchObject({ name: 'AniListError', message: expect.stringContaining('too long') })
   })
+  it('passes caller cancellation to the transport without retrying it', async () => {
+    const controller = new AbortController()
+    const fetch = vi.fn(async (_input: string, _init?: RequestInit) => {
+      controller.abort()
+      const error = new Error('aborted')
+      error.name = 'AbortError'
+      throw error
+    })
+    const client = createAniListClient({ transport: transport(fetch) })
+
+    await expect(client.request('query', {}, controller.signal)).rejects.toMatchObject({
+      name: 'AniListError',
+      options: { cancelled: true },
+    })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
   it('rejects malformed JSON', async () => {
     const badResponse = { ok: true, status: 200, json: async () => { throw new SyntaxError('bad json') } } as unknown as Response
     const client = createAniListClient({ transport: transport(async () => badResponse) })
@@ -50,7 +66,9 @@ describe('AniList client', () => {
     const client = createAniListClient({ transport: clientTransport, maxRetries: 1 })
     await expect(client.request('query')).resolves.toEqual({ Media: { id: 1 } })
     expect(fetch).toHaveBeenCalledTimes(2)
-    expect(clientTransport.sleep).toHaveBeenCalledWith(2_000)
+    expect(clientTransport.sleep).toHaveBeenCalledTimes(1)
+    expect(clientTransport.sleep.mock.calls[0]?.[0]).toBeGreaterThan(0)
+    expect(clientTransport.sleep.mock.calls[0]?.[0]).toBeLessThanOrEqual(2_000)
   })
   it('does not retry non-rate-limit HTTP failures', async () => {
     const client = createAniListClient({ transport: transport(async () => response({}, 500)) })

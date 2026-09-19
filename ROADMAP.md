@@ -62,7 +62,7 @@ The current application is a **working discovery plus watch vertical slice**. Th
 
 - `[x]` Favorites and Continue Watching are a complete local library experience with status filters, metadata refresh, unavailable-title handling, progress, completion, resume, and history management.
 - `[x]` The schedule route provides timezone-aware day/week views, library/status/genre filters, truthful airing states, and detail/Watch navigation.
-- `[~]` Watch persists and restores playback position and completion state, but previous/next episode behavior and rapid request cancellation remain Phase 2 work.
+- `[x]` Watch persists and restores playback position and completion state, supports reliable previous/next/continue-to-next behavior, and ignores stale requests after rapid route or selection changes.
 - `[ ]` No account, server-side library, or cross-device synchronization model.
 - `[ ]` No profile, settings, notification, or content-preference surfaces.
 - `[ ]` No production operations layer for monitoring, error reporting, source health, privacy, or deployment policy.
@@ -186,36 +186,36 @@ The current application is a **working discovery plus watch vertical slice**. Th
 
 ### Progress and episode lifecycle
 
-- `[ ]` Persist playback position while a stream is playing with throttling and a defined write-failure behavior.
-- `[ ]` Restore playback position when a viewer resumes an episode.
-- `[ ]` Define episode completion thresholds and record completed episodes explicitly.
-- `[ ]` Add previous-episode, next-episode, and continue-to-next behavior where episode ordering is reliable.
-- `[ ]` Keep route state, player state, and persistence state consistent when a viewer changes episode quickly.
+- `[x]` Persist playback position while a stream is playing with throttling and a defined write-failure behavior.
+- `[x]` Restore playback position when a viewer resumes an episode.
+- `[x]` Define episode completion thresholds and record completed episodes explicitly.
+- `[x]` Add previous-episode, next-episode, and continue-to-next behavior where episode ordering is reliable.
+- `[x]` Keep route state, player state, and persistence state consistent when a viewer changes episode quickly.
 
 ### Player preferences and controls
 
-- `[ ]` Persist quality preference with a safe fallback when a stream does not support it.
-- `[ ]` Persist subtitle, audio, and caption preferences where the resolved stream exposes those capabilities.
-- `[ ]` Improve mobile controls, alighnment issues, design, touch targets, orientation/fullscreen behavior, and keyboard shortcuts.
-- `[ ]` Add stream expiry handling and a clear recovery path.
-- `[ ]` Add skip-intro/outro only if reliable timing data exists; do not fake markers.
+- `[x]` Persist quality preference with a safe fallback when a stream does not support it.
+- `[x]` Persist subtitle and caption preferences where the resolved stream exposes those capabilities. Audio preference is intentionally out of scope because AniSource does not expose audio streams.
+- `[x]` Improve mobile controls, alignment issues, design, touch targets, orientation/fullscreen behavior, and keyboard shortcuts.
+- `[x]` Add stream expiry handling and a clear recovery path.
+- `[ ]` Add skip-intro/outro only if reliable timing data exists; do not fake markers. Deferred until AniSource exposes reliable timing metadata.
 
 ### Source and request resilience
 
-- `[ ]` Define source health and fallback behavior based on observed availability rather than arbitrary preference.
-- `[ ]` Cancel or ignore stale source, episode, server, and stream requests after route or selection changes.
-- `[ ]` Preserve useful error kinds for network failure, timeout/cold start, invalid payload, unavailable server, and expired stream.
-- `[ ]` Add bounded retry behavior only where it improves recovery and does not hide a provider failure.
-- `[ ]` Add source attribution and provider failure diagnostics suitable for a public product.
-- `[ ]` Establish AniSource capacity, uptime, and observability expectations before public launch.
+- `[x]` Define source health and fallback behavior based on observed availability rather than arbitrary preference.
+- `[x]` Cancel or ignore stale source, episode, server, and stream requests after route or selection changes.
+- `[x]` Preserve useful error kinds for network failure, timeout/cold start, invalid payload, unavailable server, and expired stream.
+- `[x]` Add bounded retry behavior only where it improves recovery and does not hide a provider failure.
+- `[x]` Add source attribution and provider failure diagnostics suitable for a public product.
+- `[x]` Establish AniSource capacity, uptime, and observability expectations before public launch.
 
 ### Phase 2 completion criteria
 
-- A viewer can start an episode, leave, return, and resume near the previous position.
-- Completing an episode updates history and offers the next episode without losing route intent.
-- Rapid episode/source changes cannot cause an older request to overwrite current UI or persistence state.
-- A failed server or expired stream produces a recoverable state with a useful alternative when one exists.
-- The one required Playwright smoke test covers search → detail → Watch → player mounting after the watch pipeline is feature-complete; broad media E2E expansion remains out of scope.
+- `[x]` A viewer can start an episode, leave, return, and resume near the previous position.
+- `[x]` Completing an episode updates history and offers the next episode without losing route intent.
+- `[x]` Rapid episode/source changes cannot cause an older request to overwrite current UI or persistence state.
+- `[x]` A failed server or expired stream produces a recoverable state with a useful alternative when one exists.
+- `[x]` The one required Playwright smoke test covers search → detail → Watch → player mounting after the watch pipeline is feature-complete; broad media E2E expansion remains out of scope.
 
 **Depends on:** Phase 0; Phase 1 library/history model should be available for visible progress.  
 **Unblocks:** Account sync and reliable daily watching.
@@ -347,6 +347,7 @@ These are intentional sequencing decisions, not forgotten tasks:
 - **Community features:** Do not add comments, ratings, reviews, or social lists before identity, moderation, privacy, reporting, and deletion are designed.
 - **Large visual redesigns:** Prefer product capability, data-model, and reliability work while the current approved paper/ink/frosted system is coherent.
 - **Broad snapshot suites:** Prefer focused tests at module interfaces and real regression cases over snapshots that make visual change expensive without proving behavior.
+- **Skip-intro/outro:** AniSource currently exposes no reliable timing metadata. Do not render guessed markers; revisit this item when the upstream contract supports verified timings.
 
 ## Milestone release gates
 
@@ -360,6 +361,15 @@ Before marking a milestone `[x]`:
 6. The documented completion criteria for that milestone are all true.
 
 ## Changelog
+
+### 2026-09-19
+
+- Completed the implementable Phase 2 playback work:
+  - restored saved subtitle/caption preferences, added mobile-friendly wrapped controls, 44px control targets, keyboard shortcut metadata, and optional landscape orientation locking;
+  - classified media-level HLS expiry and added fresh-stream recovery, source-health-ranked alternate Source selection, and a two-retry manual Stream limit;
+  - documented AniSource uptime, latency, capacity, alerting, and privacy-safe observability expectations;
+  - added focused player/session regressions and the required search → detail → Watch → player Playwright smoke journey.
+- Audio preference remains intentionally unsupported because AniSource does not return audio streams. Skip-intro/outro remains deferred because AniSource does not return reliable timing metadata.
 
 ### 2026-09-18
 

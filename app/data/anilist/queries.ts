@@ -101,7 +101,7 @@ function parsePayload<T>(schema: { parse(raw: unknown): T }, raw: unknown, what:
  * Home page query: returns 5 rails (trending, season, allTime, topRated, upcoming) using GraphQL aliases.
  * Mirrors alHome() from prototype exactly.
  */
-export async function alHome(): Promise<AniListHome> {
+export async function alHome(signal?: AbortSignal): Promise<AniListHome> {
   const s = currentSeason()
   const n = nextSeasonOf()
   const query = `
@@ -115,7 +115,7 @@ export async function alHome(): Promise<AniListHome> {
     ${HOME_MEDIA_FRAGMENT}
   `
   const variables = { season: s.season, year: s.year, nseason: n.season, nyear: n.year }
-  const raw = await anilistClient.request(query, variables)
+  const raw = await anilistClient.request(query, variables, signal)
   return parsePayload(homeShape, raw, 'the home rails')
 }
 
@@ -123,7 +123,7 @@ export async function alHome(): Promise<AniListHome> {
  * Detail page query: returns full Media with extended fields for anime detail page.
  * Mirrors alDetail() from prototype exactly.
  */
-export async function alDetail(id: number): Promise<AniListDetail> {
+export async function alDetail(id: number, signal?: AbortSignal): Promise<AniListDetail> {
   const query = `
     query($id:Int){
       Media(id:$id, type:ANIME){
@@ -163,7 +163,7 @@ export async function alDetail(id: number): Promise<AniListDetail> {
     ${MEDIA_FRAGMENT}
   `
   const variables = { id }
-  const raw = await anilistClient.request(query, variables)
+  const raw = await anilistClient.request(query, variables, signal)
   const parsed = parsePayload(z.object({ Media: detailShape.nullable() }), raw, `anime ${id}`)
   if (parsed.Media === null) throw new AniListError(`AniList could not find anime ${id}.`)
   return parsed.Media
@@ -173,9 +173,9 @@ export async function alDetail(id: number): Promise<AniListDetail> {
  * Returns genre list.
  * Mirrors alGenres() from prototype exactly.
  */
-export async function alGenres(): Promise<string[]> {
+export async function alGenres(signal?: AbortSignal): Promise<string[]> {
   const query = `query{ GenreCollection }`
-  const raw = await anilistClient.request(query)
+  const raw = await anilistClient.request(query, {}, signal)
   return parsePayload(z.object({ GenreCollection: genreCollectionShape }), raw, 'the genre collection').GenreCollection
 }
 
@@ -183,7 +183,7 @@ export async function alGenres(): Promise<string[]> {
  * Schedule query: returns airing schedules in a time window.
  * Mirrors alSchedule() from prototype exactly.
  */
-export async function alSchedule(start: number, end: number): Promise<AniListScheduleItem[]> {
+export async function alSchedule(start: number, end: number, signal?: AbortSignal): Promise<AniListScheduleItem[]> {
   const query = `
     query($start:Int,$end:Int,$page:Int){
       Page(page:$page,perPage:50){
@@ -198,7 +198,7 @@ export async function alSchedule(start: number, end: number): Promise<AniListSch
   const items: AniListScheduleItem[] = []
   let page = 1
   while (true) {
-    const raw = await anilistClient.request(query, { start, end, page })
+    const raw = await anilistClient.request(query, { start, end, page }, signal)
     const parsed = parsePayload(schedulePageShape, raw, 'the airing schedule')
     items.push(...parsed.Page.airingSchedules)
     if (!parsed.Page.pageInfo?.hasNextPage) return items
@@ -210,7 +210,7 @@ export async function alSchedule(start: number, end: number): Promise<AniListSch
  * Batch query by IDs: returns media for multiple IDs.
  * Mirrors alByIds() from prototype exactly.
  */
-export async function alByIds(ids: number[]): Promise<AniListMedia[]> {
+export async function alByIds(ids: number[], signal?: AbortSignal): Promise<AniListMedia[]> {
   const uniqueIds = [...new Set(ids)]
   if (!uniqueIds.length) return []
 
@@ -226,7 +226,7 @@ export async function alByIds(ids: number[]): Promise<AniListMedia[]> {
     `batch${index}`,
     z.object({ media: z.array(mediaShape) }),
   ])))
-  const parsed = parsePayload(shape, await anilistClient.request(query, variables), 'the id batches')
+  const parsed = parsePayload(shape, await anilistClient.request(query, variables, signal), 'the id batches')
   return batches.flatMap((_, index) => parsed[`batch${index}`]?.media ?? [])
 }
 
@@ -248,7 +248,7 @@ export async function alBrowse(opts: {
   season?: BrowseSeason | null
   seasonYear?: number | null
   search?: string | null
-}) {
+}, signal?: AbortSignal) {
   const filters: { arg: string; type: string; value: unknown }[] = [
     { arg: 'genre', type: 'String', value: opts.genre },
     { arg: 'format', type: 'MediaFormat', value: opts.format },
@@ -280,7 +280,7 @@ export async function alBrowse(opts: {
       : ['TRENDING_DESC'],
   }
   for (const filter of filters) variables[filter.arg] = filter.value
-  const raw = await anilistClient.request(query, variables)
+  const raw = await anilistClient.request(query, variables, signal)
   return parsePayload(z.object({ Page: z.object({ pageInfo: pageInfoShape, media: z.array(mediaShape) }) }), raw, 'the browse page').Page
 }
 
@@ -289,7 +289,7 @@ export async function alBrowse(opts: {
  * Keep this query narrow so optional browse filters cannot interfere with
  * AniList's title search behavior.
  */
-export async function alSuggest(query: string): Promise<AniListMedia[]> {
+export async function alSuggest(query: string, signal?: AbortSignal): Promise<AniListMedia[]> {
   const search = query.trim()
   if (!search) return []
   const gql = `
@@ -300,7 +300,7 @@ export async function alSuggest(query: string): Promise<AniListMedia[]> {
     }
     ${MEDIA_FRAGMENT}
   `
-  const raw = await anilistClient.request(gql, { search, sort: ['POPULARITY_DESC'] })
+  const raw = await anilistClient.request(gql, { search, sort: ['POPULARITY_DESC'] }, signal)
   return parsePayload(z.object({ Page: z.object({ media: z.array(mediaShape) }) }), raw, 'search suggestions').Page.media
 }
 

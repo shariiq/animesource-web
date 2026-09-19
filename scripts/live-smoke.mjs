@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { appendFileSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
 
 const ANILIST_URL = process.env.LIVE_ANILIST_URL || 'https://graphql.anilist.co'
 const ANISOURCE_BASE = (process.env.LIVE_ANISOURCE_BASE || 'https://anisource-api.onrender.com').replace(/\/+$/, '')
@@ -156,7 +157,44 @@ const HEALTH_ATTEMPTS = 4
 const HEALTH_ATTEMPT_TIMEOUT_MS = 8_000
 const HEALTH_RETRY_DELAY_MS = 1_000
 const TRANSIENT_HEALTH_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504])
+const SERVICE_ATTEMPTS = 4
 const results = []
+
+export async function fetchWithRetry(
+  url,
+  {
+    attempts = SERVICE_ATTEMPTS,
+    timeoutMs,
+    headers = { Accept: 'application/json' },
+    retryStatuses = TRANSIENT_HEALTH_STATUSES,
+    fetchImpl = fetch,
+    sleep = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+  },
+) {
+  let lastError
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetchImpl(url, {
+        headers,
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+
+      if (response.ok || attempt >= attempts || !retryStatuses.has(response.status)) {
+        return { response, attempt }
+      }
+
+      lastError = new Error(`HTTP ${response.status} (${response.statusText})`)
+    } catch (error) {
+      lastError = error
+      if (attempt >= attempts) return { error: lastError, attempt }
+    }
+
+    await sleep(HEALTH_RETRY_DELAY_MS)
+  }
+
+  return { error: lastError, attempt: attempts }
+}
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error)
@@ -422,49 +460,62 @@ async function runAniSourceChecks() {
   let firstSourceId = null
   const t1 = performance.now()
   try {
-    const res = await fetch(`${ANISOURCE_BASE}/api/v1/sources`, {
+    const request = await fetchWithRetry(`${ANISOURCE_BASE}/api/v1/sources`, {
+      attempts: SERVICE_ATTEMPTS,
+      timeoutMs: 15_000,
       headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(15_000),
     })
 
-    if (!res.ok) {
+    if (request.error) {
       recordResult({
         service: 'AniSource',
         target: '/api/v1/sources',
         ok: false,
         durationMs: Math.round(performance.now() - t1),
-        error: `HTTP ${res.status} (${res.statusText})`,
+        error: `${errorMessage(request.error)} after ${request.attempt}/${SERVICE_ATTEMPTS} attempts; probable cold start or transient outage`,
       })
     } else {
-      const json = await res.json()
-      const durationMs = Math.round(performance.now() - t1)
-      const parsed = sourceListResponseSchema.safeParse(json)
-      if (!parsed.success) {
+      const res = request.response
+      if (!res) throw new Error('Retry helper returned neither a response nor an error')
+      if (!res.ok) {
         recordResult({
           service: 'AniSource',
           target: '/api/v1/sources',
           ok: false,
-          durationMs,
-          error: 'Payload failed Zod sources schema',
-        })
-      } else if (parsed.data.sources.length === 0) {
-        recordResult({
-          service: 'AniSource',
-          target: '/api/v1/sources',
-          ok: false,
-          durationMs,
-          error: 'Zero sources returned',
+          durationMs: Math.round(performance.now() - t1),
+          error: `HTTP ${res.status} (${res.statusText}) on attempt ${request.attempt}/${SERVICE_ATTEMPTS}`,
         })
       } else {
-        firstSourceId = parsed.data.sources[0].id
-        const names = parsed.data.sources.map((s) => s.id).join(', ')
-        recordResult({
-          service: 'AniSource',
-          target: '/api/v1/sources',
-          ok: true,
-          durationMs,
-          details: `${parsed.data.sources.length} sources active [${names}]`,
-        })
+        const json = await res.json()
+        const durationMs = Math.round(performance.now() - t1)
+        const parsed = sourceListResponseSchema.safeParse(json)
+        if (!parsed.success) {
+          recordResult({
+            service: 'AniSource',
+            target: '/api/v1/sources',
+            ok: false,
+            durationMs,
+            error: 'Payload failed Zod sources schema',
+          })
+        } else if (parsed.data.sources.length === 0) {
+          recordResult({
+            service: 'AniSource',
+            target: '/api/v1/sources',
+            ok: false,
+            durationMs,
+            error: 'Zero sources returned',
+          })
+        } else {
+          firstSourceId = parsed.data.sources[0].id
+          const names = parsed.data.sources.map((s) => s.id).join(', ')
+          recordResult({
+            service: 'AniSource',
+            target: '/api/v1/sources',
+            ok: true,
+            durationMs,
+            details: `${parsed.data.sources.length} sources active [${names}]`,
+          })
+        }
       }
     }
   } catch (err) {
@@ -483,39 +534,52 @@ async function runAniSourceChecks() {
     const query = 'Cowboy Bebop'
     try {
       const searchUrl = `${ANISOURCE_BASE}/api/v1/${encodeURIComponent(firstSourceId)}/search?q=${encodeURIComponent(query)}&page=1`
-      const res = await fetch(searchUrl, {
+      const request = await fetchWithRetry(searchUrl, {
+        attempts: SERVICE_ATTEMPTS,
+        timeoutMs: 20_000,
         headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(20_000),
       })
 
-      if (!res.ok) {
+      if (request.error) {
         recordResult({
           service: 'AniSource',
           target: `search (${firstSourceId})`,
           ok: false,
           durationMs: Math.round(performance.now() - t2),
-          error: `HTTP ${res.status} (${res.statusText})`,
+          error: `${errorMessage(request.error)} after ${request.attempt}/${SERVICE_ATTEMPTS} attempts; probable cold start or transient outage`,
         })
       } else {
-        const json = await res.json()
-        const durationMs = Math.round(performance.now() - t2)
-        const parsed = searchResponseSchema.safeParse(json)
-        if (!parsed.success) {
+        const res = request.response
+        if (!res) throw new Error('Retry helper returned neither a response nor an error')
+        if (!res.ok) {
           recordResult({
             service: 'AniSource',
             target: `search (${firstSourceId})`,
             ok: false,
-            durationMs,
-            error: 'Payload failed Zod search schema',
+            durationMs: Math.round(performance.now() - t2),
+            error: `HTTP ${res.status} (${res.statusText}) on attempt ${request.attempt}/${SERVICE_ATTEMPTS}`,
           })
         } else {
-          recordResult({
-            service: 'AniSource',
-            target: `search (${firstSourceId})`,
-            ok: true,
-            durationMs,
-            details: `Found ${parsed.data.items.length} candidates for "${query}"`,
-          })
+          const json = await res.json()
+          const durationMs = Math.round(performance.now() - t2)
+          const parsed = searchResponseSchema.safeParse(json)
+          if (!parsed.success) {
+            recordResult({
+              service: 'AniSource',
+              target: `search (${firstSourceId})`,
+              ok: false,
+              durationMs,
+              error: 'Payload failed Zod search schema',
+            })
+          } else {
+            recordResult({
+              service: 'AniSource',
+              target: `search (${firstSourceId})`,
+              ok: true,
+              durationMs,
+              details: `Found ${parsed.data.items.length} candidates for "${query}"`,
+            })
+          }
         }
       }
     } catch (err) {
@@ -532,6 +596,7 @@ async function runAniSourceChecks() {
       service: 'AniSource',
       target: 'search',
       ok: false,
+      blocking: false,
       durationMs: 0,
       error: 'Skipped search check because no source was available',
     })
@@ -585,7 +650,9 @@ async function main() {
   process.exit(success ? 0 : 1)
 }
 
-main().catch((err) => {
-  console.error('Fatal live smoke error:', err)
-  process.exit(1)
-})
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error('Fatal live smoke error:', err)
+    process.exit(1)
+  })
+}

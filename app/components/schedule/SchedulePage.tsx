@@ -152,12 +152,15 @@ export function SchedulePage(props: { search: Accessor<ScheduleSearch> }) {
 function ScheduleRow(props: { item: AniListScheduleItem; now: number; saved: boolean }) {
   const animeId = () => props.item.media?.id
   const title = () => props.item.media?.title?.english ?? props.item.media?.title?.romaji ?? 'Untitled release'
+  /** An episode that has not aired yet is not playable, so it resolves through the viewer's next episode. */
+  const aired = () => props.item.airingAt * 1000 <= props.now
+  const watchEpisodeId = () => (aired() && props.item.episode ? `episode-${props.item.episode}` : 'next')
 
   return (
     <article class="schedule-row">
-      <Show when={animeId()} fallback={<div class="schedule-row-cover" />}>
+      <Show when={animeId()} fallback={<div class="schedule-row-cover" />} keyed>
         {(id) => (
-          <Link class="schedule-row-cover" to="/anime/$animeId" params={{ animeId: String(id()) }} aria-label={`Open ${title()}`}>
+          <Link class="schedule-row-cover" to="/anime/$animeId" params={{ animeId: String(id) }} aria-label={`Open ${title()}`}>
             {props.item.media?.coverImage?.large ? <img src={props.item.media.coverImage.large} alt="" loading="lazy" decoding="async" /> : null}
           </Link>
         )}
@@ -171,11 +174,11 @@ function ScheduleRow(props: { item: AniListScheduleItem; now: number; saved: boo
       </div>
       <div class="schedule-row-action">
         <strong>{countdownLabel(props.item.airingAt, props.now)}</strong>
-        <Show when={animeId() && props.item.airingAt * 1000 <= props.now + 60000}>
+        <Show when={animeId()} keyed>
           {(id) => (
-            <Link class="schedule-watch-button" to="/anime/$animeId/watch/$episodeId" params={{ animeId: String(id()), episodeId: props.item.episode ? `episode-${props.item.episode}` : 'next' }}>
+            <Link class="schedule-watch-button" to="/anime/$animeId/watch/$episodeId" params={{ animeId: String(id), episodeId: watchEpisodeId() }} state={watchEpisodeId() === 'next' ? { watchIntent: 'schedule' } : undefined}>
               <span class="schedule-watch-glyph" aria-hidden="true" />
-              <span>Watch now</span>
+              <span>{aired() ? 'Watch now' : 'Watch next'}</span>
             </Link>
           )}
         </Show>

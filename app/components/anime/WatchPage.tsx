@@ -6,7 +6,7 @@ import {
   Show,
   Switch,
 } from 'solid-js'
-import { Link, useNavigate, useParams } from '@tanstack/solid-router'
+import { Link, useLocation, useNavigate, useParams } from '@tanstack/solid-router'
 import { anisourceClient } from '../../data/anisource/client'
 import type { AniListDetail } from '../../data/anilist/types'
 import { titleVariants } from '../../data/matching'
@@ -32,11 +32,13 @@ const watchPersistence: WatchPersistence = browserViewerData
 export function WatchPage(props: { anime: AniListDetail }) {
   const params = useParams({ from: '/anime/$animeId/watch/$episodeId' })
   const navigate = useNavigate()
+  const location = useLocation()
   const routeEpisodeId = () => params().episodeId
   const sourceSearchParam = () => {
     if (typeof window === 'undefined') return undefined
     return new URLSearchParams(window.location.search).get('source') ?? undefined
   }
+  const fromSchedule = () => location().state.watchIntent === 'schedule'
 
   // The route loader supplies an immutable anime record for this page instance.
   const session = createWatchSession({
@@ -44,6 +46,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
     anime: props.anime,
     routeEpisodeId,
     sourceSearchParam,
+    fromSchedule,
     api: watchApi,
     persistence: watchPersistence,
     navigateToEpisode: async (episodeId, sourceId) => {
@@ -51,6 +54,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
         to: '/anime/$animeId/watch/$episodeId',
         params: { animeId: String(props.anime.id), episodeId },
         search: sourceId ? { source: sourceId } : undefined,
+        state: fromSchedule() ? { watchIntent: 'schedule' } : undefined,
         replace: true,
       })
     },
@@ -116,8 +120,24 @@ export function WatchPage(props: { anime: AniListDetail }) {
               </For>
             </select>
           </Show>
-          <span class="mt-3 block font-mono text-[9px] uppercase tracking-[.1em] text-emerald-700">
-            ● {session.slow() ? 'Waking source' : 'Source ready'}
+          <span
+            class="mt-3 block font-mono text-[9px] uppercase tracking-[.1em]"
+            classList={{
+              'text-emerald-700': session.sourceHealth()[session.selectedSource()]?.status === 'healthy',
+              'text-amber-800': session.slow() || session.sourceHealth()[session.selectedSource()]?.status === 'checking' || session.sourceHealth()[session.selectedSource()]?.status === 'degraded',
+              'text-red-800': session.sourceHealth()[session.selectedSource()]?.status === 'unavailable',
+            }}
+            role="status"
+          >
+            ● {session.slow()
+              ? 'Waking source'
+              : session.sourceHealth()[session.selectedSource()]?.status === 'checking'
+                ? 'Checking source'
+                : session.sourceHealth()[session.selectedSource()]?.status === 'degraded'
+                  ? 'Source degraded'
+                  : session.sourceHealth()[session.selectedSource()]?.status === 'unavailable'
+                    ? 'Source unavailable'
+                    : 'Source ready'}
           </span>
         </div>
       </header>
@@ -128,22 +148,62 @@ export function WatchPage(props: { anime: AniListDetail }) {
       >
         {session.statusText()}
       </p>
+      <Show when={session.notice()}>
+        {(message) => <p class="mb-5 rounded-[12px] border border-amber-700/25 bg-amber-50/75 px-4 py-3 font-mono text-[10px] uppercase tracking-[.08em] text-amber-950 shadow-[0_12px_30px_-20px_rgb(0_0_0/.35)]" role="status">{message()}</p>}
+      </Show>
       <Show when={session.error()}>
         {(message) => (
           <div
             class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-panel border border-red-800/25 bg-red-50/75 p-4 text-sm text-red-900 shadow-[0_16px_36px_-24px_rgb(0_0_0/.25)] backdrop-blur-xl"
             role="alert"
           >
-            <p>{message()}</p>
-            <button
-              class="border border-red-900 bg-red-900 px-3 py-2 font-mono text-[10px] uppercase tracking-[.1em] text-white"
-              type="button"
-              onClick={() => {
-                void session.initialize()
-              }}
-            >
-              Retry connection
-            </button>
+            <div>
+              <p>{message()}</p>
+              <Show when={session.watchError()}>
+                {(diagnostic) => (
+                  <p class="mt-2 font-mono text-[10px] uppercase tracking-[.08em] text-red-900/75">
+                    <Show when={diagnostic().sourceName}>
+                      {(source) => <span>Source: {source()}.</span>}
+                    </Show>{' '}
+                    <Show when={diagnostic().serverName}>
+                      {(server) => <span>Server: {server()}.</span>}
+                    </Show>{' '}
+                    <span>{diagnostic().kind.replaceAll('-', ' ')} failure.</span>{' '}
+                    <Show when={diagnostic().retryCount > 0}>
+                      <span>Retry {diagnostic().retryCount}.</span>
+                    </Show>
+                  </p>
+                )}
+              </Show>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <Show when={session.watchError()?.retryable !== false}>
+                <button
+                  class="min-h-11 border border-red-900 bg-red-900 px-3 py-2 font-mono text-[10px] uppercase tracking-[.1em] text-white"
+                  type="button"
+                  onClick={() => {
+                    if (session.watchError()?.operation === 'streams') void session.retryStreams()
+                    else void session.initialize()
+                  }}
+                >
+                  {session.watchError()?.operation === 'streams'
+                    ? `Retry ${session.selectedServerName()}`
+                    : 'Retry connection'}
+                </button>
+              </Show>
+              <Show when={session.fallbackSource()}>
+                <button
+                  class="min-h-11 border border-red-900/50 px-3 py-2 font-mono text-[10px] uppercase tracking-[.1em] text-red-900 transition hover:bg-red-900 hover:text-white"
+                  type="button"
+                  onClick={() => {
+                    const alternate = session.fallbackSource()
+                    if (alternate) void session.chooseSource(alternate.id)
+                  }}
+                >
+                  Try another available source
+                </button>
+              </Show>
+            </div>
           </div>
         )}
       </Show>
@@ -172,10 +232,14 @@ export function WatchPage(props: { anime: AniListDetail }) {
             <Match when={session.playerStage() === 'player'}>
               <LazyPlayer
                 streams={session.streams()}
+                identity={session.playbackIdentity() ?? undefined}
                 serverName={session.selectedServerName()}
                 resumeAt={session.resumeAt()}
+                preferences={session.preferences()}
+                onPreferencesChange={session.savePlaybackPreferences}
                 onProgress={session.updatePlaybackProgress}
                 onEnded={session.markPlaybackComplete}
+                onMediaError={session.reportMediaFailure}
               />
             </Match>
             <Match when={session.playerStage() === 'streams-loading'}>
@@ -273,6 +337,20 @@ export function WatchPage(props: { anime: AniListDetail }) {
               </div>
             </Match>
           </Switch>
+          <Show when={session.continueNext()}>
+            {(episode) => (
+              <div class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-emerald-700/25 bg-emerald-50/75 p-4 text-sm text-emerald-950 shadow-[0_16px_36px_-24px_rgb(0_0_0/.25)] backdrop-blur-xl" role="status">
+                <p><span class="font-mono text-[9px] uppercase tracking-[.12em]">Episode complete</span><br />Continue to episode {episode().number}: {episode().title || `Episode ${episode().number}`}</p>
+                <button class="border border-emerald-900 bg-emerald-900 px-3 py-2 font-mono text-[10px] uppercase tracking-[.1em] text-white" type="button" onClick={() => { void session.chooseEpisode(episode().id) }}>Continue next</button>
+              </div>
+            )}
+          </Show>
+          <Show when={session.navigationReliable() && (session.previousEpisode() || session.nextEpisode())}>
+            <div class="mt-4 flex flex-wrap gap-2" aria-label="Episode navigation">
+              <button class="border border-black/18 px-3 py-2 font-mono text-[10px] uppercase tracking-[.1em] transition hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-40" type="button" disabled={!session.previousEpisode()} onClick={() => { const episode = session.previousEpisode(); if (episode) void session.chooseEpisode(episode.id) }}>Previous episode</button>
+              <button class="border border-black/18 px-3 py-2 font-mono text-[10px] uppercase tracking-[.1em] transition hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-40" type="button" disabled={!session.nextEpisode()} onClick={() => { const episode = session.nextEpisode(); if (episode) void session.chooseEpisode(episode.id) }}>Next episode</button>
+            </div>
+          </Show>
           <Show when={session.selectedEpisode()}>
             <ServerPicker
               servers={session.servers()}

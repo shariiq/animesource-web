@@ -462,7 +462,7 @@ async function runAniSourceChecks() {
   let firstSourceId = null
   const t1 = performance.now()
   try {
-    const request = await fetchWithRetry(`${ANISOURCE_BASE}/api/v1/sources`, {
+    const request = await fetchWithRetry(`${ANISOURCE_BASE}/api/v1/anime/sources`, {
       attempts: SERVICE_ATTEMPTS,
       timeoutMs: 15_000,
       headers: { Accept: 'application/json' },
@@ -471,7 +471,7 @@ async function runAniSourceChecks() {
     if (request.error) {
       recordResult({
         service: 'AniSource',
-        target: '/api/v1/sources',
+        target: '/api/v1/anime/sources',
         ok: false,
         durationMs: Math.round(performance.now() - t1),
         error: `${errorMessage(request.error)} after ${request.attempt}/${SERVICE_ATTEMPTS} attempts; probable cold start or transient outage`,
@@ -482,7 +482,7 @@ async function runAniSourceChecks() {
       if (!res.ok) {
         recordResult({
           service: 'AniSource',
-          target: '/api/v1/sources',
+          target: '/api/v1/anime/sources',
           ok: false,
           durationMs: Math.round(performance.now() - t1),
           error: `HTTP ${res.status} (${res.statusText}) on attempt ${request.attempt}/${SERVICE_ATTEMPTS}`,
@@ -494,7 +494,7 @@ async function runAniSourceChecks() {
         if (!parsed.success) {
           recordResult({
             service: 'AniSource',
-            target: '/api/v1/sources',
+            target: '/api/v1/anime/sources',
             ok: false,
             durationMs,
             error: 'Payload failed Zod sources schema',
@@ -502,7 +502,7 @@ async function runAniSourceChecks() {
         } else if (parsed.data.sources.length === 0) {
           recordResult({
             service: 'AniSource',
-            target: '/api/v1/sources',
+            target: '/api/v1/anime/sources',
             ok: false,
             durationMs,
             error: 'Zero sources returned',
@@ -512,7 +512,7 @@ async function runAniSourceChecks() {
           const names = parsed.data.sources.map((s) => s.id).join(', ')
           recordResult({
             service: 'AniSource',
-            target: '/api/v1/sources',
+            target: '/api/v1/anime/sources',
             ok: true,
             durationMs,
             details: `${parsed.data.sources.length} sources active [${names}]`,
@@ -523,7 +523,7 @@ async function runAniSourceChecks() {
   } catch (err) {
     recordResult({
       service: 'AniSource',
-      target: '/api/v1/sources',
+      target: '/api/v1/anime/sources',
       ok: false,
       durationMs: Math.round(performance.now() - t1),
       error: errorMessage(err),
@@ -535,7 +535,7 @@ async function runAniSourceChecks() {
     const t2 = performance.now()
     const query = 'Cowboy Bebop'
     try {
-      const searchUrl = `${ANISOURCE_BASE}/api/v1/${encodeURIComponent(firstSourceId)}/search?q=${encodeURIComponent(query)}&page=1`
+      const searchUrl = `${ANISOURCE_BASE}/api/v1/anime/${encodeURIComponent(firstSourceId)}/search?q=${encodeURIComponent(query)}&page=1`
       const request = await fetchWithRetry(searchUrl, {
         attempts: SERVICE_ATTEMPTS,
         timeoutMs: 20_000,

@@ -126,7 +126,7 @@ createServer(async (request, response) => {
       },
     });
   }
-  if (url.pathname === "/api/v1/sources")
+  if (url.pathname === "/api/v1/anime/sources")
     return send(response, 200, {
       sources: [
         { id: "test", name: "Test Source", base_url: "https://source.test" },

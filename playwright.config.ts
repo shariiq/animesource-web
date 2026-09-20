@@ -20,7 +20,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'node tests/e2e/mock-api.mjs',
-      url: 'http://127.0.0.1:3101/api/v1/sources',
+      url: 'http://127.0.0.1:3101/api/v1/anime/sources',
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     },

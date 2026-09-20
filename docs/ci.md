@@ -18,7 +18,7 @@ Runs are concurrency-canceled per ref, so a new push supersedes an in-progress r
 `.github/workflows/live-smoke.yml` runs on a schedule (twice daily) and manually via workflow dispatch — never on push or PR. `scripts/live-smoke.mjs` calls the real services:
 
 - **AniList** — `GenreCollection` and the production five-rail home query, schema-validated against the production Zod contracts, with rate-limit (HTTP 429 + `Retry-After`) surfaced distinctly.
-- **AniSource** — `/health` with bounded cold-start polling (4 attempts × 8s; retries only transient statuses), then `/api/v1/sources` and the first-source search with up to 4 transient/timeout retries so a Render wake-up can complete before the check reports a failure. The dependent search is recorded as non-blocking when no source list is available.
+- **AniSource** — `/health` with bounded cold-start polling (4 attempts × 8s; retries only transient statuses), then `/api/v1/anime/sources` and the first-source search with up to 4 transient/timeout retries so a cold start can complete before the check reports a failure. The dependent search is recorded as non-blocking when no source list is available.
 
 Results are written as a Markdown table to the GitHub Step Summary; the job exits nonzero on any failure and a follow-up step opens or comments on a single rolling issue ("Live smoke failed"). What a red run means: the deployed services or their contracts drifted — **not** that the branch is broken. It never blocks a merge or release.
 

@@ -166,7 +166,7 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
       if (cachedSources && now - cachedSources.ts < SOURCE_CACHE_TTL) {
         return cachedSources.promise
       }
-      const promise = request('/api/v1/sources', sourceListResponseSchema, onSlow, signal)
+      const promise = request('/api/v1/anime/sources', sourceListResponseSchema, onSlow, signal)
       cachedSources = { promise, ts: now }
       // Evict the cache on failure so subsequent calls retry.
       promise.catch(() => {
@@ -177,18 +177,18 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
 
     search(sourceId: string, q: string, page = 1, onSlow?: () => void, signal?: AbortSignal): Promise<SearchResponse> {
       const path =
-        `/api/v1/${encodeURIComponent(sourceId)}/search` +
+        `/api/v1/anime/${encodeURIComponent(sourceId)}/search` +
         `?q=${encodeURIComponent(q)}&page=${encodeURIComponent(page)}`
       return request(path, searchResponseSchema, onSlow, signal)
     },
 
     episodes(sourceId: string, animeId: string, onSlow?: () => void, signal?: AbortSignal): Promise<Episode[]> {
-      const path = `/api/v1/${encodeURIComponent(sourceId)}/episodes/${encodeURIComponent(animeId)}`
+      const path = `/api/v1/anime/${encodeURIComponent(sourceId)}/episodes/${encodeURIComponent(animeId)}`
       return request(path, episodeSchema.array(), onSlow, signal)
     },
 
     servers(sourceId: string, episodeId: string, onSlow?: () => void, signal?: AbortSignal): Promise<Server[]> {
-      const path = `/api/v1/${encodeURIComponent(sourceId)}/servers/${encodeURIComponent(episodeId)}`
+      const path = `/api/v1/anime/${encodeURIComponent(sourceId)}/servers/${encodeURIComponent(episodeId)}`
       return request(path, serverSchema.array(), onSlow, signal)
     },
 
@@ -200,7 +200,7 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
       signal?: AbortSignal,
     ): Promise<Stream[]> {
       const path =
-        `/api/v1/${encodeURIComponent(sourceId)}/streams/${encodeURIComponent(episodeId)}` +
+        `/api/v1/anime/${encodeURIComponent(sourceId)}/streams/${encodeURIComponent(episodeId)}` +
         `?server_id=${encodeURIComponent(serverId)}`
       return request(path, streamSchema.array(), onSlow, signal)
     },

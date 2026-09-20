@@ -26,7 +26,7 @@ describe('AniSource client', () => {
     const client = createAniSourceClient({ transport: transport(fetch) })
 
     await expect(client.sources()).resolves.toEqual({ sources: [], count: 0 })
-    expect(fetch).toHaveBeenCalledWith(`${API_URLS.anisource}/api/v1/sources`, expect.any(Object))
+    expect(fetch).toHaveBeenCalledWith(`${API_URLS.anisource}/api/v1/anime/sources`, expect.any(Object))
   })
 
   it('resolves relative stream assets against the centralized AniSource endpoint', () => {
@@ -60,14 +60,14 @@ describe('AniSource client', () => {
     const fetch = vi.fn(async () => response({ sources: [{ id: 'source id', name: 'Source', base_url: 'https://source.test' }], count: 1 }))
     const client = createAniSourceClient({ baseUrl: 'https://api.test/', transport: transport(fetch) })
     await expect(client.sources()).resolves.toEqual({ sources: [{ id: 'source id', name: 'Source', base_url: 'https://source.test' }], count: 1 })
-    expect(fetch).toHaveBeenCalledWith('https://api.test/api/v1/sources', expect.any(Object))
+    expect(fetch).toHaveBeenCalledWith('https://api.test/api/v1/anime/sources', expect.any(Object))
   })
   it('encodes source and query parameters', async () => {
     const fetch = vi.fn(async (_url: string, _init?: RequestInit) => response({ items: [], page: 1, has_next: false, total_returned: 0 }))
     const client = createAniSourceClient({ baseUrl: 'https://api.test', transport: transport(fetch) })
     await client.search('source/id', 'A title & more', 2)
     expect(fetch.mock.calls).toHaveLength(1)
-    expect(fetch.mock.calls[0]![0]).toBe('https://api.test/api/v1/source%2Fid/search?q=A%20title%20%26%20more&page=2')
+    expect(fetch.mock.calls[0]![0]).toBe('https://api.test/api/v1/anime/source%2Fid/search?q=A%20title%20%26%20more&page=2')
   })
   it('encodes opaque episode IDs when requesting servers and streams', async () => {
     const fetch = vi.fn(async (_url: string, _init?: RequestInit) => response([{ id: 'server-1', name: 'Primary', type: 'SUB' }]))
@@ -76,13 +76,13 @@ describe('AniSource client', () => {
 
     await client.servers('aniwaves', opaqueEpisodeId)
     expect(fetch.mock.calls[0]![0]).toBe(
-      'https://api.test/api/v1/aniwaves/servers/80163%26eps%3D1%26epurl%3D%2Fwatch%2Fcowboy-bebop-100',
+      'https://api.test/api/v1/anime/aniwaves/servers/80163%26eps%3D1%26epurl%3D%2Fwatch%2Fcowboy-bebop-100',
     )
 
     fetch.mockResolvedValueOnce(response([{ url: '/api/v1/proxy/hls/token', quality: '720p', is_hls: true }]))
     await client.streams('aniwaves', opaqueEpisodeId, 'server & one')
     expect(fetch.mock.calls[1]![0]).toBe(
-      'https://api.test/api/v1/aniwaves/streams/80163%26eps%3D1%26epurl%3D%2Fwatch%2Fcowboy-bebop-100?server_id=server%20%26%20one',
+      'https://api.test/api/v1/anime/aniwaves/streams/80163%26eps%3D1%26epurl%3D%2Fwatch%2Fcowboy-bebop-100?server_id=server%20%26%20one',
     )
   })
 

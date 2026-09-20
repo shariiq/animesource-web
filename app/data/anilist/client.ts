@@ -1,11 +1,9 @@
 import { z } from 'zod'
+import { API_DEFAULTS, API_URLS } from '../../config/api'
 import { graphQLResponseShape } from './schema'
 
-export const ANILIST_DEFAULT_API_URL = 'https://graphql.anilist.co'
-export const ANILIST_API_URL = (() => {
-  const fromEnv = import.meta.env.VITE_ANILIST_API_URL
-  return typeof fromEnv === 'string' && fromEnv.trim() !== '' ? fromEnv.trim() : ANILIST_DEFAULT_API_URL
-})()
+export const ANILIST_DEFAULT_API_URL = API_DEFAULTS.anilist
+export const ANILIST_API_URL = API_URLS.anilist
 export const AL_FETCH_TIMEOUT_MS = 15_000
 export const AL_MAX_RETRIES = 1
 

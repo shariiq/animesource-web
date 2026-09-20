@@ -10,7 +10,7 @@ import { Link, useLocation, useNavigate, useParams } from '@tanstack/solid-route
 import { anisourceClient } from '../../data/anisource/client'
 import type { AniListDetail } from '../../data/anilist/types'
 import { titleVariants } from '../../data/matching'
-import { browserViewerData } from '../../lib/persistence/viewer'
+import { viewerData } from '../../lib/persistence/active'
 import { titleOf } from '../../lib/format'
 import {
   createWatchSession,
@@ -23,7 +23,7 @@ import { LazyPlayer } from './watch/LazyPlayer'
 import { MatchPicker } from './watch/MatchPicker'
 
 const watchApi: WatchSourceClient = anisourceClient
-const watchPersistence: WatchPersistence = browserViewerData
+const watchPersistence: WatchPersistence = viewerData
 
 /**
  * Client-only streaming flow. AniList detail data is passed from the route

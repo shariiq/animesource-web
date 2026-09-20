@@ -14,6 +14,7 @@ export interface SearchHistory {
   get(): Promise<SearchHistoryItem[]>
   record(query: string): Promise<void>
   clear(): Promise<void>
+  replace(items: SearchHistoryItem[]): Promise<void>
 }
 
 async function get(): Promise<SearchHistoryItem[]> {
@@ -35,4 +36,9 @@ async function clear(): Promise<void> {
   notifySearchHistoryChanged()
 }
 
-export const browserSearchHistory: SearchHistory = { get, record, clear }
+async function replace(items: SearchHistoryItem[]): Promise<void> {
+  await indexedDbStore.write(SEARCH_HISTORY, 1, items.slice(0, SEARCH_HISTORY_LIMIT), searchHistoryDoc)
+  notifySearchHistoryChanged()
+}
+
+export const browserSearchHistory: SearchHistory = { get, record, clear, replace }

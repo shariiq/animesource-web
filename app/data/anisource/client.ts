@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { API_DEFAULTS, API_URLS, normalizeApiUrl } from '../../config/api'
 import {
   healthResponseSchema,
   searchResponseSchema,
@@ -13,6 +14,8 @@ import {
   type Server,
   type Stream,
 } from './schema'
+
+export const ANISOURCE_DEFAULT_BASE_URL = API_DEFAULTS.anisource
 
 /** A slow first response beyond this delay is surfaced as a probable cold start. */
 export const AS_COLD_START_DELAY_MS = 4_500
@@ -57,11 +60,6 @@ export interface AniSourceClientOptions {
   transport?: Partial<AniSourceTransport>
 }
 
-function baseUrlFromEnv(): string {
-  const fromEnv = import.meta.env.VITE_ANISOURCE_BASE
-  return typeof fromEnv === 'string' ? fromEnv.trim() : ''
-}
-
 /**
  * Client for the deployed AniSource API. All methods are client-only —
  * they are never called from loaders, SSR, or on initial page load; the
@@ -69,7 +67,7 @@ function baseUrlFromEnv(): string {
  */
 export function createAniSourceClient(options: AniSourceClientOptions = {}) {
   const transport: AniSourceTransport = { ...defaultTransport, ...options.transport }
-  const baseUrl = (options.baseUrl ?? baseUrlFromEnv()).trim().replace(/\/+$/, '')
+  const baseUrl = normalizeApiUrl(options.baseUrl ?? API_URLS.anisource)
   const timeoutMs = options.fetchTimeoutMs ?? AS_FETCH_TIMEOUT_MS
 
   async function request<T>(
@@ -78,7 +76,7 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
     onSlow?: () => void,
     signal?: AbortSignal,
   ): Promise<T> {
-    if (!baseUrl) throw new AniSourceError('VITE_ANISOURCE_BASE is not configured.', 'invalid')
+    if (!baseUrl) throw new AniSourceError('AniSource base URL is not configured.', 'invalid')
 
     const controller = new AbortController()
     let callerAborted = signal?.aborted ?? false
@@ -213,7 +211,7 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
 export function resolveUrl(url: string | null | undefined): string | null | undefined {
   if (!url) return url
   if (url.startsWith('http://') || url.startsWith('https://')) return url
-  if (url.startsWith('/')) return baseUrlFromEnv().replace(/\/+$/, '') + url
+  if (url.startsWith('/')) return API_URLS.anisource + url
   return url
 }
 

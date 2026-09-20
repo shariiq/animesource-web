@@ -10,6 +10,7 @@ const SUBTITLE_URL = `${HOST}/subtitles.vtt`;
 // AniSource episode IDs are opaque and routinely carry query-ish characters;
 // the route and client must survive them end to end.
 const EPISODE_ID = "episode-1&eps=1";
+let failAniList = false;
 
 const media = (id, title) => ({
   id,
@@ -62,7 +63,19 @@ function send(response, status, payload) {
 createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   const url = new URL(request.url ?? "/", `http://${request.headers.host}`);
+  if (url.pathname === "/__test/fail-anilist") {
+    failAniList = true;
+    return send(response, 200, { ok: true });
+  }
+  if (url.pathname === "/__test/reset-anilist") {
+    failAniList = false;
+    return send(response, 200, { ok: true });
+  }
   if (url.pathname === "/anilist" && request.method === "POST") {
+    if (failAniList)
+      return send(response, 500, {
+        errors: [{ message: "forced AniList failure" }],
+      });
     let body = "";
     for await (const chunk of request) body += chunk;
     if (body.includes("Media(id:"))

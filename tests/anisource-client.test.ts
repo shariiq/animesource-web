@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { API_DEFAULTS, API_URLS } from '../app/config/api'
 
 const subtitleRelay = vi.hoisted(() => ({
   fetchSubtitleText: vi.fn(),
@@ -6,7 +7,7 @@ const subtitleRelay = vi.hoisted(() => ({
 
 vi.mock('../app/data/anisource/subtitle-server', () => subtitleRelay)
 
-import { AniSourceError, createAniSourceClient, loadSubtitle, normalizeSubtitleText } from '../app/data/anisource/client'
+import { AniSourceError, createAniSourceClient, loadSubtitle, normalizeSubtitleText, resolveUrl } from '../app/data/anisource/client'
 
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 const transport = (fetch: (input: string, init?: RequestInit) => Promise<Response>) => ({
@@ -16,6 +17,22 @@ const transport = (fetch: (input: string, init?: RequestInit) => Promise<Respons
 })
 
 describe('AniSource client', () => {
+  it('keeps the production AniSource endpoint in shared defaults', () => {
+    expect(API_DEFAULTS.anisource).toBe('https://anisource-api.vercel.app')
+  })
+
+  it('uses the centralized AniSource endpoint when no client override is configured', async () => {
+    const fetch = vi.fn(async () => response({ sources: [], count: 0 }))
+    const client = createAniSourceClient({ transport: transport(fetch) })
+
+    await expect(client.sources()).resolves.toEqual({ sources: [], count: 0 })
+    expect(fetch).toHaveBeenCalledWith(`${API_URLS.anisource}/api/v1/sources`, expect.any(Object))
+  })
+
+  it('resolves relative stream assets against the centralized AniSource endpoint', () => {
+    expect(resolveUrl('/api/v1/proxy/hls/token')).toBe(`${API_URLS.anisource}/api/v1/proxy/hls/token`)
+  })
+
   it('validates the deployed health response contract', async () => {
     const health = {
       status: 'ok',

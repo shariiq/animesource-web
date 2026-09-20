@@ -193,6 +193,63 @@ test("discovery initial load does not call AniSource", async ({ page }) => {
   expect(anisourceRequests).toEqual([]);
 });
 
+test("home shows one recovery state when AniList fails during SSR", async ({
+  page,
+  request,
+}) => {
+  await request.get("http://127.0.0.1:3101/__test/fail-anilist");
+
+  try {
+    const response = await page.goto("/");
+    expect(response?.status()).toBe(200);
+    await expect(
+      page.getByRole("heading", { name: "Couldn't reach AniList" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+    await expect(page.getByText("Something went wrong!", { exact: false })).toHaveCount(0);
+    await expect(page.getByText("Hydration Mismatch", { exact: false })).toHaveCount(0);
+  } finally {
+    await request.get("http://127.0.0.1:3101/__test/reset-anilist");
+  }
+});
+
+test("a named local viewer is not described as anonymous", async ({ page }) => {
+  await page.goto("/profile");
+  await page.getByRole("textbox", { name: "Display name" }).fill("Mina");
+  await page.getByRole("button", { name: "Save profile" }).click();
+
+  await expect(page.getByRole("heading", { name: "Mina" })).toBeVisible();
+  await expect(page.getByRole("complementary").getByText("Local profile", { exact: true })).toBeVisible();
+  await expect(page.getByText("Anonymous local viewer", { exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/profile-desktop.png", fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Mina" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/profile-mobile.png", fullPage: true });
+});
+
+test("settings stays usable across desktop and mobile layouts", async ({ page }) => {
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Make it yours." })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Language" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Timezone" })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /adult-content/i })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /Release notifications/i })).toBeVisible();
+  await page.getByRole("button", { name: "Save preferences" }).click();
+  await expect(page.getByRole("status")).toContainText("Preferences saved on this device.");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/settings-desktop.png", fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Make it yours." })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/settings-mobile.png", fullPage: true });
+});
+
 test("continue watching opens its saved opaque episode URL", async ({
   page,
 }) => {

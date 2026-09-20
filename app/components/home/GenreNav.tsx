@@ -15,7 +15,10 @@ function accentFor(index: number) {
 }
 
 export function GenreNav() {
-  const genres = createQuery(genresQuery)
+  const genres = createQuery(() => ({
+    ...genresQuery(),
+    enabled: typeof window !== 'undefined',
+  }))
 
   return (
     <Show when={!genres.isPending} fallback={<p class="mono-signal">Loading genres…</p>}>

@@ -15,7 +15,7 @@ For local production inspection after a build, run `npm start` and open the prin
 
 ## Environment
 
-Copy `.env.example` to `.env` for local development. `VITE_ANILIST_API_URL` and `VITE_ANISOURCE_BASE` are public build-time values, not credentials. Vite embeds every `VITE_` value in browser assets, so secrets must not use that prefix. Configure the same public endpoint values in Vercel's Preview and Production environments when an override is needed; the defaults are the public AniList GraphQL endpoint and the deployed AniSource endpoint.
+Copy `.env.example` to `.env` for local development only when overrides are needed. `config/api-urls.json` is the checked-in source of truth for public defaults; `VITE_ANILIST_API_URL` and `VITE_ANISOURCE_BASE` are optional build-time overrides, not credentials. Configure overrides in Vercel's Preview and Production environments only when a deployment needs values different from that file.
 
 Playwright and CI override both values with `tests/e2e/mock-api.mjs`. CI must never call either live external service.
 

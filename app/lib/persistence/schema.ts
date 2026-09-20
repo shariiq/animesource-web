@@ -58,8 +58,33 @@ export const playbackPreferencesSchema = z.object({
   quality: z.string().nullable().default(null),
   subtitleLanguage: z.string().nullable().default(null),
   subtitleLabel: z.string().nullable().default(null),
+  updatedAt: z.number().nonnegative().optional(),
 })
 export type PlaybackPreferences = z.infer<typeof playbackPreferencesSchema>
+
+export const viewerProfileSchema = z.object({
+  displayName: z.string().trim().max(80).default(''),
+  updatedAt: z.number().nonnegative().default(0),
+})
+export type ViewerProfile = z.infer<typeof viewerProfileSchema>
+
+export const viewerPreferencesSchema = z.object({
+  adultContent: z.boolean().default(false),
+  language: z.string().trim().min(2).max(20).default('en'),
+  timezone: z.string().trim().min(1).max(100).default('UTC'),
+  notifications: z.boolean().default(false),
+  updatedAt: z.number().nonnegative().default(0),
+})
+export type ViewerPreferences = z.infer<typeof viewerPreferencesSchema>
+
+export const viewerProfileDoc = z.object({
+  v: z.literal(1),
+  data: viewerProfileSchema,
+})
+export const viewerPreferencesDoc = z.object({
+  v: z.literal(1),
+  data: viewerPreferencesSchema,
+})
 
 export const playbackDoc = z.object({
   v: z.literal(1),
@@ -95,6 +120,10 @@ export const prefSourceDoc = z.object({
   v: z.literal(1),
   data: z.string(),
 })
+export const timestampDoc = z.object({
+  v: z.literal(1),
+  data: z.number().nonnegative(),
+})
 export const matchDoc = z.object({
   v: z.literal(1),
   data: matchItemSchema,
@@ -102,4 +131,54 @@ export const matchDoc = z.object({
 export const searchHistoryDoc = z.object({
   v: z.literal(1),
   data: z.array(searchHistoryItemSchema).max(8),
+})
+
+export const viewerTombstoneSchema = z.object({
+  collection: z.enum(['favorites', 'continue', 'playback', 'matches']),
+  key: z.string().min(1),
+  ts: z.number().nonnegative(),
+})
+export type ViewerTombstone = z.infer<typeof viewerTombstoneSchema>
+
+export const viewerTombstonesDoc = z.object({
+  v: z.literal(1),
+  data: z.array(viewerTombstoneSchema).max(2_000),
+})
+
+export const viewerMatchExportSchema = z.object({
+  anilistId: z.number().int().positive(),
+  match: matchItemSchema,
+  updatedAt: z.number().nonnegative().default(0),
+})
+export type ViewerMatchExport = z.infer<typeof viewerMatchExportSchema>
+
+export const viewerExportSchema = z.object({
+  source: z.literal('animesource-viewer'),
+  version: z.literal(1),
+  exportedAt: z.number().nonnegative(),
+  profile: viewerProfileSchema,
+  preferences: viewerPreferencesSchema,
+  favorites: z.array(favoriteItemSchema).max(300),
+  continue: z.array(continueItemSchema).max(20),
+  playback: z.array(playbackRecordSchema).max(2_000),
+  playbackPreferences: playbackPreferencesSchema,
+  preferredSource: z.string().nullable(),
+  preferredSourceUpdatedAt: z.number().nonnegative().default(0),
+  matches: z.array(viewerMatchExportSchema).max(300),
+  searchHistory: z.array(searchHistoryItemSchema).max(8),
+  tombstones: z.array(viewerTombstoneSchema).max(2_000),
+})
+export type ViewerExport = z.infer<typeof viewerExportSchema>
+
+export const viewerSyncStatusSchema = z.object({
+  state: z.enum(['local-only', 'idle', 'syncing', 'error']),
+  lastSyncedAt: z.number().nonnegative().nullable(),
+  pendingChanges: z.number().int().nonnegative(),
+  lastError: z.string().nullable(),
+})
+export type ViewerSyncStatus = z.infer<typeof viewerSyncStatusSchema>
+
+export const viewerSyncStatusDoc = z.object({
+  v: z.literal(1),
+  data: viewerSyncStatusSchema,
 })

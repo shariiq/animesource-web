@@ -64,7 +64,7 @@ The current application is a **working discovery plus watch vertical slice**. Th
 - `[x]` The schedule route provides timezone-aware day/week views, library/status/genre filters, truthful airing states, and detail/Watch navigation.
 - `[x]` Watch persists and restores playback position and completion state, supports reliable previous/next/continue-to-next behavior, and ignores stale requests after rapid route or selection changes.
 - `[ ]` No account, server-side library, or cross-device synchronization model.
-- `[ ]` No profile, settings, notification, or content-preference surfaces.
+- `[~]` Profile, settings, notification, and content-preference surfaces exist in local-first mode; account scoping remains pending authentication.
 - `[ ]` No production operations layer for monitoring, error reporting, source health, privacy, or deployment policy.
 - `[ ]` No systematic SEO, performance, or full accessibility hardening pass.
 
@@ -231,18 +231,18 @@ The current application is a **working discovery plus watch vertical slice**. Th
 
 - `[ ]` Choose and document the authentication model, session policy, and account recovery behavior.
 - `[ ]` Add sign-in, sign-out, session expiry, and account deletion flows.
-- `[ ]` Add a profile route and a settings route with accessible navigation and clear destructive-action handling.
-- `[ ]` Define adult-content, language, timezone, and notification preferences at the account level.
+- `[~]` Add a profile route and a settings route with accessible navigation and clear destructive-action handling. Local-first routes are shipped; account identity wiring remains deferred.
+- `[~]` Define adult-content, language, timezone, and notification preferences at the account level. The versioned preference model is implemented locally and ready for account scoping.
 
 ### Remote library and progress model
 
-- `[ ]` Define a server-side interface for favorites, lists, progress, history, preferences, and source matches.
-- `[ ]` Keep IndexedDB as a local cache/offline adapter rather than silently replacing it with UI-owned remote calls.
-- `[ ]` Add local-to-account migration for an existing anonymous viewer.
-- `[ ]` Define conflict resolution for edits made on multiple devices or while offline.
-- `[ ]` Add sync status, retry, and partial-failure states that explain what is and is not saved.
-- `[ ]` Add export and deletion semantics for viewer data.
-- `[ ]` Add import from AniList or another supported list provider only after the internal model is stable.
+- `[x]` Define a server-side interface for favorites, lists, progress, history, preferences, and source matches through the `RemoteViewerAdapter` seam.
+- `[x]` Keep IndexedDB as a local cache/offline adapter rather than silently replacing it with UI-owned remote calls.
+- `[x]` Add local-to-account migration for an existing anonymous viewer through the snapshot sync orchestrator.
+- `[x]` Define conflict resolution for edits made on multiple devices or while offline using timestamped records and deletion tombstones.
+- `[~]` Add sync status, retry, and partial-failure states that explain what is and is not saved. The adapter and status model are implemented; live account wiring is pending authentication.
+- `[~]` Add export and deletion semantics for viewer data. Local export/deletion and the remote deletion interface are implemented; account deletion remains pending authentication.
+- `[x]` Add import from AniList or another supported list provider only after the internal model is stable. Public AniList anime-list import is available from Settings.
 
 ### Phase 3 completion criteria
 
@@ -370,6 +370,11 @@ Before marking a milestone `[x]`:
   - documented AniSource uptime, latency, capacity, alerting, and privacy-safe observability expectations;
   - added focused player/session regressions and the required search → detail → Watch → player Playwright smoke journey.
 - Audio preference remains intentionally unsupported because AniSource does not return audio streams. Skip-intro/outro remains deferred because AniSource does not return reliable timing metadata.
+- Prepared the auth-independent Phase 3 account model:
+  - added local-first profile and settings routes with language, timezone, adult-content, and notification preferences;
+  - added versioned viewer export/import, local deletion, public AniList list import, and an active `ViewerData` adapter seam;
+  - added `RemoteViewerAdapter`, local-to-account migration orchestration, timestamp conflict resolution, deletion tombstones, sync status, and partial-failure handling;
+  - documented the local-first synchronization decision in ADR 0002. Authentication, session lifecycle, and the concrete remote adapter remain intentionally deferred.
 
 ### 2026-09-18
 

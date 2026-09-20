@@ -1,6 +1,6 @@
 # Engineering Standard
 
-Ship the **best** complete, working, maintainable, readable features. For UI, composition, behavior, responsive layout, and accessibility are one implementation: establish hierarchy, typography, density, surfaces, and states early with real loader data; render during development and inspect the actual route at desktop and ~390px before declaring done. Compare approved references side by side; disclose missing rendering capability before starting a fidelity task. Efficiency comes from scope, never reduced correctness.
+Ship the logically **best** complete, high quality, working, maintainable, readable code and features. For UI, composition, behavior, responsive layout, and accessibility are one implementation: establish hierarchy, typography, density, surfaces, and states early with real loader data; render during development and inspect the actual route at desktop and ~390px before declaring done. Compare approved references side by side; disclose missing rendering capability before starting a fidelity task. Efficiency comes from scope, never reduced correctness.
 
 ## Tier once, out loud
 

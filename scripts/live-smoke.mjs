@@ -1,10 +1,10 @@
 import { z } from 'zod'
 import { appendFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
+import apiUrls from '../config/api-urls.json' with { type: 'json' }
 
-const ANILIST_URL = process.env.LIVE_ANILIST_URL || 'https://graphql.anilist.co'
-const configuredAniSourceBase = process.env.LIVE_ANISOURCE_BASE || process.env.VITE_ANISOURCE_BASE
-if (!configuredAniSourceBase?.trim()) throw new Error('Set LIVE_ANISOURCE_BASE or VITE_ANISOURCE_BASE before running live smoke.')
+const ANILIST_URL = process.env.LIVE_ANILIST_URL || process.env.VITE_ANILIST_API_URL || apiUrls.anilist
+const configuredAniSourceBase = process.env.LIVE_ANISOURCE_BASE || process.env.VITE_ANISOURCE_BASE || apiUrls.anisource
 const ANISOURCE_BASE = configuredAniSourceBase.trim().replace(/\/+$/, '')
 const STEP_SUMMARY_FILE = process.env.GITHUB_STEP_SUMMARY
 

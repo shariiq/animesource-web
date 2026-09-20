@@ -7,7 +7,7 @@ import { formatAniDate, formatCompactNumber, formatEnum, formatRank, formatScore
 import { BROWSE_SEASONS, makeBrowseSearch, type BrowseSeason } from '../../lib/browse'
 import { FAVORITE_STATUSES } from '../../lib/library'
 import type { FavoriteStatus } from '../../lib/persistence/schema'
-import { browserViewerData } from '../../lib/persistence/viewer'
+import { viewerData } from '../../lib/persistence/active'
 import { CharacterRail } from './detail/CharacterRail'
 import { getDetailLinks, getDetailTags, getDetailTitles, getOrderedRelations, getStaffMembers, getStudios, isSafeExternalUrl } from './detail/model'
 import { MediaRail, toRailItem } from './detail/MediaRail'
@@ -45,7 +45,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
 
   onMount(() => {
     const animeId = props.anime.id
-    void browserViewerData.getFavorites()
+    void viewerData.getFavorites()
       .then((items) => {
         const saved = items.find((item) => item.id === animeId)
         setFavorite(Boolean(saved))
@@ -59,7 +59,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
     setSavingFavorite(true)
     try {
       const anime = props.anime
-      const nextFavorite = await browserViewerData.toggleFavorite({
+      const nextFavorite = await viewerData.toggleFavorite({
         id: anime.id,
         title: titleOf(anime),
         cover: anime.coverImage?.large || anime.coverImage?.extraLarge || '',
@@ -81,7 +81,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
     if (!favorite() || savingStatus()) return
     setSavingStatus(true)
     try {
-      await browserViewerData.updateFavoriteStatus(props.anime.id, status)
+      await viewerData.updateFavoriteStatus(props.anime.id, status)
       setFavoriteStatus(status)
       setPersistenceError(null)
     } catch {

@@ -16,11 +16,11 @@ npm run dev
 
 The development server runs at `http://localhost:3000`.
 
-Copy `.env.example` to `.env` when local endpoint overrides are needed:
+Copy `.env.example` to `.env` only when local endpoint overrides are needed. The checked-in defaults live in `config/api-urls.json`:
 
 ```dotenv
-VITE_ANILIST_API_URL=https://graphql.anilist.co
-VITE_ANISOURCE_BASE=https://anisource-api.vercel.app/
+# VITE_ANILIST_API_URL=https://graphql.anilist.co
+# VITE_ANISOURCE_BASE=https://anisource-api.vercel.app
 ```
 
 These are public endpoint values. Never put credentials or private tokens in `VITE_` variables because Vite embeds them in browser assets.

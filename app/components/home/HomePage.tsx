@@ -14,7 +14,13 @@ import { SectionHeading } from '../ui/SectionHeading'
 type CollectionFilter = 'all' | 'airing' | 'rated'
 
 export function HomePage() {
-  const home = createQuery(homeQuery)
+  const home = createQuery(() => ({
+    ...homeQuery(),
+    // The route loader owns the server fetch. Keeping this observer disabled
+    // during SSR prevents a failed request from being serialized as an error
+    // tree that disagrees with the server's loading markup during hydration.
+    enabled: typeof window !== 'undefined',
+  }))
   const season = currentSeason()
   const nextSeason = nextSeasonOf()
   const [collectionFilter, setCollectionFilter] = createSignal<CollectionFilter>('all')

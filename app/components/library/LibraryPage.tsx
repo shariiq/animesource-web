@@ -1,7 +1,7 @@
 import { createQuery } from '@tanstack/solid-query'
 import { createMemo, createSignal, For, Match, onMount, Show, Switch, untrack } from 'solid-js'
 import { byIdsQuery } from '../../data/options'
-import { browserViewerData } from '../../lib/persistence/viewer'
+import { viewerData } from '../../lib/persistence/active'
 import type { ContinueItem, FavoriteItem, FavoriteStatus } from '../../lib/persistence/schema'
 import {
   filterAndSortLibrary,
@@ -52,8 +52,8 @@ export function LibraryPage() {
     setLoadError(false)
     try {
       const [favorites, history] = await Promise.all([
-        browserViewerData.getFavorites(),
-        browserViewerData.getContinue(),
+        viewerData.getFavorites(),
+        viewerData.getContinue(),
       ])
       setStored({ favorites, history })
     } catch (cause) {
@@ -132,17 +132,17 @@ export function LibraryPage() {
 
   const changeStatus = (id: number, status: FavoriteStatus) => runItemMutation(
     id,
-    () => browserViewerData.updateFavoriteStatus(id, status),
+    () => viewerData.updateFavoriteStatus(id, status),
     (data) => ({ ...data, favorites: data.favorites.map((item) => item.id === id ? { ...item, status } : item) }),
   )
   const removeFavorite = (id: number) => runItemMutation(
     id,
-    () => browserViewerData.removeFavorite(id),
+    () => viewerData.removeFavorite(id),
     (data) => ({ ...data, favorites: data.favorites.filter((item) => item.id !== id) }),
   )
   const removeHistory = (id: number) => runItemMutation(
     id,
-    () => browserViewerData.removeContinue(id),
+    () => viewerData.removeContinue(id),
     (data) => ({ ...data, history: data.history.filter((item) => item.id !== id) }),
   )
   const clearHistory = () => enqueueMutation(async () => {
@@ -152,7 +152,7 @@ export function LibraryPage() {
     setFailure(null)
     setStored({ ...current, history: [] })
     try {
-      await browserViewerData.clearContinue()
+      await viewerData.clearContinue()
     } catch (cause) {
       console.error('Failed to clear continue-watching history.', cause)
       setStored(current)

@@ -61,6 +61,7 @@ export interface KeyValueStore {
     updateValue: (value: T | null) => T,
   ): Promise<T>
   remove(key: string): Promise<void>
+  keys(prefix?: string): Promise<string[]>
 }
 
 export const indexedDbStore: KeyValueStore = {
@@ -111,5 +112,12 @@ export const indexedDbStore: KeyValueStore = {
     const completion = transactionToPromise(tx)
     tx.objectStore(STORE).delete(key)
     await completion
+  },
+  async keys(prefix = '') {
+    const db = await openDb()
+    const tx = db.transaction(STORE, 'readonly')
+    const raw = await requestToPromise(tx.objectStore(STORE).getAllKeys())
+    return raw
+      .filter((key): key is string => typeof key === 'string' && key.startsWith(prefix))
   },
 }

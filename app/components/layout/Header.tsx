@@ -17,6 +17,7 @@ export function Header() {
             <Link to="/explore" preload="intent" search={makeBrowseSearch()} class="transition-colors hover:text-black" activeProps={{ class: 'text-black font-medium' }}>Explore</Link>
             <Link to="/library" preload="intent" class="transition-colors hover:text-black" activeProps={{ class: 'text-black font-medium' }}>Library</Link>
             <Link to="/schedule" search={{ date: localDateKey(new Date()), view: 'week', saved: false }} class="transition-colors hover:text-black" activeProps={{ class: 'text-black font-medium' }}>Schedule</Link>
+            <Link to="/profile" preload="intent" class="transition-colors hover:text-black" activeProps={{ class: 'text-black font-medium' }}>Profile</Link>
           </nav>
           <span class="hidden font-mono text-[10px] uppercase tracking-[.13em] text-text-muted md:inline">Anime catalog · streaming on demand</span>
           <GlobalSearch />

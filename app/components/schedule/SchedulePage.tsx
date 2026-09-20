@@ -4,7 +4,7 @@ import { createMemo, createSignal, For, onCleanup, onMount, Show, type Accessor 
 import { scheduleQuery } from '../../data/options'
 import type { AniListScheduleItem } from '../../data/anilist/types'
 import { formatEnum } from '../../lib/format'
-import { browserViewerData } from '../../lib/persistence/viewer'
+import { viewerData } from '../../lib/persistence/active'
 import {
   countdownLabel,
   dateFromKey,
@@ -50,7 +50,7 @@ export function SchedulePage(props: { search: Accessor<ScheduleSearch> }) {
   const grouped = createMemo(() => groupScheduleByDay(items()))
 
   onMount(() => {
-    browserViewerData.getFavorites()
+    viewerData.getFavorites()
       .then((favorites) => setSavedIds(new Set(favorites.map((item) => item.id))))
       .catch((cause) => {
         console.error('Failed to load saved anime for schedule filtering.', cause)

@@ -36,3 +36,13 @@ Object.defineProperty(HTMLTrackElement.prototype, 'track', {
     return element._testTrack ??= { mode: 'disabled' }
   },
 })
+
+let testObjectUrl = 0
+Object.defineProperty(URL, 'createObjectURL', {
+  configurable: true,
+  value: () => `blob:test-${++testObjectUrl}`,
+})
+Object.defineProperty(URL, 'revokeObjectURL', {
+  configurable: true,
+  value: () => undefined,
+})

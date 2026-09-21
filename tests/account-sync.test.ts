@@ -16,7 +16,7 @@ describe('viewer account data', () => {
   it('round-trips profile, preferences, library, progress, matches, and history', async () => {
     await browserViewerData.setViewerProfile({ displayName: 'Mina' })
     await browserViewerData.setViewerPreferences({ adultContent: true, language: 'ja', timezone: 'Asia/Tokyo', notifications: true })
-    await browserViewerData.setPlaybackPreferences({ quality: '1080p', subtitleLanguage: 'ja', subtitleLabel: '日本語' })
+    await browserViewerData.setPlaybackPreferences({ quality: '1080p', audioLanguage: 'ja', audioLabel: '日本語', subtitleLanguage: 'ja', subtitleLabel: '日本語' })
     await browserViewerData.toggleFavorite({ id: 42, title: 'Orbit', cover: 'cover', format: 'TV', averageScore: 91 })
     await browserViewerData.recordContinue({ id: 42, title: 'Orbit', cover: 'cover', sourceId: 'src', sourceName: 'Source', animeId: 'orbit', episodeId: 'ep-1', episodeNumber: 1 })
     await browserViewerData.recordPlayback({ id: 42, title: 'Orbit', cover: 'cover', sourceId: 'src', sourceName: 'Source', animeId: 'orbit', episodeId: 'ep-1', episodeNumber: 1, position: 0, duration: 0 })
@@ -101,7 +101,7 @@ function snapshot(overrides: Partial<ViewerExport> = {}): ViewerExport {
     favorites: [],
     continue: [],
     playback: [],
-    playbackPreferences: { quality: null, subtitleLanguage: null, subtitleLabel: null },
+    playbackPreferences: { quality: null, audioLanguage: null, audioLabel: null, subtitleLanguage: null, subtitleLabel: null },
     preferredSource: null,
     preferredSourceUpdatedAt: 0,
     matches: [],

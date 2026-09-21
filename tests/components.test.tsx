@@ -17,6 +17,8 @@ const hls = vi.hoisted(() => {
     static Events = {
       ERROR: "hlsError",
       MANIFEST_PARSED: "manifestParsed",
+      AUDIO_TRACKS_UPDATED: "audioTracksUpdated",
+      AUDIO_TRACK_SWITCHED: "audioTrackSwitched",
       SUBTITLE_TRACKS_UPDATED: "subtitleTracksUpdated",
     };
     static ErrorTypes = {
@@ -30,6 +32,10 @@ const hls = vi.hoisted(() => {
     recoverMediaError = vi.fn();
     subtitleDisplay = false;
     subtitleTrack = -1;
+    currentLevel = -1;
+    audioTrack = 0;
+    levels: { name?: string; height?: number; bitrate?: number }[] = [];
+    audioTracks: { name?: string; lang?: string }[] = [];
     subtitleTracks: { id: number; name?: string; lang?: string }[] = [];
     private handlers = new Map<string, Handler[]>();
     constructor() {
@@ -376,6 +382,45 @@ describe("LazyPlayer", () => {
     canPlayType.mockRestore();
   });
 
+  it("uses the HLS manifest for quality and alternate audio selection", async () => {
+    const onPreferencesChange = vi.fn();
+    render(() => (
+      <LazyPlayer
+        streams={[hlsStream]}
+        preferences={{ quality: null, audioLanguage: null, audioLabel: null, subtitleLanguage: null, subtitleLabel: null }}
+        onPreferencesChange={onPreferencesChange}
+      />
+    ));
+    await waitFor(() => expect(hls.instances).toHaveLength(1));
+    const instance = hls.instances[0]!;
+    instance.levels = [
+      { name: "1080p", height: 1080, bitrate: 6_000_000 },
+      { name: "720p", height: 720, bitrate: 3_000_000 },
+    ];
+    instance.audioTracks = [
+      { name: "English", lang: "en" },
+      { name: "Japanese", lang: "ja" },
+    ];
+    instance.emit("manifestParsed");
+    instance.emit("audioTracksUpdated");
+
+    const quality = await screen.findByLabelText("Quality");
+    const audio = await screen.findByLabelText("Audio");
+    fireEvent.change(quality, { target: { value: "1" } });
+    fireEvent.change(audio, { target: { value: "1" } });
+
+    expect(instance.currentLevel).toBe(1);
+    expect(instance.audioTrack).toBe(1);
+    expect(onPreferencesChange).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      quality: "720p",
+    }));
+    expect(onPreferencesChange).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      quality: null,
+      audioLanguage: "ja",
+      audioLabel: "Japanese",
+    }));
+  });
+
   it("uses native HLS only when hls.js cannot run in this browser", async () => {
     hls.state.supported = false;
     const canPlayType = vi
@@ -465,11 +510,18 @@ describe("LazyPlayer", () => {
     expect(hls.instances[1]!.loadSource).toHaveBeenCalledWith(variants[1]!.url);
   });
 
-  it("labels audio-only variants as streams", () => {
+  it("keeps standalone audio out of the video stream picker", () => {
     render(() => <LazyPlayer streams={[hlsStream, audioStream]} />);
 
-    expect(screen.getByLabelText("Stream")).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Audio · Japanese" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Stream")).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Audio · Japanese" })).not.toBeInTheDocument();
+  });
+
+  it("starts the non-audio stream when the API returns audio first", async () => {
+    render(() => <LazyPlayer streams={[audioStream, hlsStream]} />);
+
+    await waitFor(() => expect(hls.instances).toHaveLength(1));
+    expect(hls.instances[0]!.loadSource).toHaveBeenCalledWith(hlsStream.url);
   });
 
   it("destroys the hls.js instance when the player unmounts", async () => {
@@ -524,7 +576,7 @@ describe("LazyPlayer", () => {
     const { container } = render(() => (
       <LazyPlayer
         streams={[subtitled]}
-        preferences={{ quality: null, subtitleLanguage: "en", subtitleLabel: "English" }}
+        preferences={{ quality: null, audioLanguage: null, audioLabel: null, subtitleLanguage: "en", subtitleLabel: "English" }}
       />
     ));
     const select = await screen.findByLabelText("Subtitles");

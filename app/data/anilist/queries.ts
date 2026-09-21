@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { anilistClient, AniListError } from './client'
 import type { AniListMedia, AniListDetail, AniListHome, AniListScheduleItem } from './types'
 import { mediaShape, detailShape, homeShape, genreCollectionShape, schedulePageShape, pageInfoShape } from './schema'
-import type { BrowseFormat, BrowseSeason, BrowseSort, BrowseStatus } from '../../lib/browse'
+import type { BrowseCountry, BrowseFormat, BrowseSeason, BrowseSort, BrowseStatus } from '../../lib/browse'
 import type { CatalogMode } from '../../lib/catalog'
 
 /**
@@ -265,6 +265,7 @@ export async function alBrowse(opts: {
   genre?: string | null
   format?: BrowseFormat | null
   status?: BrowseStatus | null
+  countryOfOrigin?: BrowseCountry | null
   season?: BrowseSeason | null
   seasonYear?: number | null
   search?: string | null
@@ -273,6 +274,7 @@ export async function alBrowse(opts: {
     { arg: 'genre', type: 'String', value: opts.genre },
     { arg: 'format', type: 'MediaFormat', value: opts.format },
     { arg: 'status', type: 'MediaStatus', value: opts.status },
+    { arg: 'countryOfOrigin', type: 'CountryCode', value: opts.countryOfOrigin },
     { arg: 'season', type: 'MediaSeason', value: opts.season },
     { arg: 'seasonYear', type: 'Int', value: opts.seasonYear },
     { arg: 'search', type: 'String', value: opts.search },

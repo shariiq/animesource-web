@@ -26,6 +26,7 @@ test("header search stays client-side and renders matching Explore results", asy
 test("explore cards keep the detail-only destination", async ({ page }) => {
   await page.goto("/explore");
   await expect(page.getByRole("heading", { name: "Explore anime" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Country of origin" })).toBeVisible();
 
   const detail = page.getByRole("link", { name: /Test Anime/ }).first();
   await expect(detail).toHaveAttribute("href", "/anime/1");

@@ -7,11 +7,25 @@ export const BROWSE_FORMATS = [...BROWSE_ANIME_FORMATS, ...BROWSE_MANGA_FORMATS]
 export const BROWSE_STATUSES = ['FINISHED', 'RELEASING', 'NOT_YET_RELEASED', 'CANCELLED', 'HIATUS'] as const
 export const BROWSE_SEASONS = ['WINTER', 'SPRING', 'SUMMER', 'FALL'] as const
 export const BROWSE_SORTS = ['TRENDING_DESC', 'POPULARITY_DESC', 'SCORE_DESC', 'START_DATE_DESC', 'UPDATED_AT_DESC'] as const
+export const BROWSE_COUNTRY_CODES = ['JP', 'CN', 'KR', 'TW', 'US', 'GB', 'FR', 'DE', 'IT', 'ES', 'RU', 'CA', 'AU', 'IN', 'BR', 'TH', 'PH', 'VN', 'ID', 'SG', 'MY', 'MX', 'AR', 'PL', 'UA', 'TR', 'SE', 'NO', 'FI', 'DK', 'NL', 'BE', 'AT', 'CH', 'IE', 'NZ', 'ZA'] as const
+export const BROWSE_COUNTRIES: ReadonlyArray<readonly [BrowseCountry, string]> = [
+  ['JP', 'Japan'], ['CN', 'China'], ['KR', 'South Korea'], ['TW', 'Taiwan'],
+  ['US', 'United States'], ['GB', 'United Kingdom'], ['FR', 'France'], ['DE', 'Germany'],
+  ['IT', 'Italy'], ['ES', 'Spain'], ['RU', 'Russia'], ['CA', 'Canada'],
+  ['AU', 'Australia'], ['IN', 'India'], ['BR', 'Brazil'], ['TH', 'Thailand'],
+  ['PH', 'Philippines'], ['VN', 'Vietnam'], ['ID', 'Indonesia'], ['SG', 'Singapore'],
+  ['MY', 'Malaysia'], ['MX', 'Mexico'], ['AR', 'Argentina'], ['PL', 'Poland'],
+  ['UA', 'Ukraine'], ['TR', 'Türkiye'], ['SE', 'Sweden'], ['NO', 'Norway'],
+  ['FI', 'Finland'], ['DK', 'Denmark'], ['NL', 'Netherlands'], ['BE', 'Belgium'],
+  ['AT', 'Austria'], ['CH', 'Switzerland'], ['IE', 'Ireland'], ['NZ', 'New Zealand'],
+  ['ZA', 'South Africa'],
+]
 
 export type BrowseFormat = (typeof BROWSE_FORMATS)[number]
 export type BrowseStatus = (typeof BROWSE_STATUSES)[number]
 export type BrowseSeason = (typeof BROWSE_SEASONS)[number]
 export type BrowseSort = (typeof BROWSE_SORTS)[number]
+export type BrowseCountry = (typeof BROWSE_COUNTRY_CODES)[number]
 
 export function browseFormats(mode: CatalogMode): readonly BrowseFormat[] {
   return mode === 'MANGA' ? BROWSE_MANGA_FORMATS : BROWSE_ANIME_FORMATS
@@ -40,6 +54,7 @@ export const browseSearchSchema = z.object({
   genre: optionalText,
   format: z.preprocess((value) => value === '' ? undefined : value, z.enum(BROWSE_FORMATS).optional()),
   status: z.preprocess((value) => value === '' ? undefined : value, z.enum(BROWSE_STATUSES).optional()),
+  countryOfOrigin: z.preprocess((value) => value === '' ? undefined : value, z.enum(BROWSE_COUNTRY_CODES).optional()),
   season: z.preprocess((value) => value === '' ? undefined : value, z.enum(BROWSE_SEASONS).optional()),
   year: optionalYear,
   sort: z.preprocess((value) => value === '' ? undefined : value, z.enum(BROWSE_SORTS).optional()),
@@ -54,6 +69,7 @@ export function makeBrowseSearch(overrides: Partial<BrowseSearch> = {}): BrowseS
     genre: undefined,
     format: undefined,
     status: undefined,
+    countryOfOrigin: undefined,
     season: undefined,
     year: undefined,
     sort: 'TRENDING_DESC',
@@ -68,6 +84,7 @@ export function toBrowseParams(search: BrowseSearch, mode: CatalogMode = 'ANIME'
     genre: search.genre,
     format: search.format,
     status: search.status,
+    countryOfOrigin: search.countryOfOrigin,
     season: mode === 'ANIME' ? search.season : undefined,
     seasonYear: search.year,
     sort: search.sort,
@@ -81,6 +98,7 @@ export function searchWithoutPage(search: BrowseSearch): Omit<BrowseSearch, 'pag
     genre: search.genre,
     format: search.format,
     status: search.status,
+    countryOfOrigin: search.countryOfOrigin,
     season: search.season,
     year: search.year,
     sort: search.sort,
@@ -88,7 +106,7 @@ export function searchWithoutPage(search: BrowseSearch): Omit<BrowseSearch, 'pag
 }
 
 /** Filter keys a user can clear individually from the Explore surface. */
-export const BROWSE_FILTER_KEYS = ['query', 'genre', 'format', 'status', 'season', 'year'] as const
+export const BROWSE_FILTER_KEYS = ['query', 'genre', 'format', 'status', 'countryOfOrigin', 'season', 'year'] as const
 export type BrowseFilterKey = (typeof BROWSE_FILTER_KEYS)[number]
 
 /** Search state for a given page, with every active filter preserved. */

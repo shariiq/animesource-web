@@ -2,7 +2,7 @@ import { queryOptions } from '@tanstack/solid-query'
 import { queryKeys } from '../lib/queryKeys'
 import { alHome, alDetail, alByIds, alBrowse, alSuggest, alGenres, alSchedule } from './anilist/queries'
 import type { MediaSort } from './anilist/queries'
-import type { BrowseFormat, BrowseSeason, BrowseStatus } from '../lib/browse'
+import type { BrowseCountry, BrowseFormat, BrowseSeason, BrowseStatus } from '../lib/browse'
 import type { CatalogMode } from '../lib/catalog'
 
 // AniList queries: discovery metadata is public, slowly-changing, and cheap
@@ -38,6 +38,7 @@ export const browseQuery = (params: {
   genre?: string | null
   format?: BrowseFormat | null
   status?: BrowseStatus | null
+  countryOfOrigin?: BrowseCountry | null
   season?: BrowseSeason | null
   seasonYear?: number | null
   search?: string | null

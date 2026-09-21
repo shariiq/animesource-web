@@ -6,6 +6,7 @@ import { AnimeCard } from '../home/AnimeCard'
 import { useOptionalCatalogMode } from '../layout/CatalogModeSwitch'
 import {
   BROWSE_FILTER_KEYS,
+  BROWSE_COUNTRIES,
   BROWSE_MAX_PAGE,
   BROWSE_PER_PAGE,
   BROWSE_SEASONS,
@@ -37,6 +38,7 @@ const FILTER_LABELS: Record<BrowseFilterKey, string> = {
   genre: 'Genre',
   format: 'Format',
   status: 'Status',
+  countryOfOrigin: 'Country of origin',
   season: 'Season',
   year: 'Year',
 }
@@ -165,6 +167,12 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
             <select class="editorial-field" name="genre" value={props.search().genre ?? ''}>
               <option value="">All genres</option>
               <For each={genres.data ?? []}>{(genre) => <option value={genre}>{genre}</option>}</For>
+            </select>
+          </label>
+          <label>Country of origin
+            <select class="editorial-field" name="countryOfOrigin" value={props.search().countryOfOrigin ?? ''}>
+              <option value="">Any country</option>
+              <For each={BROWSE_COUNTRIES}>{([code, label]) => <option value={code}>{label}</option>}</For>
             </select>
           </label>
           <label>Format

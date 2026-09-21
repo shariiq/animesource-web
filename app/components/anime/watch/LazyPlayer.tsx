@@ -111,6 +111,8 @@ export function LazyPlayer(props: {
 
   const activeStream = () => props.streams[activeIndex()]
   const streamUrl = (stream: Stream) => resolveUrl(stream.url) ?? stream.url
+  const hasAudioStreams = () => props.streams.some((stream) => stream.is_audio)
+  const streamLabel = (stream: Stream) => stream.is_audio ? `Audio · ${stream.quality}` : stream.quality || 'Variant'
   const clipboardAvailable = () => typeof navigator !== 'undefined' && Boolean(navigator.clipboard)
 
   const destroyHls = () => {
@@ -716,10 +718,10 @@ export function LazyPlayer(props: {
 
             <Show when={props.streams.length > 1}>
               <label class="flex min-w-0 items-center gap-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/55">
-                <span>Quality</span>
+                <span>{hasAudioStreams() ? 'Stream' : 'Quality'}</span>
                 <select class="max-w-[8rem] border border-white/20 bg-transparent px-2 py-2 text-white" value={activeIndex()} onChange={(event) => changeQuality(Number(event.currentTarget.value))}>
                   <For each={props.streams}>
-                    {(stream, index) => <option value={index()}>{stream.quality || `Variant ${index() + 1}`}</option>}
+                    {(stream, index) => <option value={index()}>{streamLabel(stream) || `Variant ${index() + 1}`}</option>}
                   </For>
                 </select>
               </label>

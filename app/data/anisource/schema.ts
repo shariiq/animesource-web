@@ -84,5 +84,6 @@ export const streamSchema = z.object({
   headers: z.record(z.string(), z.string()).default({}),
   subtitles: z.array(subtitleSchema).default([]),
   is_hls: z.boolean().default(false),
+  is_audio: z.boolean().default(false),
 })
 export type Stream = z.infer<typeof streamSchema>

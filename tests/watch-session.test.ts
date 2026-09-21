@@ -83,12 +83,13 @@ const episode = (over: Partial<Episode> = {}): Episode => ({
 })
 
 const server = (id: string, name = id): Server => ({ id, name, type: 'SUB' })
-const stream = (quality: string): Stream => ({
+const stream = (quality: string, is_audio = false): Stream => ({
   url: `https://stream.test/${quality}`,
   quality,
   headers: {},
   subtitles: [],
   is_hls: false,
+  is_audio,
 })
 
 function persistence(over: Partial<WatchPersistence> = {}): WatchPersistence {
@@ -541,6 +542,10 @@ describe('Watch session helpers', () => {
       '1080p',
       '720p',
       '480p',
+    ])
+    expect(orderStreams([stream('Japanese audio', true), stream('1080p')]).map((item) => item.quality)).toEqual([
+      '1080p',
+      'Japanese audio',
     ])
     expect(derivePlayerStage({ selectedEpisode: null, loading: '', servers: [], selectedServer: null, streams: [], error: null })).toBe('episode')
     expect(derivePlayerStage({ selectedEpisode: 'episode', loading: 'servers', servers: [], selectedServer: null, streams: [], error: null })).toBe('servers-loading')

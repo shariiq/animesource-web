@@ -26,7 +26,7 @@ export function GenreNav(props: { mode?: CatalogMode } = {}) {
     <Show when={!genres.isPending} fallback={<p class="mono-signal">Loading genres…</p>}>
       <Show when={!genres.isError} fallback={<p class="mono-signal" role="alert">Couldn't load genres.</p>}>
         <Show when={genres.data} fallback={<p class="mono-signal">No genres available.</p>}>
-          <div class="genre-grid material-panel grid overflow-hidden sm:grid-cols-2 lg:grid-cols-3">
+          <div class="genre-grid material-panel grid grid-cols-2 overflow-hidden lg:grid-cols-3">
             <For each={genres.data}>
               {(genre, index) => {
                 const accent = () => accentFor(index())
@@ -51,7 +51,7 @@ function GenreTile(props: { mode: CatalogMode; genre: string; index: number; acc
     <span class="relative z-10 mt-8 block text-[17px] font-bold tracking-[-.035em]">{props.genre}</span>
     <span class="relative z-10 mt-2 block font-mono text-[8px] uppercase tracking-[.14em] text-text-muted transition-colors group-hover:text-ink">{props.mode === 'ANIME' ? 'Browse anime' : 'Manga genres'}</span>
   </>
-  const className = () => `genre-tile group bg-gradient-to-br p-5 ${props.index < 3 ? 'lg:min-h-[172px]' : ''} ${props.accent.surface}`
+  const className = () => `genre-tile group bg-gradient-to-br p-4 sm:p-5 ${props.index < 3 ? 'lg:min-h-[172px]' : ''} ${props.accent.surface}`
   return (
     <Show
       when={props.mode === 'ANIME'}

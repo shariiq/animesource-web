@@ -764,11 +764,10 @@
     outline-offset: -3px;
   }
 
-  .genre-tile:nth-child(3n) { border-right: 0; }
+  .genre-tile:nth-child(2n) { border-right: 0; }
 
-  @media (min-width: 640px) {
-    .genre-tile:nth-child(2n) { border-right: 0; }
-    .genre-tile:nth-child(3n) { border-right: 1px solid var(--line); }
+  @media (max-width: 640px) {
+    .genre-tile { min-height: 122px; }
   }
 
   @media (min-width: 1024px) {
@@ -778,6 +777,15 @@
 }
 
 @media (max-width: 780px) {
+  /* Small-viewport header: two calm rows. Row one is the brand lockup; row two
+     pairs the catalog switch with a full-width search field. Primary
+     navigation moves to the fixed bottom tab bar, so the in-header pill is
+     retired instead of clipped. */
+  .header-shell {
+    padding: 10px 12px;
+    row-gap: 10px;
+  }
+
   .header-actions {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -786,30 +794,49 @@
     gap: 10px;
   }
 
-  .catalog-mode-switch { grid-column: 1; }
+  .catalog-mode-switch {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .catalog-mode-switch button {
+    min-height: 40px;
+    padding: 0 11px;
+    font-size: 9px;
+  }
 
   .header-primary-nav {
-    grid-column: 2;
-    min-width: 0;
-    width: 100%;
+    display: none;
   }
 
   .header-actions > .search-surface-compact {
-    grid-column: 1 / -1;
+    grid-column: 2;
+    grid-row: 1;
     width: 100%;
     flex-basis: auto;
   }
 
-  .search-surface-compact { width: 100%; flex-basis: auto; }
+  .search-surface-compact {
+    width: 100%;
+    flex-basis: auto;
+  }
 
   .search-surface-compact .search-surface-input {
     min-width: 0;
-    padding-right: 12px;
+    min-height: 46px;
+    padding-right: 54px;
   }
 
+  /* The submit action docks inside the field as a circular ink button so it
+     never breaks the shell outline or floats past the viewport edge. */
   .search-surface-compact .search-surface-submit {
-    min-width: 40px;
-    padding-inline: 12px;
+    position: absolute;
+    top: 50%;
+    right: 5px;
+    min-width: 38px;
+    min-height: 38px;
+    padding-inline: 0;
+    transform: translateY(-50%);
   }
 
   .search-surface-compact .search-submit-label {
@@ -818,20 +845,103 @@
 
   .search-surface-compact .search-submit-icon {
     display: inline;
-    font: 16px/1 var(--font-body);
-  }
-}
-
-@media (max-width: 540px) {
-  .search-surface-compact {
-    width: min(210px, calc(100vw - 154px));
-    flex-basis: min(210px, calc(100vw - 154px));
+    font: 15px/1 var(--font-body);
   }
 
   .search-surface-compact .search-surface-popover {
-    right: -25px;
-    left: auto;
-    width: calc(100vw - 32px);
+    right: 0;
+    left: 0;
+    width: auto;
+  }
+}
+
+/* Fixed frosted tab bar: thumb-reach primary navigation with full-size
+   targets, floating over the atmosphere like the rest of the glass system.
+   Desktop keeps the in-header pill nav, so the bar is hidden by default. */
+.mobile-tabbar {
+  display: none;
+}
+
+@media (max-width: 780px) {
+  .mobile-tabbar {
+    position: fixed;
+    right: 12px;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    left: 12px;
+    z-index: 45;
+    display: grid;
+    grid-auto-flow: column;
+    gap: 3px;
+    padding: 6px;
+    border: 1px solid rgb(255 255 255 / .92);
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgb(255 255 255 / .86), rgb(255 255 255 / .64));
+    box-shadow: var(--shadow-glass);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+  }
+
+  .mobile-tab {
+    display: flex;
+    min-width: 0;
+    min-height: 52px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border-radius: 17px;
+    color: var(--text-muted);
+    font: 600 8.5px var(--font-mono);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    transition: background .2s var(--ease), color .2s var(--ease), box-shadow .2s var(--ease);
+  }
+
+  .mobile-tab svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .mobile-tab:active {
+    background: rgb(255 255 255 / .85);
+    color: var(--ink);
+  }
+
+  .mobile-tab.mobile-tab-active,
+  .mobile-tab.mobile-tab-active:active {
+    background: var(--ink);
+    color: #fff;
+    box-shadow: 0 10px 22px -12px rgb(6 6 9 / .6), inset 0 1px rgb(255 255 255 / .22);
+  }
+
+  /* Keep end-of-page content clear of the floating tab bar. The bar unmounts
+     on the manga reader, which owns fixed chrome of its own. */
+  body:has(.mobile-tabbar) {
+    padding-bottom: var(--mobile-tabbar-clearance);
+  }
+}
+
+/* Library category scroller: no visible scrollbar, a right-edge fade signals
+   more tabs, and chips keep full-size touch targets. */
+@media (max-width: 780px) {
+  .library-tabs {
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 34px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 34px), transparent);
+  }
+
+  .library-tabs::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (max-width: 380px) {
+  .catalog-mode-switch button {
+    padding: 0 8px;
+  }
+
+  .catalog-mode-switch button span {
+    display: none;
   }
 }
 

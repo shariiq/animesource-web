@@ -21,6 +21,9 @@
   --radius-shell: 30px;
   --control-height: 42px;
   --prominent-control-height: 54px;
+  /* Scroll clearance so the fixed mobile tab bar never covers end-of-page
+     content; includes the device safe-area inset. */
+  --mobile-tabbar-clearance: calc(92px + env(safe-area-inset-bottom, 0px));
   --violet: #6a5af9;
   --plum: #b45f95;
   --mint: #8ef0c1;

@@ -11,7 +11,7 @@ import type {
   SourceListResponse,
   Stream,
 } from '../../../data/anisource/schema'
-import { matchFlow, titleVariants, type MatchResult } from '../../../data/matching'
+import { matchFlow, titleVariants, type MatchResult, type RankedCandidate } from '../../../data/matching'
 import { titleOf } from '../../../lib/format'
 import type {
   ContinueDraft,
@@ -160,7 +160,7 @@ export interface WatchSession {
   slow: Accessor<boolean>
   manualQuery: Accessor<string>
   pickerLoading: Accessor<boolean>
-  pickerCandidates: Accessor<ReturnType<typeof matchFlow>['ranked']>
+  pickerCandidates: Accessor<RankedCandidate[]>
   sourceName: Accessor<string>
   statusText: Accessor<string>
   playerStage: Accessor<WatchStage>

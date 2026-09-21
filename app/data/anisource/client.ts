@@ -2,12 +2,20 @@ import { z } from 'zod'
 import { API_DEFAULTS, API_URLS, normalizeApiUrl } from '../../config/api'
 import {
   healthResponseSchema,
+  chapterPageSchema,
+  mangaChapterSchema,
+  mangaSearchResponseSchema,
+  anisourceMangaSchema,
   searchResponseSchema,
   sourceListResponseSchema,
   episodeSchema,
   serverSchema,
   streamSchema,
   type HealthResponse,
+  type ChapterPage,
+  type MangaChapter,
+  type MangaSearchResponse,
+  type AniSourceManga,
   type SourceListResponse,
   type SearchResponse,
   type Episode,
@@ -63,7 +71,7 @@ export interface AniSourceClientOptions {
 /**
  * Client for the deployed AniSource API. All methods are client-only —
  * they are never called from loaders, SSR, or on initial page load; the
- * watch route invokes them only after explicit user navigation.
+ * watch and reader routes invoke them only after explicit user navigation.
  */
 export function createAniSourceClient(options: AniSourceClientOptions = {}) {
   const transport: AniSourceTransport = { ...defaultTransport, ...options.transport }
@@ -154,6 +162,7 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
 
   /** In-memory cache for the source listing — it rarely changes within a session. */
   let cachedSources: { promise: Promise<SourceListResponse>; ts: number } | null = null
+  let cachedMangaSources: { promise: Promise<SourceListResponse>; ts: number } | null = null
   const SOURCE_CACHE_TTL = 10 * 60 * 1000 // 10 minutes
 
   return {
@@ -175,11 +184,44 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
       return promise
     },
 
+    mangaSources(onSlow?: () => void, signal?: AbortSignal): Promise<SourceListResponse> {
+      const now = Date.now()
+      if (cachedMangaSources && now - cachedMangaSources.ts < SOURCE_CACHE_TTL) return cachedMangaSources.promise
+      const promise = request('/api/v1/manga/sources', sourceListResponseSchema, onSlow, signal)
+      cachedMangaSources = { promise, ts: now }
+      promise.catch(() => {
+        if (cachedMangaSources?.promise === promise) cachedMangaSources = null
+      })
+      return promise
+    },
+
     search(sourceId: string, q: string, page = 1, onSlow?: () => void, signal?: AbortSignal): Promise<SearchResponse> {
       const path =
         `/api/v1/anime/${encodeURIComponent(sourceId)}/search` +
         `?q=${encodeURIComponent(q)}&page=${encodeURIComponent(page)}`
       return request(path, searchResponseSchema, onSlow, signal)
+    },
+
+    mangaSearch(sourceId: string, q: string, page = 1, onSlow?: () => void, signal?: AbortSignal): Promise<MangaSearchResponse> {
+      const path =
+        `/api/v1/manga/${encodeURIComponent(sourceId)}/search` +
+        `?q=${encodeURIComponent(q)}&page=${encodeURIComponent(page)}`
+      return request(path, mangaSearchResponseSchema, onSlow, signal)
+    },
+
+    mangaDetails(sourceId: string, mangaId: string, onSlow?: () => void, signal?: AbortSignal): Promise<AniSourceManga> {
+      const path = `/api/v1/manga/${encodeURIComponent(sourceId)}/manga/${encodeURIComponent(mangaId)}`
+      return request(path, anisourceMangaSchema, onSlow, signal)
+    },
+
+    mangaChapters(sourceId: string, mangaId: string, onSlow?: () => void, signal?: AbortSignal): Promise<MangaChapter[]> {
+      const path = `/api/v1/manga/${encodeURIComponent(sourceId)}/chapters/${encodeURIComponent(mangaId)}`
+      return request(path, mangaChapterSchema.array(), onSlow, signal)
+    },
+
+    mangaPages(sourceId: string, chapterId: string, onSlow?: () => void, signal?: AbortSignal): Promise<ChapterPage[]> {
+      const path = `/api/v1/manga/${encodeURIComponent(sourceId)}/pages/${encodeURIComponent(chapterId)}`
+      return request(path, chapterPageSchema.array(), onSlow, signal)
     },
 
     episodes(sourceId: string, animeId: string, onSlow?: () => void, signal?: AbortSignal): Promise<Episode[]> {

@@ -4,7 +4,7 @@ Continuous integration has two independent tracks. They share nothing at runtime
 
 ## Track 1 — `verify` (merge gate)
 
-`.github/workflows/verify.yml` runs on every push and pull request. It is fully deterministic: AniList and AniSource are replaced by `tests/e2e/mock-api.mjs`, and neither live service is ever contacted. A red run here means the commit is broken and blocks the merge.
+`.github/workflows/verify.yml` runs on every push and pull request. It is fully deterministic: AniList and AniSource are replaced by `tests/e2e/mock-api.mjs`, including the manga source, chapter, and page responses used by the reader journey. Neither live service is ever contacted. A red run here means the commit is broken and blocks the merge.
 
 Two parallel jobs, Node 22.12.0:
 

@@ -10,16 +10,22 @@ export interface TitleVariant {
   normalized: string
 }
 
-export interface RankedCandidate {
-  candidate: AniSourceAnime
+export interface TitleCandidate {
+  id: string
+  title: string
+  alternative_titles: string[]
+}
+
+export interface RankedCandidate<T extends TitleCandidate = AniSourceAnime> {
+  candidate: T
   score: number
   aniListTitle: string
   sourceTitle: string
 }
 
-export type MatchResult =
-  | { kind: 'auto'; match: RankedCandidate; ranked: RankedCandidate[] }
-  | { kind: 'picker'; ranked: RankedCandidate[] }
+export type MatchResult<T extends TitleCandidate = AniSourceAnime> =
+  | { kind: 'auto'; match: RankedCandidate<T>; ranked: RankedCandidate<T>[] }
+  | { kind: 'picker'; ranked: RankedCandidate<T>[] }
   | { kind: 'empty'; ranked: [] }
 
 const NOISE_WORDS = new Set(['the', 'anime', 'tv', 'series'])
@@ -106,10 +112,10 @@ export function titleVariants(anime: AniListDetail): TitleVariant[] {
   return variants
 }
 
-export function rankCandidates(titles: readonly string[], candidates: AniSourceAnime[]): RankedCandidate[] {
+export function rankCandidates<T extends TitleCandidate>(titles: readonly string[], candidates: T[]): RankedCandidate<T>[] {
   return candidates
     .map((candidate) => {
-      let best: RankedCandidate = { candidate, score: 0, aniListTitle: titles[0] ?? '', sourceTitle: candidate.title }
+      let best: RankedCandidate<T> = { candidate, score: 0, aniListTitle: titles[0] ?? '', sourceTitle: candidate.title }
       const sourceTitles = [candidate.title, ...candidate.alternative_titles]
       for (const aniListTitle of titles) {
         for (const sourceTitle of sourceTitles) {
@@ -128,7 +134,7 @@ export function findBestMatch(aniListTitle: string, candidates: AniSourceAnime[]
   return best ? { index: candidates.findIndex((candidate) => candidate.id === best.candidate.id), score: best.score } : { index: -1, score: 0 }
 }
 
-export function matchFlow(aniListTitles: string | readonly string[], candidates: AniSourceAnime[]): MatchResult {
+export function matchFlow<T extends TitleCandidate>(aniListTitles: string | readonly string[], candidates: T[]): MatchResult<T> {
   if (!candidates.length) return { kind: 'empty', ranked: [] }
   const ranked = rankCandidates(typeof aniListTitles === 'string' ? [aniListTitles] : aniListTitles, candidates)
   const best = ranked[0]!

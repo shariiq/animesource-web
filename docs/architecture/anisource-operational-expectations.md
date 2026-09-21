@@ -2,14 +2,15 @@
 
 ## Dependency contract
 
-AniSource provides Source search, episode lists, Servers, and Stream manifests for the mounted Watch route. It is an interaction-time browser dependency only:
+AniSource provides source search, episode lists, servers, and stream manifests for Watch, plus source search, chapter lists, and page URLs for the mounted Manga Reader route. It is an interaction-time browser dependency only:
 
 - AniList owns discovery, schedule, detail metadata, and all server-rendered loader data.
 - AniSource must **never** run in an AniList loader, SSR request, route prefetch, discovery route, or shared layout.
-- `createWatchSession` is the sole production caller for source → Match → Episode → Server → Stream resolution.
-- Browser IndexedDB stores only the viewer's Match, source preference, playback ledger, and preferences. AniSource response data is not durable viewer state.
+- `createWatchSession` is the sole production caller for anime source → Match → Episode → Server → Stream resolution.
+- `createMangaReaderSession` is the sole production caller for manga source → Match → Chapter → Page resolution. It loads the full chapter list from `/chapters`; `/update` is not a reader data source.
+- Browser IndexedDB stores the viewer's Match, source preference, playback ledger, manga reading position, reader preferences, and profile preferences. AniSource response data is not durable viewer state.
 
-This separation means an AniSource outage cannot prevent browsing, searching, or reading an Anime detail page.
+This separation means an AniSource outage cannot prevent browsing, searching, or reading an Anime or Manga detail page.
 
 ## Timeout, cold start, and retries
 
@@ -23,7 +24,7 @@ The client uses one abortable request per operation with these current limits:
 | Health retry | 1 bounded retry | Re-check the selected source before a manual stream retry. |
 | Manual stream retries | 2 after the initial attempt | Refresh an expired or transient Stream without creating an unbounded provider loop. |
 | HLS recovery | 1 network recovery and 1 media recovery per Stream load | Recover common player faults once, then expose the provider failure. |
-| Source-list cache TTL | 10 minutes, in-browser client instance | Avoid repeated source-list calls while evicting rejected promises immediately. |
+| Source-list cache TTL | 10 minutes, in-browser client instance | Avoid repeated anime or manga source-list calls while evicting rejected promises immediately. |
 
 A timeout is presented as a cold-start-capable condition, not as proof that a provider is permanently unavailable. Caller cancellation is silent and never becomes an error state. Invalid payloads are not retried. The source picker remains enabled whenever AniSource has supplied a list, so viewers choose an alternate Source explicitly rather than being silently switched.
 
@@ -54,7 +55,7 @@ Useful browser telemetry aggregates must remain privacy-safe and avoid Stream UR
 
 Before production launch or capacity expansion, establish and observe:
 
-1. availability and latency objectives for `/health`, source list, search, episodes, Servers, and Streams;
+1. availability and latency objectives for `/health`, source lists, search, episodes, chapters, pages, Servers, and Streams;
 2. cold-start rate and p95 wake duration against the 25-second timeout;
 3. capacity limits for concurrent source/stream resolution and upstream provider error budgets;
 4. dashboard/alert ownership for a sustained increase in typed timeouts, 5xx health failures, expired Streams, or empty server lists;
@@ -67,7 +68,7 @@ These are launch expectations, not claims about the current public AniSource dep
 | Area | Expectation | Evidence required |
 | --- | --- | --- |
 | Availability | 99% monthly availability for `/health` and the source-list endpoint, excluding planned maintenance. | Monthly uptime report and incident links. |
-| Warm latency | p95 below 5 seconds for search, Episodes, and Servers; p95 below 10 seconds for Streams. | Scheduled live smoke latency samples. |
+| Warm latency | p95 below 5 seconds for search, Episodes, Chapters, and Servers; p95 below 10 seconds for Pages and Streams. | Scheduled live smoke latency samples. |
 | Cold start | The cold-start rate and p95 wake duration remain visible against the 25-second client timeout. | Live smoke history with timeout/error-kind counts. |
 | Capacity | The maximum safe concurrent source/Stream resolution count and each upstream provider's error budget are recorded before launch. | A repeatable load check owned by the deployment operator. |
 | Alerts | Alert on sustained timeout/network failures, 5xx health failures, expired Streams, and empty Server lists. | Dashboard links, alert thresholds, and an on-call owner. |

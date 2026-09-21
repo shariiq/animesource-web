@@ -24,8 +24,8 @@ The merge-gate workflow (`verify.yml`) is deterministic and mock-only. A separat
 ## Preview and release procedure
 
 1. Run `bun install --frozen-lockfile` and `bun run verify` from a clean checkout.
-2. Open a Vercel Preview deployment and inspect `/`, `/explore`, `/anime/<id>`, and `/anime/<id>/watch/next` with representative real AniList data. Confirm the Watch route does not contact AniSource until it mounts in the browser.
-3. Exercise header search, keyboard controls, favorite persistence, source matching, episode/server selection, and the player at desktop and approximately 390px. Check there is no horizontal overflow.
+2. Open a Vercel Preview deployment and inspect `/`, `/explore`, `/anime/<id>`, `/anime/<id>/watch/next`, `/manga/<id>`, and `/manga/<id>/read/start` with representative real AniList data. Confirm the Watch and Manga Reader routes do not contact AniSource until they mount in the browser.
+3. Exercise header search, keyboard controls, favorite persistence, source matching, episode/server selection, chapter selection, page loading, and the player/reader at desktop and approximately 390px. Check there is no horizontal overflow.
 4. Promote only the verified commit to Production.
 5. If a production regression appears, the release owner rolls back to the previous known-good Vercel deployment. Record the incident and follow-up issue; do not patch by weakening checks or by introducing fixture data into the production path.
 

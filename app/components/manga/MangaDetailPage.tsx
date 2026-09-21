@@ -202,6 +202,7 @@ export function MangaDetailPage(props: { manga: AniListDetail }) {
               </Show>
 
               <div class="manga-detail-actions">
+                <Link class="ink-control inline-flex" to="/manga/$mangaId/read/$chapterId" params={{ mangaId: String(props.manga.id), chapterId: 'start' }}>Open reader →</Link>
                 <Show when={props.manga.siteUrl && isSafeExternalUrl(props.manga.siteUrl)}>
                   <a class="ink-control inline-flex" href={props.manga.siteUrl!} target="_blank" rel="noopener noreferrer">Open AniList ↗</a>
                 </Show>

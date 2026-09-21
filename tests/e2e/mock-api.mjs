@@ -10,6 +10,10 @@ const SUBTITLE_URL = `${HOST}/subtitles.vtt`;
 // AniSource episode IDs are opaque and routinely carry query-ish characters;
 // the route and client must survive them end to end.
 const EPISODE_ID = "episode-1&eps=1";
+const MANGA_PAGE_URLS = [
+  `${HOST}/manga-page-1.svg`,
+  `${HOST}/manga-page-2.svg`,
+];
 let failAniList = false;
 
 const media = (id, title, type = "ANIME") => ({
@@ -136,6 +140,58 @@ createServer(async (request, response) => {
       ],
       count: 1,
     });
+  if (url.pathname === "/api/v1/manga/sources")
+    return send(response, 200, {
+      sources: [
+        { id: "test", name: "Test Manga Source", base_url: "https://source.test" },
+      ],
+      count: 1,
+    });
+  if (url.pathname === "/api/v1/manga/test/search")
+    return send(response, 200, {
+      items: [
+        {
+          id: "manga-1",
+          title: "Test Manga",
+          url: "https://source.test/manga-1",
+          thumbnail: "",
+          description: "",
+          genres: ["Action"],
+          authors: [],
+          artists: [],
+          alternative_titles: [],
+          status: "ongoing",
+        },
+      ],
+      page: 1,
+      has_next: false,
+      total_returned: 1,
+    });
+  if (url.pathname === "/api/v1/manga/test/chapters/manga-1")
+    return send(response, 200, [
+      {
+        id: "chapter-1",
+        title: "First chapter",
+        url: "https://source.test/chapter-1",
+        number: 1,
+        volume: null,
+        scanlator: "Test scanlator",
+        language: "en",
+        released_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        id: "chapter-2",
+        title: "Second chapter",
+        url: "https://source.test/chapter-2",
+        number: 2,
+        volume: null,
+        scanlator: "Test scanlator",
+        language: "en",
+        released_at: "2026-01-02T00:00:00Z",
+      },
+    ]);
+  if (url.pathname.startsWith("/api/v1/manga/test/pages/"))
+    return send(response, 200, MANGA_PAGE_URLS.map((pageUrl, index) => ({ index, url: pageUrl, page_url: "" })));
   if (url.pathname.includes("/search"))
     return send(response, 200, {
       items: [
@@ -213,6 +269,10 @@ createServer(async (request, response) => {
     );
     response.writeHead(200, { "content-type": "image/png" });
     return response.end(png);
+  }
+  if (url.pathname.startsWith("/manga-page-") && url.pathname.endsWith(".svg")) {
+    response.writeHead(200, { "content-type": "image/svg+xml" });
+    return response.end(`<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1080" viewBox="0 0 720 1080"><rect width="720" height="1080" fill="#f2eee6"/><path d="M80 130h560M80 190h420M80 900h560" stroke="#151515" stroke-width="8"/><circle cx="360" cy="520" r="150" fill="#c6b8a0"/><text x="360" y="540" text-anchor="middle" font-family="monospace" font-size="32">MANGA PAGE</text></svg>`);
   }
   if (url.pathname === "/stream.mp4") {
     response.writeHead(200, { "content-type": "video/mp4" });

@@ -122,6 +122,8 @@ export interface ViewerData extends ViewerLibrary, SourcePreferences {
 
 const DEFAULT_PLAYBACK_PREFERENCES: PlaybackPreferenceValues = {
   quality: null,
+  audioLanguage: null,
+  audioLabel: null,
   subtitleLanguage: null,
   subtitleLabel: null,
 }

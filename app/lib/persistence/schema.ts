@@ -56,6 +56,8 @@ export type PlaybackRecord = z.infer<typeof playbackRecordSchema>
 
 export const playbackPreferencesSchema = z.object({
   quality: z.string().nullable().default(null),
+  audioLanguage: z.string().nullable().default(null),
+  audioLabel: z.string().nullable().default(null),
   subtitleLanguage: z.string().nullable().default(null),
   subtitleLabel: z.string().nullable().default(null),
   updatedAt: z.number().nonnegative().optional(),

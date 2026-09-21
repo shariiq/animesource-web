@@ -4,8 +4,8 @@ Run this checklist against the commit being released. Do not mark a release read
 
 ## Automated gate
 
-- [ ] `npm ci` succeeds from a clean checkout.
-- [ ] `npm run verify` succeeds: lint, strict typecheck, Vercel/Nitro build, Vitest, and mocked Playwright.
+- [ ] `bun install --frozen-lockfile` succeeds from a clean checkout.
+- [ ] `bun run verify` succeeds: lint, strict typecheck, Vercel/Nitro build, Vitest, and mocked Playwright.
 - [ ] `git status` contains no generated output, reports, `.env` files, or local Claude settings.
 - [ ] CI uses `tests/e2e/mock-api.mjs` and has no live AniList/AniSource dependency.
 - [ ] The scheduled `live-smoke` workflow (see `docs/ci.md`) is understood to be operational only: its failures open an issue and never gate the release.
@@ -34,7 +34,7 @@ Run this checklist against the commit being released. Do not mark a release read
 
 ## Vercel operations
 
-- [ ] Preview output is generated under `.vercel/output/` by the Nitro Vercel preset, and `npm start` serves the built routes over HTTP.
+- [ ] Preview output is generated under `.vercel/output/` by the Nitro Vercel preset, and `bun start` serves the built routes over HTTP.
 - [ ] Preview environment values are public endpoint overrides only; no secret is exposed through `VITE_`.
 - [ ] Production promotion has a named release owner.
 - [ ] The previous known-good deployment is identified so the release owner can roll back if needed.

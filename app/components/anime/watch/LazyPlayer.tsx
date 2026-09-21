@@ -7,6 +7,9 @@ import { loadSubtitle, resolveUrl } from '../../../data/anisource/client'
 
 type PlayerStatus = 'connecting' | 'buffering' | 'ready' | 'reconnecting' | 'error'
 
+type HlsQualityOption = { id: number; label: string }
+type HlsAudioOption = { id: number; label: string; language: string; name: string }
+
 /**
  * A subtitle the viewer can turn on. External tracks come from the AniSource
  * stream payload as `<track>` elements; HLS tracks are declared by the manifest
@@ -15,14 +18,6 @@ type PlayerStatus = 'connecting' | 'buffering' | 'ready' | 'reconnecting' | 'err
 type SubtitleOption =
   | { kind: 'external'; label: string; language: string; track: TextTrack }
   | { kind: 'hls'; label: string; language: string; id: number }
-
-/**
- * Headers the browser refuses to let script set on a request. AniSource's proxy
- * applies the upstream ones itself, so the safe subset is usually empty —
- * forwarding the rest anyway would only produce console noise.
- */
-const FORBIDDEN_HEADER =
-  /^(accept-(charset|encoding)|access-control-request-|connection|content-length|cookie|date|dnt|expect|host|keep-alive|origin|permissions-policy|proxy-|referer|sec-|te|trailer|transfer-encoding|upgrade|user-agent|via)/i
 
 type VideoWithNativeFullscreen = HTMLVideoElement & {
   webkitEnterFullscreen?: () => void
@@ -39,10 +34,6 @@ function isExpiredStreamFailure(data: unknown): boolean {
   const details = data as HlsErrorDetails
   const status = details.response?.code
   return status === 401 || status === 403 || status === 410 || /(?:401|403|410)/.test(details.details ?? '')
-}
-
-function browserSafeHeaders(headers: Record<string, string>): [string, string][] {
-  return Object.entries(headers).filter(([name]) => !FORBIDDEN_HEADER.test(name))
 }
 
 function formatTime(seconds: number): string {
@@ -92,6 +83,10 @@ export function LazyPlayer(props: {
   const [playerNotice, setPlayerNotice] = createSignal<string | null>(null)
   const [copyState, setCopyState] = createSignal<'idle' | 'copied' | 'unavailable'>('idle')
   const [resumePrompt, setResumePrompt] = createSignal<number | null>(null)
+  const [qualityLevels, setQualityLevels] = createSignal<HlsQualityOption[]>([])
+  const [qualityLevel, setQualityLevel] = createSignal(-1)
+  const [audioTracks, setAudioTracks] = createSignal<HlsAudioOption[]>([])
+  const [audioTrack, setAudioTrack] = createSignal(-1)
 
   let hls: Hls | null = null
   let trackElements: HTMLTrackElement[] = []
@@ -111,8 +106,25 @@ export function LazyPlayer(props: {
 
   const activeStream = () => props.streams[activeIndex()]
   const streamUrl = (stream: Stream) => resolveUrl(stream.url) ?? stream.url
-  const hasAudioStreams = () => props.streams.some((stream) => stream.is_audio)
+  const streamOptions = () => {
+    const options = props.streams.map((stream, index) => ({ stream, index }))
+    return options.some(({ stream }) => !stream.is_audio) ? options.filter(({ stream }) => !stream.is_audio) : options
+  }
   const streamLabel = (stream: Stream) => stream.is_audio ? `Audio · ${stream.quality}` : stream.quality || 'Variant'
+  const qualityLabel = (level: { name?: string; height?: number; bitrate?: number }, index: number) =>
+    level.name?.trim() || (level.height ? `${level.height}p` : level.bitrate ? `${Math.round(level.bitrate / 1000)} kbps` : `Variant ${index + 1}`)
+  const audioLabel = (track: { name?: string; lang?: string }, index: number) => {
+    const name = track.name?.trim() ?? ''
+    const language = track.lang?.trim() ?? ''
+    if (name && language && name.toLowerCase() !== language.toLowerCase()) return `${name} · ${language}`
+    return name || language || `Audio ${index + 1}`
+  }
+  const resetHlsOptions = () => {
+    setQualityLevels([])
+    setQualityLevel(-1)
+    setAudioTracks([])
+    setAudioTrack(-1)
+  }
   const clipboardAvailable = () => typeof navigator !== 'undefined' && Boolean(navigator.clipboard)
 
   const destroyHls = () => {
@@ -291,6 +303,7 @@ export function LazyPlayer(props: {
     removeRestoreListener?.()
     removeRestoreListener = undefined
     destroyHls()
+    resetHlsOptions()
     element.removeAttribute('src')
     element.load()
     mountExternalSubtitles(element, stream, generation)
@@ -337,13 +350,65 @@ export function LazyPlayer(props: {
         return
       }
 
-      const safeHeaders = browserSafeHeaders(stream.headers)
-      const instance = new HlsClass({
-        xhrSetup: (xhr) => {
-          for (const [name, value] of safeHeaders) xhr.setRequestHeader(name, value)
-        },
-      })
+      // The signed AniSource HLS proxy owns upstream headers. Passing provider
+      // or extractor headers from the browser breaks the proxy boundary and
+      // can make the manifest or its child URLs fail CORS checks.
+      const instance = new HlsClass()
       hls = instance
+      let audioPreferenceApplied = false
+
+      const syncQualityLevels = () => {
+        if (generation !== loadGeneration) return
+        const options = instance.levels.map((level, levelIndex) => ({ id: levelIndex, label: qualityLabel(level, levelIndex) }))
+        setQualityLevels(options)
+        const preferred = props.preferences?.quality
+        const preferredIndex = preferred && preferred.toLowerCase() !== 'auto'
+          ? options.findIndex((option) => option.label === preferred)
+          : -1
+        const next = preferredIndex >= 0 ? preferredIndex : -1
+        instance.currentLevel = next
+        setQualityLevel(next)
+      }
+
+      const syncAudioTracks = () => {
+        if (generation !== loadGeneration) return
+        const options = instance.audioTracks.map((track, trackIndex) => ({
+          id: trackIndex,
+          label: audioLabel(track, trackIndex),
+          language: track.lang?.trim() ?? '',
+          name: track.name?.trim() ?? '',
+        }))
+        setAudioTracks(options)
+        if (!options.length) {
+          setAudioTrack(-1)
+          return
+        }
+
+        const preferredLanguage = props.preferences?.audioLanguage
+        const preferredLabel = props.preferences?.audioLabel
+        const preferredIndex = !audioPreferenceApplied && (preferredLanguage || preferredLabel)
+          ? options.findIndex((option) =>
+              (!preferredLanguage || option.language === preferredLanguage) &&
+              (!preferredLabel || option.name === preferredLabel),
+            )
+          : -1
+        const current = instance.audioTrack >= 0 && instance.audioTrack < options.length ? instance.audioTrack : 0
+        const next = preferredIndex >= 0 ? preferredIndex : current
+        if (next !== instance.audioTrack) instance.audioTrack = next
+        setAudioTrack(next)
+        audioPreferenceApplied = true
+      }
+
+      // eslint-disable-next-line solid/reactivity -- hls.js owns this imperative media lifecycle.
+      instance.on(HlsClass.Events.MANIFEST_PARSED, () => {
+        syncQualityLevels()
+        syncAudioTracks()
+      })
+      // eslint-disable-next-line solid/reactivity -- hls.js owns this imperative media lifecycle.
+      instance.on(HlsClass.Events.AUDIO_TRACKS_UPDATED, () => syncAudioTracks())
+      instance.on(HlsClass.Events.AUDIO_TRACK_SWITCHED, (_event, data) => {
+        if (generation === loadGeneration && typeof data.id === 'number') setAudioTrack(data.id)
+      })
 
       // eslint-disable-next-line solid/reactivity -- hls.js owns this imperative media lifecycle.
       instance.on(HlsClass.Events.SUBTITLE_TRACKS_UPDATED, () => {
@@ -407,8 +472,11 @@ export function LazyPlayer(props: {
       const resume = initialResumeUsed ? element.currentTime : (props.resumeAt ?? 0)
       initialResumeUsed = true
       const preferred = props.preferences?.quality
-      const preferredIndex = preferred ? streams.findIndex((stream) => stream.quality === preferred) : -1
-      void loadStream(preferredIndex >= 0 ? preferredIndex : 0, resume)
+      const preferredIndex = preferred
+        ? streams.findIndex((stream) => !stream.is_audio && stream.quality === preferred)
+        : -1
+      const defaultIndex = streams.findIndex((stream) => !stream.is_audio)
+      void loadStream(preferredIndex >= 0 ? preferredIndex : defaultIndex >= 0 ? defaultIndex : 0, resume)
     })
   })
 
@@ -469,15 +537,39 @@ export function LazyPlayer(props: {
     flushProgress()
     const element = video()
     const quality = props.streams[index]?.quality ?? null
-    persistPreferences({ ...(props.preferences ?? { quality: null, subtitleLanguage: null, subtitleLabel: null }), quality })
+    persistPreferences({ ...(props.preferences ?? { quality: null, audioLanguage: null, audioLabel: null, subtitleLanguage: null, subtitleLabel: null }), quality })
     void loadStream(index, element?.currentTime ?? 0, Boolean(element && !element.paused))
+  }
+
+  const changeHlsQuality = (value: string) => {
+    const next = Number(value)
+    const instance = hls
+    if (!instance || !Number.isInteger(next) || next < -1 || next >= qualityLevels().length) return
+    instance.currentLevel = next
+    setQualityLevel(next)
+    const quality = next >= 0 ? qualityLevels()[next]?.label ?? null : null
+    persistPreferences({ ...(props.preferences ?? { quality: null, audioLanguage: null, audioLabel: null, subtitleLanguage: null, subtitleLabel: null }), quality })
+  }
+
+  const changeAudioTrack = (value: string) => {
+    const next = Number(value)
+    const instance = hls
+    const selected = audioTracks()[next]
+    if (!instance || !Number.isInteger(next) || !selected) return
+    instance.audioTrack = next
+    setAudioTrack(next)
+    persistPreferences({
+      ...(props.preferences ?? { quality: null, audioLanguage: null, audioLabel: null, subtitleLanguage: null, subtitleLabel: null }),
+      audioLanguage: selected.language || null,
+      audioLabel: selected.name || null,
+    })
   }
 
   const changeSubtitle = (index: number) => {
     setSubtitleIndex(index)
     applySubtitleSelection(index, subtitleOptions())
     const option = subtitleOptions()[index]
-    persistPreferences({ ...(props.preferences ?? { quality: null, subtitleLanguage: null, subtitleLabel: null }), subtitleLanguage: option?.language ?? null, subtitleLabel: option?.label ?? null })
+    persistPreferences({ ...(props.preferences ?? { quality: null, audioLanguage: null, audioLabel: null, subtitleLanguage: null, subtitleLabel: null }), subtitleLanguage: option?.language ?? null, subtitleLabel: option?.label ?? null })
   }
 
   const seekTo = (value: string) => {
@@ -494,14 +586,24 @@ export function LazyPlayer(props: {
     const next = Number(value)
     if (!element || !Number.isFinite(next)) return
     element.volume = next
-    element.muted = next === 0
+    const nextMuted = next === 0
+    element.muted = nextMuted
+    setVolume(next)
+    setMuted(nextMuted)
   }
 
   const toggleMute = () => {
     const element = video()
     if (!element) return
-    if (element.muted && element.volume === 0) element.volume = 1
-    element.muted = !element.muted
+    let nextVolume = element.volume
+    if (element.muted && nextVolume === 0) {
+      nextVolume = 1
+      element.volume = nextVolume
+    }
+    const nextMuted = !element.muted
+    element.muted = nextMuted
+    setVolume(nextVolume)
+    setMuted(nextMuted)
   }
 
   const lockOrientation = async () => {
@@ -716,12 +818,35 @@ export function LazyPlayer(props: {
 
             <span class="flex-1" />
 
-            <Show when={props.streams.length > 1}>
+            <Show when={streamOptions().length > 1}>
               <label class="flex min-w-0 items-center gap-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/55">
-                <span>{hasAudioStreams() ? 'Stream' : 'Quality'}</span>
+                <span>{streamOptions().some(({ stream }) => stream.is_audio) ? 'Stream' : 'Quality'}</span>
                 <select class="max-w-[8rem] border border-white/20 bg-transparent px-2 py-2 text-white" value={activeIndex()} onChange={(event) => changeQuality(Number(event.currentTarget.value))}>
-                  <For each={props.streams}>
-                    {(stream, index) => <option value={index()}>{streamLabel(stream) || `Variant ${index() + 1}`}</option>}
+                  <For each={streamOptions()}>
+                    {(option, index) => <option value={option.index}>{streamLabel(option.stream) || `Variant ${index() + 1}`}</option>}
+                  </For>
+                </select>
+              </label>
+            </Show>
+
+            <Show when={qualityLevels().length > 1}>
+              <label class="flex min-w-0 items-center gap-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/55">
+                <span>Quality</span>
+                <select class="max-w-[8rem] border border-white/20 bg-transparent px-2 py-2 text-white" value={qualityLevel()} onChange={(event) => changeHlsQuality(event.currentTarget.value)}>
+                  <option value={-1}>Auto</option>
+                  <For each={qualityLevels()}>
+                    {(option) => <option value={option.id}>{option.label}</option>}
+                  </For>
+                </select>
+              </label>
+            </Show>
+
+            <Show when={audioTracks().length > 1}>
+              <label class="flex min-w-0 items-center gap-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/55">
+                <span>Audio</span>
+                <select class="max-w-[10rem] border border-white/20 bg-transparent px-2 py-2 text-white" value={audioTrack()} onChange={(event) => changeAudioTrack(event.currentTarget.value)}>
+                  <For each={audioTracks()}>
+                    {(track) => <option value={track.id}>{track.label}</option>}
                   </For>
                 </select>
               </label>

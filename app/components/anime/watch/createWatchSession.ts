@@ -366,6 +366,8 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
   const [pickerLoading, setPickerLoading] = createSignal(false)
   const [preferences, setPreferences] = createSignal<PlaybackPreferenceValues>({
     quality: null,
+    audioLanguage: null,
+    audioLabel: null,
     subtitleLanguage: null,
     subtitleLabel: null,
   })
@@ -1021,6 +1023,8 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
         setPreferences(
           (await options.persistence.getPlaybackPreferences?.()) ?? {
             quality: null,
+            audioLanguage: null,
+            audioLabel: null,
             subtitleLanguage: null,
             subtitleLabel: null,
           },

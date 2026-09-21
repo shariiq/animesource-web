@@ -15,8 +15,9 @@ Tier by impact; shared tokens, multiple consumers, or an explicit fidelity targe
 ## Locked decisions
 
 - SolidJS (not React), TanStack Start/Router, Solid Query, strict TypeScript, Tailwind.
-- AniList GraphQL for discovery/metadata, server loaders for SEO/first paint. AniSource REST only for watch, client-only on interaction; never SSR or page load.
+- AniList GraphQL for discovery/metadata, server loaders for SEO/first paint. AniSource REST is client-only for Watch and Manga Reader interactions; never SSR or page load.
 - Watch: deep-linkable, code-split `/anime/$animeId/watch/$episodeId` with `?source=`, not embedded in detail.
+- Manga Reader: deep-linkable, client-only `/manga/$mangaId/read/$chapterId` with `?source=`, not embedded in detail; load the complete chapter list from `/chapters`, never the update endpoint.
 - Persistence: typed, versioned, Zod-validated IndexedDB through Solid Query resources/hooks, not raw localStorage.
 - Current approved `docs/adr/` governs visuals. References supply visual direction, not production content or copied markup.
 

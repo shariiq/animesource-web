@@ -9,14 +9,19 @@ import { GenreNav } from './GenreNav'
 import { Rail } from './Rail'
 import { currentSeason, nextSeasonOf } from '../../lib/format'
 import { makeBrowseSearch } from '../../lib/browse'
+import { catalogCopy, type CatalogMode } from '../../lib/catalog'
+import { useOptionalCatalogMode } from '../layout/CatalogModeSwitch'
 import { PageShell } from '../ui/PageShell'
 import { SectionHeading } from '../ui/SectionHeading'
 
 type CollectionFilter = 'all' | 'airing' | 'rated'
 
-export function HomePage() {
+export function HomePage(props: { mode?: CatalogMode } = {}) {
+  const catalogMode = useOptionalCatalogMode()
+  const mode = () => props.mode ?? (catalogMode ? catalogMode.mode() : 'ANIME')
+  const copy = () => catalogCopy[mode()]
   const home = createQuery(() => ({
-    ...homeQuery(),
+    ...homeQuery(mode()),
     // The route loader owns the server fetch. Keeping this observer disabled
     // during SSR prevents a failed request from being serialized as an error
     // tree that disagrees with the server's loading markup during hydration.
@@ -35,47 +40,50 @@ export function HomePage() {
 
   return (
     <PageShell>
-      <Show when={!home.isPending} fallback={<HomeLoading />}>
+      <Show when={!home.isPending} fallback={<HomeLoading mode={mode()} />}>
         <Show when={!home.isError} fallback={<State title="Couldn't reach AniList" copy="Discovery is temporarily unavailable." action={() => void home.refetch()} />}>
-          <Show when={home.data} fallback={<State title="No anime available" />} keyed>
+          <Show when={home.data} fallback={<State title={copy().unavailable} />} keyed>
             {(data) => <>
-              <HeroCarousel items={data.trending.media} />
+              <HeroCarousel items={data.trending.media} mode={mode()} />
               <Rail
-                title="New this season"
+                title={copy().freshRailTitle}
                 items={data.season.media}
-                explore={makeBrowseSearch({ sort: 'POPULARITY_DESC', season: season.season, year: season.year })}
+                mode={mode()}
+                explore={mode() === 'ANIME' ? makeBrowseSearch({ sort: 'POPULARITY_DESC', season: season.season, year: season.year }) : makeBrowseSearch({ sort: 'UPDATED_AT_DESC' })}
               />
               <section class="mt-[104px]" aria-labelledby="collection-heading">
-                <SectionHeading id="collection-heading" title="Trending Anime" description="Popular series / real-time updates / useful details" />
+                <SectionHeading id="collection-heading" title={copy().collectionTitle} description={copy().collectionDescription} />
                 <div class="material-panel overflow-hidden">
                   <div class="flex min-h-[58px] flex-wrap items-center justify-between gap-4 border-b border-line px-5 py-3 sm:px-6">
-                    <strong class="text-[13px] tracking-[-.02em]">Trending this week <span class="ml-2 font-mono text-[9px] font-normal uppercase tracking-[.08em] text-quiet">{collectionItems().length} anime</span></strong>
-                    <div class="flex gap-[6px]" aria-label="Anime collection filter">
+                    <strong class="text-[13px] tracking-[-.02em]">{copy().collectionPulse} <span class="ml-2 font-mono text-[9px] font-normal uppercase tracking-[.08em] text-quiet">{collectionItems().length} {copy().collectionItemsLabel}</span></strong>
+                    <div class="flex gap-[6px]" aria-label={`${copy().singular} collection filter`}>
                       <CollectionFilterButton current={collectionFilter} setCurrent={setCollectionFilter} value="all" label="All" />
-                      <CollectionFilterButton current={collectionFilter} setCurrent={setCollectionFilter} value="airing" label="Airing" />
+                      <CollectionFilterButton current={collectionFilter} setCurrent={setCollectionFilter} value="airing" label={copy().activeFilter} />
                       <CollectionFilterButton current={collectionFilter} setCurrent={setCollectionFilter} value="rated" label="Top rated" />
                     </div>
                   </div>
                   <div class="grid grid-cols-1 divide-y divide-line md:grid-cols-2 md:[&>*:nth-child(odd)]:border-r md:[&>*:nth-child(odd)]:border-line">
-                    <For each={collectionItems().slice(0, 12)}>{(anime, index) => <AnimeCard anime={anime} rank={index() + 1} />}</For>
+                    <For each={collectionItems().slice(0, 12)}>{(anime, index) => <AnimeCard anime={anime} mode={mode()} rank={index() + 1} />}</For>
                   </div>
-                  <div class="border-t border-line px-6 py-4 text-right font-mono text-[9px] uppercase tracking-[.1em]">
-                    <Link to="/explore" search={makeBrowseSearch({ sort: collectionFilter() === 'rated' ? 'SCORE_DESC' : collectionFilter() === 'airing' ? 'POPULARITY_DESC' : 'TRENDING_DESC', season: collectionFilter() === 'airing' ? season.season : undefined, year: collectionFilter() === 'airing' ? season.year : undefined })}>View all anime →</Link>
-                  </div>
+                  <Show when={mode() === 'ANIME'}>
+                    <div class="border-t border-line px-6 py-4 text-right font-mono text-[9px] uppercase tracking-[.1em]">
+                      <Link to="/explore" search={makeBrowseSearch({ sort: collectionFilter() === 'rated' ? 'SCORE_DESC' : collectionFilter() === 'airing' ? 'POPULARITY_DESC' : 'TRENDING_DESC', season: collectionFilter() === 'airing' ? season.season : undefined, year: collectionFilter() === 'airing' ? season.year : undefined })}>View all anime →</Link>
+                    </div>
+                  </Show>
                 </div>
               </section>
               <section class="home-deferred-section mt-[104px]" aria-labelledby="season-heading">
-                <SectionHeading id="season-heading" title="Seasonal Anime" description="Popular now / all-time favorites / coming next" />
+                <SectionHeading id="season-heading" title={copy().seasonalTitle} description={copy().seasonalDescription} />
                 <div class="grid gap-5 lg:grid-cols-3">
-                  <AnimeColumn title="Trending now" items={data.trending.media} search={makeBrowseSearch({ sort: 'TRENDING_DESC' })} />
-                  <AnimeColumn title="Popular this season" items={data.season.media} search={makeBrowseSearch({ sort: 'POPULARITY_DESC', season: season.season, year: season.year })} />
-                  <AnimeColumn title="All-time favorites" items={data.allTime.media} search={makeBrowseSearch({ sort: 'POPULARITY_DESC' })} />
+                  <AnimeColumn mode={mode()} title={copy().columnTrending} items={data.trending.media} search={mode() === 'ANIME' ? makeBrowseSearch({ sort: 'TRENDING_DESC' }) : undefined} />
+                  <AnimeColumn mode={mode()} title={copy().columnSecond} items={data.season.media} search={mode() === 'ANIME' ? makeBrowseSearch({ sort: 'POPULARITY_DESC', season: season.season, year: season.year }) : undefined} />
+                  <AnimeColumn mode={mode()} title={copy().columnThird} items={data.allTime.media} search={mode() === 'ANIME' ? makeBrowseSearch({ sort: 'POPULARITY_DESC' }) : undefined} />
                 </div>
-                <div class="mt-5"><AnimeColumn title="Coming next season" items={data.upcoming.media} search={makeBrowseSearch({ sort: 'POPULARITY_DESC', status: 'NOT_YET_RELEASED', season: nextSeason.season, year: nextSeason.year })} /></div>
+                <div class="mt-5"><AnimeColumn mode={mode()} title={copy().columnFourth} items={data.upcoming.media} search={mode() === 'ANIME' ? makeBrowseSearch({ sort: 'POPULARITY_DESC', status: 'NOT_YET_RELEASED', season: nextSeason.season, year: nextSeason.year }) : undefined} /></div>
               </section>
               <section class="home-deferred-section mt-[104px]" aria-labelledby="genre-heading">
-                <SectionHeading id="genre-heading" title="Browse by Genre" description="Find your next anime" />
-                <GenreNav />
+                <SectionHeading id="genre-heading" title={copy().genreLabel} description={copy().genreDescription} />
+                <GenreNav mode={mode()} />
               </section>
             </>}
           </Show>
@@ -89,24 +97,24 @@ function CollectionFilterButton(props: { current: () => CollectionFilter; setCur
   return <button type="button" class="paper-control min-h-[30px] rounded-[6px] px-3 text-[8.5px]" classList={{ 'border-ink bg-ink text-white': props.current() === props.value }} aria-pressed={props.current() === props.value} onClick={() => props.setCurrent(props.value)}>{props.label}</button>
 }
 
-function AnimeColumn(props: { title: string; items: AniListMedia[]; search: ReturnType<typeof makeBrowseSearch> }) {
+function AnimeColumn(props: { mode: CatalogMode; title: string; items: AniListMedia[]; search?: ReturnType<typeof makeBrowseSearch> }) {
   return (
     <section class="material-panel flex flex-col overflow-hidden">
       <div class="flex items-center justify-between border-b border-line px-4 py-3">
         <h3 class="text-sm font-bold">{props.title}</h3>
-        <Link class="font-mono text-[8px] uppercase tracking-[.1em]" to="/explore" search={props.search}>View all →</Link>
+        <Show when={props.search} keyed>{(search) => <Link class="font-mono text-[8px] uppercase tracking-[.1em]" to="/explore" search={search}>View all →</Link>}</Show>
       </div>
       {/* Rows stretch evenly to fill the stretched grid panel so every column's
           last row lands flush on the panel's bottom border. */}
       <div class="flex flex-1 flex-col divide-y divide-line [&>*]:flex-1 [&>*:last-child]:border-b-0">
-        <For each={props.items.slice(0, 3)}>{(anime, index) => <AnimeCard anime={anime} rank={index() + 1} />}</For>
+        <For each={props.items.slice(0, 3)}>{(anime, index) => <AnimeCard anime={anime} mode={props.mode} rank={index() + 1} />}</For>
       </div>
     </section>
   )
 }
 
-function HomeLoading() {
-  return <section class="grid min-h-[60vh] place-items-center" aria-busy="true"><p class="mono-signal">Loading anime discovery…</p></section>
+function HomeLoading(props: { mode: CatalogMode }) {
+  return <section class="grid min-h-[60vh] place-items-center" aria-busy="true"><p class="mono-signal">{catalogCopy[props.mode].loading}</p></section>
 }
 
 function State(props: { title: string; copy?: string; action?: () => void }) {

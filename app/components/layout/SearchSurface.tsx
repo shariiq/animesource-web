@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/solid-router'
 import type { AniListMedia } from '../../data/anilist/types'
 import { suggestQuery } from '../../data/options'
 import { makeBrowseSearch } from '../../lib/browse'
+import type { CatalogMode } from '../../lib/catalog'
 import { formatEnum, titleOf } from '../../lib/format'
 import {
   groupSuggestions,
@@ -25,7 +26,8 @@ const SEARCH_LIST_ID = 'global-search-suggestions'
  * The single site-wide search hub. Input stays local until an explicit action
  * commits a suggestion or query, keeping ordinary typing an in-place update.
  */
-export function SearchSurface() {
+export function SearchSurface(props: { mode?: CatalogMode } = {}) {
+  const mode = () => props.mode ?? 'ANIME'
   const navigate = useNavigate()
   const [input, setInput] = createSignal('')
   const [query, setQuery] = createSignal('')
@@ -39,7 +41,7 @@ export function SearchSurface() {
   let debounceTimer: number | undefined
   let queryGeneration = 0
 
-  const suggestions = createQuery(() => suggestQuery(query()))
+  const suggestions = createQuery(() => suggestQuery(query(), mode()))
   // Solid Query's data accessor suspends while an enabled query has no data.
   // Never read it during that state: this search lives above the route-level
   // Suspense boundary, so suspending here would temporarily replace the root
@@ -128,12 +130,19 @@ export function SearchSurface() {
     setOpen(trimmed.length > 1 || (trimmed.length === 0 && history().length > 0))
   }
 
-  const openAnime = async (anime: AniListMedia) => {
+  const openCatalog = async (anime: AniListMedia) => {
     const intent = intentForSuggestion(anime)
     const value = normalizeSearchQuery(input())
     if (value) remember(value)
     setOpen(false)
     field?.blur()
+    if (mode() === 'MANGA') {
+      await navigate({
+        to: '/manga/$mangaId',
+        params: { mangaId: String(intent.animeId) },
+      })
+      return
+    }
     await navigate({
       to: '/anime/$animeId',
       params: { animeId: String(intent.animeId) },
@@ -181,7 +190,7 @@ export function SearchSurface() {
     if (event.key === 'Enter') {
       event.preventDefault()
       const item = suggestionItems()[activeIndex()]
-      void (item ? openAnime(item) : submitSearch())
+      void (item ? openCatalog(item) : submitSearch())
       return
     }
     if (!open() || suggestionItems().length === 0) return
@@ -201,20 +210,20 @@ export function SearchSurface() {
   const resultMeta = (anime: AniListMedia) =>
     [anime.format ? formatEnum(anime.format) : null, anime.seasonYear]
       .filter(Boolean)
-      .join(' · ') || 'Anime'
+      .join(' · ') || (mode() === 'MANGA' ? 'Manga' : 'Anime')
 
   return (
     <div
       class="search-surface search-surface-compact"
       ref={root}
       role="search"
-      aria-label="Quick anime search"
+      aria-label={`Quick ${mode().toLowerCase()} search`}
     >
       <div class="search-surface-query">
         <form class="search-surface-form" onSubmit={submitForm}>
           <div class="search-surface-control">
             <label class="sr-only" for={SEARCH_FIELD_ID}>
-              Search anime
+              Search {mode().toLowerCase()}
             </label>
             <span class="search-surface-icon" aria-hidden="true">
               ⌕
@@ -224,7 +233,7 @@ export function SearchSurface() {
               ref={field}
               class="editorial-field search-surface-input"
               type="search"
-              placeholder="Search anime…"
+              placeholder={`Search ${mode().toLowerCase()}…`}
               autocomplete="off"
               maxlength="100"
               role="combobox"
@@ -310,7 +319,7 @@ export function SearchSurface() {
                       when={suggestionItems().length > 0}
                       fallback={
                         <p class="search-surface-state">
-                          No matching anime found. Press Enter to browse this
+                          No matching {mode().toLowerCase()} found. Press Enter to browse this
                           exact query.
                         </p>
                       }
@@ -343,7 +352,7 @@ export function SearchSurface() {
                                       setActiveIndex(index())
                                     }
                                     onClick={() => {
-                                      void openAnime(anime)
+                                       void openCatalog(anime)
                                     }}
                                   >
                                     <Show

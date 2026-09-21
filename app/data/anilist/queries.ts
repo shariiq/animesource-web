@@ -2,7 +2,8 @@ import { z } from 'zod'
 import { anilistClient, AniListError } from './client'
 import type { AniListMedia, AniListDetail, AniListHome, AniListScheduleItem } from './types'
 import { mediaShape, detailShape, homeShape, genreCollectionShape, schedulePageShape, pageInfoShape } from './schema'
-import type { BrowseFormat, BrowseSeason, BrowseSort, BrowseStatus } from '../../lib/browse'
+import type { BrowseCountry, BrowseFormat, BrowseSeason, BrowseSort, BrowseStatus } from '../../lib/browse'
+import type { CatalogMode } from '../../lib/catalog'
 
 /**
  * Returns the current season based on date (WINTER/SPRING/SUMMER/FALL).
@@ -53,6 +54,10 @@ export const MEDIA_FRAGMENT = `
     format
     status
     episodes
+    chapters
+    volumes
+    updatedAt
+    startDate { year month day }
     season
     seasonYear
     genres
@@ -66,6 +71,8 @@ export const MEDIA_FRAGMENT = `
 const HOME_MEDIA_FRAGMENT = `
   fragment homeMedia on Media {
     id
+    type
+    siteUrl
     title { romaji english native }
     coverImage { extraLarge large color }
     bannerImage
@@ -76,6 +83,10 @@ const HOME_MEDIA_FRAGMENT = `
     format
     status
     episodes
+    chapters
+    volumes
+    updatedAt
+    startDate { year month day }
     seasonYear
     genres
     countryOfOrigin
@@ -101,32 +112,40 @@ function parsePayload<T>(schema: { parse(raw: unknown): T }, raw: unknown, what:
  * Home page query: returns 5 rails (trending, season, allTime, topRated, upcoming) using GraphQL aliases.
  * Mirrors alHome() from prototype exactly.
  */
-export async function alHome(signal?: AbortSignal): Promise<AniListHome> {
+export async function alHome(mode: CatalogMode = 'ANIME', signal?: AbortSignal): Promise<AniListHome> {
   const s = currentSeason()
   const n = nextSeasonOf()
+  const declarations = mode === 'ANIME'
+    ? 'query($season:MediaSeason,$year:Int,$nseason:MediaSeason,$nyear:Int)'
+    : 'query'
+  const seasonRail = mode === 'ANIME'
+    ? `season: Page(perPage:${HOME_SEASON_PAGE_SIZE}){ media(sort:POPULARITY_DESC, type:ANIME, isAdult:false, season:$season, seasonYear:$year){ ...homeMedia } }`
+    : `season: Page(perPage:${HOME_SEASON_PAGE_SIZE}){ media(sort:UPDATED_AT_DESC, type:MANGA, isAdult:false){ ...homeMedia } }`
+  const upcomingRail = mode === 'ANIME'
+    ? `upcoming: Page(perPage:${HOME_COMPACT_PAGE_SIZE}){ media(sort:POPULARITY_DESC, type:ANIME, isAdult:false, status:NOT_YET_RELEASED, season:$nseason, seasonYear:$nyear){ ...homeMedia } }`
+    : `upcoming: Page(perPage:${HOME_COMPACT_PAGE_SIZE}){ media(sort:START_DATE_DESC, type:MANGA, isAdult:false, status:NOT_YET_RELEASED){ ...homeMedia } }`
   const query = `
-    query($season:MediaSeason,$year:Int,$nseason:MediaSeason,$nyear:Int){
-      trending: Page(perPage:${HOME_TRENDING_PAGE_SIZE}){ media(sort:TRENDING_DESC, type:ANIME, isAdult:false){ ...homeMedia } }
-      season: Page(perPage:${HOME_SEASON_PAGE_SIZE}){ media(sort:POPULARITY_DESC, type:ANIME, isAdult:false, season:$season, seasonYear:$year){ ...homeMedia } }
-      allTime: Page(perPage:${HOME_COMPACT_PAGE_SIZE}){ media(sort:POPULARITY_DESC, type:ANIME, isAdult:false){ ...homeMedia } }
-      topRated: Page(perPage:${HOME_TOP_RATED_PAGE_SIZE}){ media(sort:SCORE_DESC, type:ANIME, isAdult:false){ ...homeMedia } }
-      upcoming: Page(perPage:${HOME_COMPACT_PAGE_SIZE}){ media(sort:POPULARITY_DESC, type:ANIME, isAdult:false, status:NOT_YET_RELEASED, season:$nseason, seasonYear:$nyear){ ...homeMedia } }
+    ${declarations}{
+      trending: Page(perPage:${HOME_TRENDING_PAGE_SIZE}){ media(sort:TRENDING_DESC, type:${mode}, isAdult:false){ ...homeMedia } }
+      ${seasonRail}
+      allTime: Page(perPage:${HOME_COMPACT_PAGE_SIZE}){ media(sort:POPULARITY_DESC, type:${mode}, isAdult:false){ ...homeMedia } }
+      topRated: Page(perPage:${HOME_TOP_RATED_PAGE_SIZE}){ media(sort:SCORE_DESC, type:${mode}, isAdult:false){ ...homeMedia } }
+      ${upcomingRail}
     }
     ${HOME_MEDIA_FRAGMENT}
   `
-  const variables = { season: s.season, year: s.year, nseason: n.season, nyear: n.year }
+  const variables = mode === 'ANIME'
+    ? { season: s.season, year: s.year, nseason: n.season, nyear: n.year }
+    : {}
   const raw = await anilistClient.request(query, variables, signal)
-  return parsePayload(homeShape, raw, 'the home rails')
+  return parsePayload(homeShape, raw, `the ${mode.toLowerCase()} home rails`)
 }
 
-/**
- * Detail page query: returns full Media with extended fields for anime detail page.
- * Mirrors alDetail() from prototype exactly.
- */
-export async function alDetail(id: number, signal?: AbortSignal): Promise<AniListDetail> {
+/** Returns full Media with extended fields for an anime or manga detail page. */
+export async function alDetail(id: number, mode: CatalogMode = 'ANIME', signal?: AbortSignal): Promise<AniListDetail> {
   const query = `
     query($id:Int){
-      Media(id:$id, type:ANIME){
+      Media(id:$id, type:${mode}){
         ...media
         description(asHtml:false)
         duration
@@ -164,8 +183,9 @@ export async function alDetail(id: number, signal?: AbortSignal): Promise<AniLis
   `
   const variables = { id }
   const raw = await anilistClient.request(query, variables, signal)
-  const parsed = parsePayload(z.object({ Media: detailShape.nullable() }), raw, `anime ${id}`)
-  if (parsed.Media === null) throw new AniListError(`AniList could not find anime ${id}.`)
+  const noun = mode === 'MANGA' ? 'manga' : 'anime'
+  const parsed = parsePayload(z.object({ Media: detailShape.nullable() }), raw, `${noun} ${id}`)
+  if (parsed.Media === null) throw new AniListError(`AniList could not find ${noun} ${id}.`)
   return parsed.Media
 }
 
@@ -210,7 +230,7 @@ export async function alSchedule(start: number, end: number, signal?: AbortSigna
  * Batch query by IDs: returns media for multiple IDs.
  * Mirrors alByIds() from prototype exactly.
  */
-export async function alByIds(ids: number[], signal?: AbortSignal): Promise<AniListMedia[]> {
+export async function alByIds(ids: number[], mode: CatalogMode = 'ANIME', signal?: AbortSignal): Promise<AniListMedia[]> {
   const uniqueIds = [...new Set(ids)]
   if (!uniqueIds.length) return []
 
@@ -219,7 +239,7 @@ export async function alByIds(ids: number[], signal?: AbortSignal): Promise<AniL
     (_, index) => uniqueIds.slice(index * 50, (index + 1) * 50),
   )
   const declarations = batches.map((_, index) => `$ids${index}:[Int]`).join(',')
-  const pages = batches.map((_, index) => `batch${index}: Page(perPage:50){ media(id_in:$ids${index}, type:ANIME){ ...media } }`).join('\n')
+  const pages = batches.map((_, index) => `batch${index}: Page(perPage:50){ media(id_in:$ids${index}, type:${mode}){ ...media } }`).join('\n')
   const query = `query(${declarations}){ ${pages} } ${MEDIA_FRAGMENT}`
   const variables = Object.fromEntries(batches.map((batch, index) => [`ids${index}`, batch]))
   const shape = z.object(Object.fromEntries(batches.map((_, index) => [
@@ -245,21 +265,23 @@ export async function alBrowse(opts: {
   genre?: string | null
   format?: BrowseFormat | null
   status?: BrowseStatus | null
+  countryOfOrigin?: BrowseCountry | null
   season?: BrowseSeason | null
   seasonYear?: number | null
   search?: string | null
-}, signal?: AbortSignal) {
+}, mode: CatalogMode = 'ANIME', signal?: AbortSignal) {
   const filters: { arg: string; type: string; value: unknown }[] = [
     { arg: 'genre', type: 'String', value: opts.genre },
     { arg: 'format', type: 'MediaFormat', value: opts.format },
     { arg: 'status', type: 'MediaStatus', value: opts.status },
+    { arg: 'countryOfOrigin', type: 'CountryCode', value: opts.countryOfOrigin },
     { arg: 'season', type: 'MediaSeason', value: opts.season },
     { arg: 'seasonYear', type: 'Int', value: opts.seasonYear },
     { arg: 'search', type: 'String', value: opts.search },
   ].filter((filter) => filter.value !== null && filter.value !== undefined && filter.value !== '')
 
   const declarations = ['$page:Int', '$perPage:Int', '$sort:[MediaSort]', ...filters.map((filter) => `$${filter.arg}:${filter.type}`)]
-  const mediaArgs = ['sort:$sort', 'type:ANIME', 'isAdult:false', ...filters.map((filter) => `${filter.arg}:$${filter.arg}`)]
+  const mediaArgs = ['sort:$sort', `type:${mode}`, 'isAdult:false', ...filters.map((filter) => `${filter.arg}:$${filter.arg}`)]
 
   const query = `
     query(${declarations.join(',')}){
@@ -289,19 +311,19 @@ export async function alBrowse(opts: {
  * Keep this query narrow so optional browse filters cannot interfere with
  * AniList's title search behavior.
  */
-export async function alSuggest(query: string, signal?: AbortSignal): Promise<AniListMedia[]> {
+export async function alSuggest(query: string, mode: CatalogMode = 'ANIME', signal?: AbortSignal): Promise<AniListMedia[]> {
   const search = query.trim()
   if (!search) return []
   const gql = `
     query($search:String,$sort:[MediaSort]){
       Page(page:1, perPage:6){
-        media(search:$search, sort:$sort, type:ANIME, isAdult:false){ ...media }
+        media(search:$search, sort:$sort, type:${mode}, isAdult:false){ ...media }
       }
     }
     ${MEDIA_FRAGMENT}
   `
   const raw = await anilistClient.request(gql, { search, sort: ['POPULARITY_DESC'] }, signal)
-  return parsePayload(z.object({ Page: z.object({ media: z.array(mediaShape) }) }), raw, 'search suggestions').Page.media
+  return parsePayload(z.object({ Page: z.object({ media: z.array(mediaShape) }) }), raw, `${mode.toLowerCase()} search suggestions`).Page.media
 }
 
 export type MediaSort = BrowseSort
@@ -315,5 +337,5 @@ export type MediaSort = BrowseSort
   | 'START_DATE_ASC'
   | 'END_DATE_DESC'
   | 'END_DATE_ASC'
-  | 'UPDATE_DESC'
+  | 'UPDATED_AT_DESC'
   | 'UPDATE_ASC'

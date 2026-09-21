@@ -215,7 +215,7 @@ describe("Rail", () => {
   it("shows its empty state and no arrows when there are no items", () => {
     render(() => <Rail title="Empty rail" items={[]} />);
     expect(
-      screen.getByText("Nothing to show here right now."),
+      screen.getByText("No titles available."),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Scroll Empty rail right/ }),

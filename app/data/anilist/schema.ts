@@ -37,6 +37,10 @@ const coverImageShape = z
   })
   .nullish()
 
+// AniList FuzzyDate: every component can be null (e.g. "2023" with no
+// month/day), and the whole date object can be null.
+const dateShape = z.object({ year: nullableInt, month: nullableInt, day: nullableInt }).nullable()
+
 const nextAiringEpisodeShape = z
   .object({
     episode: z.number(),
@@ -60,6 +64,10 @@ export const mediaShape = z.object({
   format: nullableString,
   status: nullableString,
   episodes: nullableInt,
+  chapters: nullableInt,
+  volumes: nullableInt,
+  updatedAt: nullableInt,
+  startDate: dateShape.nullish(),
   season: nullableString,
   seasonYear: nullableInt,
   genres: z.array(nullableString).nullish(),
@@ -70,9 +78,6 @@ export const mediaShape = z.object({
 
 export type AniListMedia = z.infer<typeof mediaShape>
 
-// AniList FuzzyDate: every component can be null (e.g. "2023" with no
-// month/day), and the whole date object can be null.
-const dateShape = z.object({ year: nullableInt, month: nullableInt, day: nullableInt }).nullable()
 export type AniListDate = z.infer<typeof dateShape>
 
 export const rankingShape = z.object({

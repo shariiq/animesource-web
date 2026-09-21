@@ -1,14 +1,29 @@
 import { z } from 'zod'
+import type { CatalogMode } from './catalog'
 
-export const BROWSE_FORMATS = ['TV', 'TV_SHORT', 'MOVIE', 'SPECIAL', 'OVA', 'ONA', 'MUSIC'] as const
+export const BROWSE_ANIME_FORMATS = ['TV', 'TV_SHORT', 'MOVIE', 'SPECIAL', 'OVA', 'ONA', 'MUSIC'] as const
+export const BROWSE_MANGA_FORMATS = ['MANGA', 'NOVEL', 'ONE_SHOT'] as const
+export const BROWSE_FORMATS = [...BROWSE_ANIME_FORMATS, ...BROWSE_MANGA_FORMATS] as const
 export const BROWSE_STATUSES = ['FINISHED', 'RELEASING', 'NOT_YET_RELEASED', 'CANCELLED', 'HIATUS'] as const
 export const BROWSE_SEASONS = ['WINTER', 'SPRING', 'SUMMER', 'FALL'] as const
-export const BROWSE_SORTS = ['TRENDING_DESC', 'POPULARITY_DESC', 'SCORE_DESC', 'START_DATE_DESC', 'UPDATE_DESC'] as const
+export const BROWSE_SORTS = ['TRENDING_DESC', 'POPULARITY_DESC', 'SCORE_DESC', 'START_DATE_DESC', 'UPDATED_AT_DESC'] as const
+export const BROWSE_COUNTRY_CODES = ['JP', 'KR', 'CN', 'TW'] as const
+export const BROWSE_COUNTRIES: ReadonlyArray<readonly [BrowseCountry, string]> = [
+  ['JP', 'Japan'],
+  ['KR', 'South Korea'],
+  ['CN', 'China'],
+  ['TW', 'Taiwan'],
+]
 
 export type BrowseFormat = (typeof BROWSE_FORMATS)[number]
 export type BrowseStatus = (typeof BROWSE_STATUSES)[number]
 export type BrowseSeason = (typeof BROWSE_SEASONS)[number]
 export type BrowseSort = (typeof BROWSE_SORTS)[number]
+export type BrowseCountry = (typeof BROWSE_COUNTRY_CODES)[number]
+
+export function browseFormats(mode: CatalogMode): readonly BrowseFormat[] {
+  return mode === 'MANGA' ? BROWSE_MANGA_FORMATS : BROWSE_ANIME_FORMATS
+}
 
 export const BROWSE_PER_PAGE = 24
 // AniList rejects Browse pages beyond its documented 100-page request window.
@@ -33,6 +48,7 @@ export const browseSearchSchema = z.object({
   genre: optionalText,
   format: z.preprocess((value) => value === '' ? undefined : value, z.enum(BROWSE_FORMATS).optional()),
   status: z.preprocess((value) => value === '' ? undefined : value, z.enum(BROWSE_STATUSES).optional()),
+  countryOfOrigin: z.preprocess((value) => value === '' ? undefined : value, z.enum(BROWSE_COUNTRY_CODES).optional()),
   season: z.preprocess((value) => value === '' ? undefined : value, z.enum(BROWSE_SEASONS).optional()),
   year: optionalYear,
   sort: z.preprocess((value) => value === '' ? undefined : value, z.enum(BROWSE_SORTS).optional()),
@@ -47,6 +63,7 @@ export function makeBrowseSearch(overrides: Partial<BrowseSearch> = {}): BrowseS
     genre: undefined,
     format: undefined,
     status: undefined,
+    countryOfOrigin: undefined,
     season: undefined,
     year: undefined,
     sort: 'TRENDING_DESC',
@@ -55,13 +72,14 @@ export function makeBrowseSearch(overrides: Partial<BrowseSearch> = {}): BrowseS
   }
 }
 
-export function toBrowseParams(search: BrowseSearch) {
+export function toBrowseParams(search: BrowseSearch, mode: CatalogMode = 'ANIME') {
   return {
     search: search.query,
     genre: search.genre,
     format: search.format,
     status: search.status,
-    season: search.season,
+    countryOfOrigin: search.countryOfOrigin,
+    season: mode === 'ANIME' ? search.season : undefined,
     seasonYear: search.year,
     sort: search.sort,
     page: search.page,
@@ -74,6 +92,7 @@ export function searchWithoutPage(search: BrowseSearch): Omit<BrowseSearch, 'pag
     genre: search.genre,
     format: search.format,
     status: search.status,
+    countryOfOrigin: search.countryOfOrigin,
     season: search.season,
     year: search.year,
     sort: search.sort,
@@ -81,7 +100,7 @@ export function searchWithoutPage(search: BrowseSearch): Omit<BrowseSearch, 'pag
 }
 
 /** Filter keys a user can clear individually from the Explore surface. */
-export const BROWSE_FILTER_KEYS = ['query', 'genre', 'format', 'status', 'season', 'year'] as const
+export const BROWSE_FILTER_KEYS = ['query', 'genre', 'format', 'status', 'countryOfOrigin', 'season', 'year'] as const
 export type BrowseFilterKey = (typeof BROWSE_FILTER_KEYS)[number]
 
 /** Search state for a given page, with every active filter preserved. */

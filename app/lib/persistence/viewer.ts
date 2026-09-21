@@ -1,8 +1,10 @@
 import { indexedDbStore } from './indexedDb'
 import { browserSearchHistory } from './searchHistory'
 import { mergeViewerSnapshots } from './snapshot'
+import type { CatalogMode } from '../catalog'
 import {
   continueDoc,
+  favoriteStorageKey,
   favoritesDoc,
   matchDoc,
   prefSourceDoc,
@@ -41,6 +43,7 @@ export type { ViewerExport, ViewerPreferences, ViewerProfile }
 
 export interface FavoriteDraft {
   id: number
+  catalogMode?: CatalogMode
   title: string
   cover: string
   format: string | null
@@ -88,8 +91,8 @@ export interface ViewerLibrary {
   getFavorites(): Promise<FavoriteItem[]>
   setFavorites(items: FavoriteItem[]): Promise<void>
   toggleFavorite(media: FavoriteDraft): Promise<boolean>
-  updateFavoriteStatus(id: number, status: FavoriteStatus): Promise<void>
-  removeFavorite(id: number): Promise<void>
+  updateFavoriteStatus(id: number, status: FavoriteStatus, catalogMode?: CatalogMode): Promise<void>
+  removeFavorite(id: number, catalogMode?: CatalogMode): Promise<void>
   getContinue(): Promise<ContinueItem[]>
   recordContinue(item: ContinueDraft): Promise<void>
   getPlaybackRecord(id: number, episodeId: string): Promise<PlaybackRecord | null>
@@ -135,6 +138,7 @@ const DEFAULT_VIEWER_PROFILE: ViewerProfile = {
 
 const DEFAULT_VIEWER_PREFERENCES: ViewerPreferences = {
   adultContent: false,
+  catalogMode: 'ANIME',
   language: 'en',
   timezone: 'UTC',
   notifications: false,
@@ -167,27 +171,29 @@ async function setFavorites(items: FavoriteItem[]): Promise<void> {
 
 async function toggleFavorite(media: FavoriteDraft): Promise<boolean> {
   let isAdded = false
+  const catalogMode = media.catalogMode ?? 'ANIME'
   await indexedDbStore.update(FAVORITES, 1, favoritesDoc, (current) => {
     const list = current ? [...current] : []
-    const index = list.findIndex((item) => item.id === media.id)
+    const index = list.findIndex((item) => item.id === media.id && (item.catalogMode ?? 'ANIME') === catalogMode)
     if (index >= 0) {
       list.splice(index, 1)
       isAdded = false
       return list
     }
-    list.unshift({ ...media, status: media.status ?? 'PLANNING', ts: Date.now() })
+    list.unshift({ ...media, catalogMode, status: media.status ?? 'PLANNING', ts: Date.now() })
     isAdded = true
     return list.slice(0, 300)
   })
-  if (isAdded) await clearTombstone('favorites', String(media.id))
-  else await rememberTombstone('favorites', String(media.id))
+  const key = favoriteStorageKey(media.id, catalogMode)
+  if (isAdded) await clearTombstone('favorites', key)
+  else await rememberTombstone('favorites', key)
   return isAdded
 }
 
-async function updateFavoriteStatus(id: number, status: FavoriteStatus): Promise<void> {
+async function updateFavoriteStatus(id: number, status: FavoriteStatus, catalogMode: CatalogMode = 'ANIME'): Promise<void> {
   await indexedDbStore.update(FAVORITES, 1, favoritesDoc, (current) => {
     const list = current ? [...current] : []
-    const item = list.find((entry) => entry.id === id)
+    const item = list.find((entry) => entry.id === id && (entry.catalogMode ?? 'ANIME') === catalogMode)
     if (!item) return list
     item.status = status
     item.ts = Date.now()
@@ -195,11 +201,11 @@ async function updateFavoriteStatus(id: number, status: FavoriteStatus): Promise
   })
 }
 
-async function removeFavorite(id: number): Promise<void> {
+async function removeFavorite(id: number, catalogMode: CatalogMode = 'ANIME'): Promise<void> {
   await indexedDbStore.update(FAVORITES, 1, favoritesDoc, (current) => {
-    return (current ?? []).filter((item) => item.id !== id).slice(0, 300)
+    return (current ?? []).filter((item) => !(item.id === id && (item.catalogMode ?? 'ANIME') === catalogMode)).slice(0, 300)
   })
-  await rememberTombstone('favorites', String(id))
+  await rememberTombstone('favorites', favoriteStorageKey(id, catalogMode))
 }
 
 async function getContinue(): Promise<ContinueItem[]> {
@@ -367,6 +373,7 @@ async function getViewerPreferences(): Promise<ViewerPreferences> {
 async function setViewerPreferences(preferences: Omit<ViewerPreferences, 'updatedAt'>): Promise<void> {
   await indexedDbStore.write(VIEWER_PREFERENCES, 1, {
     ...preferences,
+    catalogMode: preferences.catalogMode,
     language: preferences.language.trim().slice(0, 20),
     timezone: preferences.timezone.trim().slice(0, 100),
     updatedAt: Date.now(),

@@ -181,7 +181,7 @@ Artwork uses explicit geometry, `object-fit`, and an intentional `object-positio
 - Home and Explore consume loader/query-backed, Zod-validated AniList data. Prototype content is never a production fallback.
 - Explore intent uses typed `BrowseSearch` state and `makeBrowseSearch`; links do not hand-build untyped query strings.
 - Supported detail metadata links to real destinations. Unsupported metadata remains informative rather than becoming a dead control.
-- AniSource belongs only to the mounted Watch route and is never called by SSR, discovery loading, or initial shared-layout execution.
+- AniSource belongs only to mounted Watch and Manga Reader routes and is never called by SSR, discovery loading, or initial shared-layout execution.
 - Navigation uses semantic links; actions use buttons; fields have programmatic labels and relationships.
 - Search has an explicit path: selecting a suggestion opens its detail route, while submitting typed text opens full Explore results without a document reload.
 
@@ -227,5 +227,5 @@ Visual specifications, recipes, and constraints exist to ensure cohesive quality
 3. **Preserve invariants:** Every design variation must still honor foundational invariants: WCAG AA contrast, explicit keyboard focus visibility, zero horizontal overflow at 390px, standard semantic token usage, and reliance on validated production data.
 4. **Side-by-side rendered inspection:** Any exception or improvement must be evaluated side by side with existing routes in real browser viewports (desktop and mobile) to confirm visual harmony across the application.
 
-##  SELF IMPROVE DESIGN
+## AUTOMATICALLY SELF IMPROVE DESIGN
 any of these instructions or contraints or suggestions are authorized and allowed to be overidden freely completely in place of a genuinely better design for any or ALL piece of design/UI/UX in the website.

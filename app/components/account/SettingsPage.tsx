@@ -2,6 +2,7 @@ import { Link } from '@tanstack/solid-router'
 import { createSignal, For, onMount, Show } from 'solid-js'
 import { importAniListPublicList } from '../../data/anilist/import'
 import { viewerData } from '../../lib/persistence/active'
+import { favoriteStorageKey } from '../../lib/persistence/schema'
 import type { ViewerPreferences } from '../../lib/persistence/viewer'
 import { getViewerSyncStatus } from '../../lib/sync/viewerSync'
 import type { ViewerSyncStatus } from '../../lib/persistence/schema'
@@ -30,6 +31,7 @@ const TIMEZONE_OPTIONS = [
 
 const DEFAULT_PREFERENCES: ViewerPreferences = {
   adultContent: false,
+  catalogMode: 'ANIME',
   language: 'en',
   timezone: 'UTC',
   notifications: false,
@@ -80,6 +82,7 @@ export function SettingsPage() {
       const current = preferences()
       await viewerData.setViewerPreferences({
         adultContent: current.adultContent,
+        catalogMode: current.catalogMode,
         language: current.language,
         timezone: current.timezone,
         notifications: current.notifications,
@@ -140,18 +143,19 @@ export function SettingsPage() {
     try {
       const imported = await importAniListPublicList(aniListUsername())
       const current = await viewerData.exportViewerData()
-      const favorites = new Map(current.favorites.map((item) => [item.id, item]))
-      const importedIds = new Set<number>()
+      const favorites = new Map(current.favorites.map((item) => [favoriteStorageKey(item.id, item.catalogMode), item]))
+      const importedKeys = new Set<string>()
       const now = Date.now()
       for (const item of imported) {
-        importedIds.add(item.id)
-        favorites.set(item.id, { ...item, ts: now })
+        const importedFavorite = { ...item, catalogMode: 'ANIME' as const, ts: now }
+        importedKeys.add(favoriteStorageKey(importedFavorite.id, importedFavorite.catalogMode))
+        favorites.set(favoriteStorageKey(importedFavorite.id, importedFavorite.catalogMode), importedFavorite)
       }
       await viewerData.importViewerData({
         ...current,
         exportedAt: now,
         favorites: [...favorites.values()],
-        tombstones: current.tombstones.filter((entry) => !(entry.collection === 'favorites' && importedIds.has(Number(entry.key)))),
+        tombstones: current.tombstones.filter((entry) => !(entry.collection === 'favorites' && importedKeys.has(entry.key))),
       }, 'replace')
       setMessage(`${imported.length} public AniList entries merged into your library.`)
     } catch (cause) {
@@ -192,14 +196,14 @@ export function SettingsPage() {
                 <p class="mt-1 inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/62 px-3 py-1 font-mono text-[9px] uppercase tracking-[.1em] text-text-muted"><span class="size-1.5 rounded-full bg-violet" aria-hidden="true" />Local-first controls</p>
               </div>
             </div>
-            <h1 class="mt-7 max-w-4xl font-display text-5xl leading-[.88] tracking-[-.04em] sm:text-7xl">Make it yours.</h1>
-            <p class="mt-5 max-w-2xl text-sm leading-6 text-text-secondary">Tune how AniSource feels, then keep the viewer data you care about close at hand. These choices are saved to this browser first.</p>
+            <h1 class="mt-7 max-w-4xl font-display text-5xl leading-[.88] tracking-[-.04em] sm:text-7xl">Viewer settings.</h1>
+            <p class="mt-5 max-w-2xl text-sm leading-6 text-text-secondary">Set catalog, language, timezone, and notification defaults. Preferences are saved in this browser.</p>
             <Link class="paper-control mt-6 inline-flex px-4 py-3 text-xs" to="/profile">View profile</Link>
           </div>
 
           <section class="rounded-[18px] border border-white/80 bg-white/48 p-5 shadow-[0_20px_45px_-38px_rgb(0_0_0_/_55)] backdrop-blur-[22px]" aria-label="Settings storage summary">
-            <p class="mono-signal">Control room</p>
-            <p class="mt-3 font-display text-3xl tracking-[-.03em]">Quietly in control.</p>
+            <p class="mono-signal">Storage</p>
+            <p class="mt-3 font-display text-3xl tracking-[-.03em]">Local storage.</p>
             <dl class="mt-5 grid gap-4 border-t border-line pt-4 text-sm">
               <div class="flex items-start justify-between gap-5"><dt class="editorial-label">Storage</dt><dd class="text-right font-medium">This browser</dd></div>
               <div class="flex items-start justify-between gap-5"><dt class="editorial-label">Connection</dt><dd class="text-right font-medium">{connectionLabel()}</dd></div>
@@ -216,12 +220,19 @@ export function SettingsPage() {
           <div class="flex items-start justify-between gap-5">
             <div>
               <p class="mono-signal">01 / Viewer defaults</p>
-              <h2 id="content-settings-title" class="mt-2 font-display text-4xl tracking-[-.03em] sm:text-5xl">Make every session yours.</h2>
+              <h2 id="content-settings-title" class="mt-2 font-display text-4xl tracking-[-.03em] sm:text-5xl">Viewer defaults.</h2>
             </div>
             <span class="grid size-10 shrink-0 place-items-center rounded-full border border-black/10 bg-white/65 font-mono text-xs text-text-muted" aria-hidden="true">01</span>
           </div>
-          <p class="mt-4 max-w-xl text-sm leading-6 text-text-secondary">Choose the defaults that shape discovery and release reminders. They stay editable and local until identity is connected.</p>
-          <div class="mt-7 grid gap-5 sm:grid-cols-2">
+          <p class="mt-4 max-w-xl text-sm leading-6 text-text-secondary">Set the catalog, language, timezone, and notification defaults used by this browser.</p>
+          <div class="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <label class="editorial-field-group text-sm">
+              <span class="editorial-label">Default catalog</span>
+              <select class="editorial-field px-3" value={preferences().catalogMode} onChange={(event) => setPreferences((current) => ({ ...current, catalogMode: event.currentTarget.value === 'MANGA' ? 'MANGA' : 'ANIME' }))}>
+                <option value="ANIME">Anime</option>
+                <option value="MANGA">Manga</option>
+              </select>
+            </label>
             <label class="editorial-field-group text-sm">
               <span class="editorial-label">Language</span>
               <select class="editorial-field px-3" value={preferences().language} onChange={(event) => setPreferences((current) => ({ ...current, language: event.currentTarget.value }))}>
@@ -254,7 +265,7 @@ export function SettingsPage() {
         <aside class="grid gap-6">
           <section class="material-panel p-6 sm:p-8" aria-labelledby="sync-settings-title">
             <p class="mono-signal">02 / Account connection</p>
-            <h2 id="sync-settings-title" class="mt-2 font-display text-4xl tracking-[-.03em]">Your data has a home.</h2>
+            <h2 id="sync-settings-title" class="mt-2 font-display text-4xl tracking-[-.03em]">Account connection.</h2>
             <p class="mt-4 text-sm leading-6 text-text-secondary">{connectionCopy()}</p>
             <div class="mt-6 rounded-[14px] border border-black/10 bg-black px-4 py-4 text-white shadow-[0_20px_35px_-30px_rgb(0_0_0_/_1)]">
               <p class="font-mono text-[9px] uppercase tracking-[.12em] text-white/60">Current connection</p>
@@ -271,7 +282,7 @@ export function SettingsPage() {
       <div class="mt-6 grid gap-6 lg:grid-cols-2">
         <section class="material-panel p-6 sm:p-8" aria-labelledby="transfer-title">
           <p class="mono-signal">03 / Portability</p>
-          <h2 id="transfer-title" class="mt-2 font-display text-4xl tracking-[-.03em] sm:text-5xl">Take it with you.</h2>
+          <h2 id="transfer-title" class="mt-2 font-display text-4xl tracking-[-.03em] sm:text-5xl">Export or import data.</h2>
           <p class="mt-4 max-w-xl text-sm leading-6 text-text-secondary">Keep a portable copy of your local library, progress, playback preferences, source matches, profile preferences, and search history.</p>
           <div class="mt-6 flex flex-wrap gap-3">
             <button class="ink-control px-5" type="button" disabled={busy()} onClick={() => { void exportData() }}>Export viewer data</button>
@@ -285,7 +296,7 @@ export function SettingsPage() {
 
         <section class="material-panel p-6 sm:p-8" aria-labelledby="anilist-import-title">
           <p class="mono-signal">04 / Provider import</p>
-          <h2 id="anilist-import-title" class="mt-2 font-display text-4xl tracking-[-.03em] sm:text-5xl">Bring over a list.</h2>
+          <h2 id="anilist-import-title" class="mt-2 font-display text-4xl tracking-[-.03em] sm:text-5xl">Import an AniList list.</h2>
           <p class="mt-4 max-w-xl text-sm leading-6 text-text-secondary">Import a public AniList anime list by username. Existing entries are preserved and matching IDs are updated with the provider status.</p>
           <div class="mt-7 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <label class="editorial-field-group text-sm">

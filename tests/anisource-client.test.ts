@@ -62,6 +62,53 @@ describe('AniSource client', () => {
     await expect(client.sources()).resolves.toEqual({ sources: [{ id: 'source id', name: 'Source', base_url: 'https://source.test' }], count: 1 })
     expect(fetch).toHaveBeenCalledWith('https://api.test/api/v1/anime/sources', expect.any(Object))
   })
+
+  it('uses the manga source, search, chapters, details, and pages routes', async () => {
+    const manga = {
+      id: 'manga-1',
+      title: 'Test Manga',
+      url: 'https://source.test/manga-1',
+      thumbnail: '',
+      description: '',
+      genres: [],
+      authors: [],
+      artists: [],
+      alternative_titles: [],
+      status: 'ongoing',
+    }
+    const chapter = {
+      id: 'chapter-1',
+      title: 'Chapter 1',
+      url: 'https://source.test/chapter-1',
+      number: 1,
+      volume: null,
+      scanlator: '',
+      language: 'en',
+      released_at: null,
+    }
+    const fetch = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/v1/manga/sources')) return response({ sources: [{ id: 'source/id', name: 'Source', base_url: 'https://source.test' }], count: 1 })
+      if (url.includes('/search?')) return response({ items: [manga], page: 1, has_next: false, total_returned: 1 })
+      if (url.includes('/api/v1/manga/source%2Fid/manga/')) return response(manga)
+      if (url.includes('/api/v1/manga/source%2Fid/chapters/')) return response([chapter])
+      return response([{ index: 0, url: 'https://source.test/page-1', page_url: '' }])
+    })
+    const client = createAniSourceClient({ baseUrl: 'https://api.test', transport: transport(fetch) })
+
+    await client.mangaSources()
+    await client.mangaSearch('source/id', 'Test Manga', 2)
+    await client.mangaDetails('source/id', 'manga/id')
+    await client.mangaChapters('source/id', 'manga/id')
+    await client.mangaPages('source/id', 'chapter/id')
+
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      'https://api.test/api/v1/manga/sources',
+      'https://api.test/api/v1/manga/source%2Fid/search?q=Test%20Manga&page=2',
+      'https://api.test/api/v1/manga/source%2Fid/manga/manga%2Fid',
+      'https://api.test/api/v1/manga/source%2Fid/chapters/manga%2Fid',
+      'https://api.test/api/v1/manga/source%2Fid/pages/chapter%2Fid',
+    ])
+  })
   it('encodes source and query parameters', async () => {
     const fetch = vi.fn(async (_url: string, _init?: RequestInit) => response({ items: [], page: 1, has_next: false, total_returned: 0 }))
     const client = createAniSourceClient({ baseUrl: 'https://api.test', transport: transport(fetch) })

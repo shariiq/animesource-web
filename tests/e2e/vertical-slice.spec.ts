@@ -26,10 +26,81 @@ test("header search stays client-side and renders matching Explore results", asy
 test("explore cards keep the detail-only destination", async ({ page }) => {
   await page.goto("/explore");
   await expect(page.getByRole("heading", { name: "Explore anime" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Country of origin" })).toBeVisible();
 
   const detail = page.getByRole("link", { name: /Test Anime/ }).first();
   await expect(detail).toHaveAttribute("href", "/anime/1");
   await expect(page.getByRole("link", { name: "Watch now" })).not.toBeVisible();
+});
+
+test("manga detail uses its publication layout and shelf controls", async ({ page }) => {
+  await page.goto("/manga/1");
+  await expect(page.getByRole("heading", { name: "Manga Details" })).toBeVisible();
+  await expect(page.getByText("Genres", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Test Manga" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add manga to favorites" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "← Back to manga" })).toHaveAttribute("href", "/");
+  await expect(page.getByText("Test Anime", { exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Add manga to favorites" }).click();
+  await expect(page.getByRole("button", { name: "Remove manga from favorites" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Reading status" })).toBeVisible();
+  await expect(page.locator("select option").first()).toHaveText("Reading");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Manga Details" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("manga detail opens the reader through the full chapter flow", async ({ page }) => {
+  await page.goto("/manga/1");
+  await page.getByRole("link", { name: "Open reader →" }).click();
+  await expect(page).toHaveURL(/\/manga\/1\/read\/1(?:\?|$)/);
+  await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Chapters" })).toBeVisible();
+  await page.getByRole("button", { name: "Chapters" }).click();
+  await expect(page.getByRole("dialog", { name: "Chapters" })).toBeVisible();
+  const secondChapter = page.locator("button.manga-reader-chapter").filter({ hasText: "Second chapter" });
+  await expect(secondChapter).toBeVisible();
+  await secondChapter.click();
+  await expect(page).toHaveURL(/\/manga\/1\/read\/2(?:\?|$)/);
+  await expect(page.getByText("Second chapter · Test Manga Source", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("legacy zero reader routes resolve to the first numbered chapter", async ({ page }) => {
+  await page.goto("/manga/1/read/0?source=test");
+  await expect(page).toHaveURL(/\/manga\/1\/read\/1(?:\?|$)/);
+  await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
+  await expect(page.getByText("Chapter 1", { exact: true }).first()).toBeVisible();
+});
+
+test("continuous reader keeps both progress controls aligned with scrolling", async ({ page }) => {
+  await page.goto("/manga/1/read/start?source=test");
+  const scroll = page.locator(".manga-reader-scroll");
+  const scrubber = page.getByRole("slider", { name: "Page scrubber" });
+
+  await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
+  await expect(scrubber).toHaveValue("0");
+
+  await scroll.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+
+  await expect(scrubber).toHaveValue("1");
+  await expect(page.locator(".manga-reader-page-label")).toHaveText("Page 2 / 2");
+  await expect(page.locator(".manga-reader-hairline i")).toHaveAttribute("style", /width: 100%/);
+});
+
+test("Explore stays active for filtered Explore routes", async ({ page }) => {
+  await page.goto("/explore?sort=POPULARITY_DESC&page=1");
+  await expect(page.getByRole("link", { name: "Explore" })).toHaveAttribute("aria-current", "page");
+
+  await page.goto("/explore?sort=UPDATED_AT_DESC&page=1");
+  await expect(page.getByRole("link", { name: "Explore" })).toHaveAttribute("aria-current", "page");
 });
 
 test("home to detail to watch resolves a stream and mounts the player", async ({
@@ -137,7 +208,7 @@ test("library hydrates saved metadata and resumes its opaque episode", async ({ 
   await expect(page.locator("video")).toBeVisible();
 
   await page.goto("/library");
-  await expect(page.getByRole("heading", { name: "Your library.", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your anime library.", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Test Anime", exact: true })).toBeVisible();
   await page.getByRole("tab", { name: /Continue Watching/ }).click();
   const resume = page.getByRole("link", { name: "Resume" });
@@ -148,13 +219,13 @@ test("library hydrates saved metadata and resumes its opaque episode", async ({ 
 
 test("library stays within desktop and mobile viewports", async ({ page }) => {
   await page.goto("/library");
-  await expect(page.getByRole("heading", { name: "Your library.", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your anime library.", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/library-desktop.png", fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Your library.", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your anime library.", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/library-mobile.png", fullPage: true });
 });
@@ -172,7 +243,7 @@ test("schedule switches views and stays within desktop and mobile viewports", as
   await page.getByRole("button", { name: "Day", exact: true }).click();
   await expect(page).toHaveURL(/view=day/);
   await page.getByRole("button", { name: "Next period" }).click();
-  await expect(page.getByRole("heading", { name: "A quiet stretch." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No releases found." })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
@@ -233,7 +304,7 @@ test("a named local viewer is not described as anonymous", async ({ page }) => {
 
 test("settings stays usable across desktop and mobile layouts", async ({ page }) => {
   await page.goto("/settings");
-  await expect(page.getByRole("heading", { name: "Make it yours." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Viewer settings." })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Language" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Timezone" })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: /adult-content/i })).toBeVisible();
@@ -245,7 +316,7 @@ test("settings stays usable across desktop and mobile layouts", async ({ page })
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Make it yours." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Viewer settings." })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/settings-mobile.png", fullPage: true });
 });

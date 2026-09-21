@@ -6,6 +6,7 @@ import type {
   ViewerMatchExport,
   ViewerTombstone,
 } from './schema'
+import { favoriteStorageKey } from './schema'
 
 type Syncable = { ts: number }
 
@@ -74,10 +75,10 @@ function newest<T>(local: T, remote: T, updatedAt: (value: T) => number): T {
 export function mergeViewerSnapshots(local: ViewerExport, remote: ViewerExport): ViewerExport {
   const tombstones = mergeTombstones(local.tombstones, remote.tombstones)
   const favorites = withoutDeleted(
-    mergeRecords<FavoriteItem>(local.favorites, remote.favorites, (item) => String(item.id)),
+    mergeRecords<FavoriteItem>(local.favorites, remote.favorites, (item) => favoriteStorageKey(item.id, item.catalogMode)),
     tombstones,
     'favorites',
-    (item) => String(item.id),
+    (item) => favoriteStorageKey(item.id, item.catalogMode),
     (item) => item.ts,
   )
   const continued = withoutDeleted(

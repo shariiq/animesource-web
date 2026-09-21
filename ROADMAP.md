@@ -1,8 +1,8 @@
  # AnimeSource Product Roadmap
 
-**Last reviewed:** 2026-09-17  
+**Last reviewed:** 2026-09-21
 **Roadmap status:** Active  
-**Product target:** A production-grade anime discovery, library, schedule, and playback platform.
+**Product target:** A production-grade anime and manga discovery, library, playback, and reading platform.
 
 This is the product roadmap for AnimeSource. It tracks user-visible capability and the engineering work required to support it. Production behavior, real AniList data, the current route tree, `CLAUDE.md`, and the accepted ADR remain authoritative.
 
@@ -28,17 +28,17 @@ This is the product roadmap for AnimeSource. It tracks user-visible capability a
 
 AnimeSource is full-scale for this project when a viewer can:
 
-- discover anime through search, filters, genres, schedule, relationships, and recommendations;
+- discover anime and manga through search, filters, genres, schedule, relationships, and recommendations;
 - inspect complete and trustworthy metadata;
 - save anime to a durable account-backed library;
 - see watch history and progress;
-- resume and complete episodes across devices;
+- resume and complete episodes and manga chapters across devices;
 - recover from source, stream, and network failures;
 - manage playback, content, notification, and appearance preferences;
 - receive useful release updates;
 - use the product with reliable SEO, accessibility, performance, monitoring, privacy, and operational controls.
 
-The current application is a **working discovery plus watch vertical slice**. The next major milestone is to turn isolated persistence and playback capabilities into a coherent viewer product: **Library, Continue Watching, Schedule, and playback progress**.
+The current application is a **working anime discovery/watch and manga discovery/reader product slice**. The next major milestone is to turn isolated persistence and playback capabilities into a coherent viewer product: **Library, Continue Watching, Schedule, and account-backed progress**.
 
 ---
 
@@ -50,11 +50,15 @@ The current application is a **working discovery plus watch vertical slice**. Th
 - `[x]` Home discovery backed by validated AniList data.
 - `[x]` Explore search, typed URL search state, filters, sorting, pagination, loading, error, and empty states.
 - `[x]` Anime detail route with validated metadata, synopsis, trailer, characters, relations, recommendations, rankings, and information fields.
+- `[x]` Manga catalog mode and manga detail route with validated AniList metadata and reading actions.
 - `[x]` Functional detail-page genre links that preserve Explore route intent.
 - `[x]` Separate nested Watch route: `/anime/$animeId/watch/$episodeId`.
+- `[x]` Separate nested Manga Reader route: `/manga/$mangaId/read/$chapterId` with source matching, complete `/chapters` loading, `/pages` loading, chapter navigation, paged/continuous layouts, direction controls, and local resume state.
 - `[x]` AniSource client-only, interaction-triggered watch boundary with validated payloads.
+- `[x]` AniSource client-only, interaction-triggered Manga Reader boundary with validated source, manga, chapter, and page payloads; the reader does not use `/update` for its chapter list.
 - `[x]` Source selection, AniList-to-AniSource title matching, saved matches, manual match selection, episodes, servers, streams, subtitles, HLS/direct playback, retries, and cold-start messaging.
 - `[x]` Typed, versioned, Zod-validated IndexedDB persistence for favorites, continue-watching records, preferred source, and saved source matches.
+- `[x]` Typed, versioned, Zod-validated IndexedDB persistence for manga source matches, chapter/page position, layout, direction, and completion.
 - `[x]` Focused Vitest coverage and mocked vertical-slice Playwright coverage.
 - `[x]` Shared paper/ink/frosted material system, responsive route compositions, semantic controls, visible focus behavior, reduced-motion guidance, and updated design documentation.
 
@@ -77,14 +81,16 @@ The current application is a **working discovery plus watch vertical slice**. Th
 /schedule
 /anime/$animeId
 /anime/$animeId/watch/$episodeId
+/manga/$mangaId
+/manga/$mangaId/read/$chapterId
 ```
 
 ### Current data seams
 
 - **AniList:** discovery and metadata through `app/data/anilist/queries.ts` and Zod schemas in `app/data/anilist/schema.ts`.
-- **AniSource:** on-demand playback resolution through `app/data/anisource/client.ts`; never use it during SSR or initial page load.
+- **AniSource:** on-demand anime playback and manga reading resolution through `app/data/anisource/client.ts`; never use it during SSR or initial page load.
 - **Matching:** source-title candidate ranking in `app/data/matching.ts`.
-- **Local persistence:** typed IndexedDB module in `app/lib/persistence/store.ts`.
+- **Local persistence:** typed IndexedDB modules in `app/lib/persistence/` for viewer data, search history, and manga reader progress.
 - **Browse intent:** typed Explore search state in `app/lib/browse.ts`.
 
 ---
@@ -246,7 +252,7 @@ The current application is a **working discovery plus watch vertical slice**. Th
 
 ### Phase 3 completion criteria
 
-- A signed-in viewer sees the same library, progress, preferences, and history on two devices.
+- A signed-in viewer sees the same library, anime playback progress, manga reading progress, preferences, and history on two devices.
 - Offline/local changes have a documented conflict policy and do not disappear silently.
 - Sign-out, account deletion, data export, and session expiry leave no ambiguous stale account state.
 - The UI calls a small data interface; it does not know whether local or remote persistence is active.
@@ -361,6 +367,13 @@ Before marking a milestone `[x]`:
 6. The documented completion criteria for that milestone are all true.
 
 ## Changelog
+
+### 2026-09-21
+
+- Added the AniList-backed manga reader route: `/manga/$mangaId/read/$chapterId`.
+- The Manga Reader resolves a source match, loads the complete chapter list from `/chapters`, loads page images from `/pages`, and supports chapter navigation, continuous or paged layout, reading direction, fullscreen, keyboard controls, retries, and local resume state.
+- Added a versioned `MangaReaderPersistence` IndexedDB record for source matches, chapter/page position, layout, direction, and completion. The `/update` endpoint is not used to populate the reader.
+- Added mocked manga source, chapter, and page responses plus a browser regression journey for the reader at desktop and approximately 390px widths.
 
 ### 2026-09-19
 

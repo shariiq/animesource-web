@@ -18,6 +18,8 @@ Run this checklist against the commit being released. Do not mark a release read
 - [ ] Detail renders validated metadata, genre route intent, and favorite load/toggle behavior.
 - [ ] Watch mounts as its own nested route, resolves a Source only after client mount, supports Match/picker/episodes/servers/streams, and mounts the player.
 - [ ] Watch cold-start, error, empty-server, and empty-stream states are recoverable and understandable.
+- [ ] Manga detail renders validated metadata, favorite state, and the reader entry point.
+- [ ] Manga Reader mounts as its own nested route, resolves a Source only after client mount, loads the complete `/chapters` list, opens `/pages`, resumes local position, and supports chapter navigation.
 
 ## Data and SSR checks
 
@@ -28,7 +30,7 @@ Run this checklist against the commit being released. Do not mark a release read
 
 ## Visual and accessibility checks
 
-- [ ] Inspect desktop and approximately 390px layouts for Home, Explore, detail, and Watch.
+- [ ] Inspect desktop and approximately 390px layouts for Home, Explore, anime detail, Watch, manga detail, and Manga Reader.
 - [ ] Confirm side gutters, stable image geometry, readable contrast, visible focus, keyboard search navigation, and no horizontal overflow.
 - [ ] Confirm reduced-motion behavior remains honored.
 

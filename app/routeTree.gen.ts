@@ -17,7 +17,9 @@ import { Route as ScheduleRouteImport } from './routes/schedule'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as AnimeAnimeIdRouteImport } from './routes/anime/$animeId'
 import { Route as AnimeAnimeIdIndexRouteImport } from './routes/anime/$animeId.index'
+import { Route as MangaMangaIdIndexRouteImport } from './routes/manga/$mangaId.index'
 import { Route as AnimeAnimeIdWatchEpisodeIdRouteImport } from './routes/anime/$animeId.watch.$episodeId'
+import { Route as MangaMangaIdReadChapterNumberRouteImport } from './routes/manga/$mangaId.read.$chapterNumber'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -59,11 +61,22 @@ const AnimeAnimeIdIndexRoute = AnimeAnimeIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AnimeAnimeIdRoute,
 } as any)
+const MangaMangaIdIndexRoute = MangaMangaIdIndexRouteImport.update({
+  id: '/manga/$mangaId/',
+  path: '/manga/$mangaId/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AnimeAnimeIdWatchEpisodeIdRoute =
   AnimeAnimeIdWatchEpisodeIdRouteImport.update({
     id: '/watch/$episodeId',
     path: '/watch/$episodeId',
     getParentRoute: () => AnimeAnimeIdRoute,
+  } as any)
+const MangaMangaIdReadChapterNumberRoute =
+  MangaMangaIdReadChapterNumberRouteImport.update({
+    id: '/manga/$mangaId/read/$chapterNumber',
+    path: '/manga/$mangaId/read/$chapterNumber',
+    getParentRoute: () => rootRouteImport,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -75,7 +88,9 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/anime/$animeId': typeof AnimeAnimeIdRouteWithChildren
   '/anime/$animeId/': typeof AnimeAnimeIdIndexRoute
+  '/manga/$mangaId/': typeof MangaMangaIdIndexRoute
   '/anime/$animeId/watch/$episodeId': typeof AnimeAnimeIdWatchEpisodeIdRoute
+  '/manga/$mangaId/read/$chapterNumber': typeof MangaMangaIdReadChapterNumberRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -85,7 +100,9 @@ export interface FileRoutesByTo {
   '/schedule': typeof ScheduleRoute
   '/settings': typeof SettingsRoute
   '/anime/$animeId': typeof AnimeAnimeIdIndexRoute
+  '/manga/$mangaId': typeof MangaMangaIdIndexRoute
   '/anime/$animeId/watch/$episodeId': typeof AnimeAnimeIdWatchEpisodeIdRoute
+  '/manga/$mangaId/read/$chapterNumber': typeof MangaMangaIdReadChapterNumberRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -97,7 +114,9 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/anime/$animeId': typeof AnimeAnimeIdRouteWithChildren
   '/anime/$animeId/': typeof AnimeAnimeIdIndexRoute
+  '/manga/$mangaId/': typeof MangaMangaIdIndexRoute
   '/anime/$animeId/watch/$episodeId': typeof AnimeAnimeIdWatchEpisodeIdRoute
+  '/manga/$mangaId/read/$chapterNumber': typeof MangaMangaIdReadChapterNumberRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -110,7 +129,9 @@ export interface FileRouteTypes {
     | '/settings'
     | '/anime/$animeId'
     | '/anime/$animeId/'
+    | '/manga/$mangaId/'
     | '/anime/$animeId/watch/$episodeId'
+    | '/manga/$mangaId/read/$chapterNumber'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -120,7 +141,9 @@ export interface FileRouteTypes {
     | '/schedule'
     | '/settings'
     | '/anime/$animeId'
+    | '/manga/$mangaId'
     | '/anime/$animeId/watch/$episodeId'
+    | '/manga/$mangaId/read/$chapterNumber'
   id:
     | '__root__'
     | '/'
@@ -131,7 +154,9 @@ export interface FileRouteTypes {
     | '/settings'
     | '/anime/$animeId'
     | '/anime/$animeId/'
+    | '/manga/$mangaId/'
     | '/anime/$animeId/watch/$episodeId'
+    | '/manga/$mangaId/read/$chapterNumber'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -142,6 +167,8 @@ export interface RootRouteChildren {
   ScheduleRoute: typeof ScheduleRoute
   SettingsRoute: typeof SettingsRoute
   AnimeAnimeIdRoute: typeof AnimeAnimeIdRouteWithChildren
+  MangaMangaIdIndexRoute: typeof MangaMangaIdIndexRoute
+  MangaMangaIdReadChapterNumberRoute: typeof MangaMangaIdReadChapterNumberRoute
 }
 
 declare module '@tanstack/solid-router' {
@@ -202,12 +229,26 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AnimeAnimeIdIndexRouteImport
       parentRoute: typeof AnimeAnimeIdRoute
     }
+    '/manga/$mangaId/': {
+      id: '/manga/$mangaId/'
+      path: '/manga/$mangaId'
+      fullPath: '/manga/$mangaId/'
+      preLoaderRoute: typeof MangaMangaIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/anime/$animeId/watch/$episodeId': {
       id: '/anime/$animeId/watch/$episodeId'
       path: '/watch/$episodeId'
       fullPath: '/anime/$animeId/watch/$episodeId'
       preLoaderRoute: typeof AnimeAnimeIdWatchEpisodeIdRouteImport
       parentRoute: typeof AnimeAnimeIdRoute
+    }
+    '/manga/$mangaId/read/$chapterNumber': {
+      id: '/manga/$mangaId/read/$chapterNumber'
+      path: '/manga/$mangaId/read/$chapterNumber'
+      fullPath: '/manga/$mangaId/read/$chapterNumber'
+      preLoaderRoute: typeof MangaMangaIdReadChapterNumberRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -234,6 +275,8 @@ const rootRouteChildren: RootRouteChildren = {
   ScheduleRoute: ScheduleRoute,
   SettingsRoute: SettingsRoute,
   AnimeAnimeIdRoute: AnimeAnimeIdRouteWithChildren,
+  MangaMangaIdIndexRoute: MangaMangaIdIndexRoute,
+  MangaMangaIdReadChapterNumberRoute: MangaMangaIdReadChapterNumberRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

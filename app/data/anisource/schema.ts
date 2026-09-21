@@ -52,6 +52,47 @@ export const searchResponseSchema = z.object({
 })
 export type SearchResponse = z.infer<typeof searchResponseSchema>
 
+export const anisourceMangaSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  url: z.string(),
+  thumbnail: z.string().default(''),
+  description: z.string().default(''),
+  genres: z.array(z.string()).default([]),
+  authors: z.array(z.string()).default([]),
+  artists: z.array(z.string()).default([]),
+  alternative_titles: z.array(z.string()).default([]),
+  status: z.string().default('unknown'),
+})
+export type AniSourceManga = z.infer<typeof anisourceMangaSchema>
+
+export const mangaSearchResponseSchema = z.object({
+  items: z.array(anisourceMangaSchema),
+  page: z.number().int(),
+  has_next: z.boolean(),
+  total_returned: z.number().int(),
+})
+export type MangaSearchResponse = z.infer<typeof mangaSearchResponseSchema>
+
+export const mangaChapterSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  url: z.string(),
+  number: z.number().default(0),
+  volume: z.number().nullable().optional(),
+  scanlator: z.string().default(''),
+  language: z.string().default(''),
+  released_at: z.string().datetime().nullable().optional(),
+})
+export type MangaChapter = z.infer<typeof mangaChapterSchema>
+
+export const chapterPageSchema = z.object({
+  index: z.number().int(),
+  url: z.string(),
+  page_url: z.string().default(''),
+})
+export type ChapterPage = z.infer<typeof chapterPageSchema>
+
 export const episodeSchema = z.object({
   id: z.string(),
   number: z.number(),

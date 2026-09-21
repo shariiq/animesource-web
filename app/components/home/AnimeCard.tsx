@@ -1,9 +1,11 @@
-import { Link } from '@tanstack/solid-router'
 import { Show } from 'solid-js'
 import type { AniListMedia } from '../../data/anilist/types'
-import { formatEnum, formatScore, formatStatus, titleOf, timeUntil } from '../../lib/format'
+import { formatScore, titleOf, timeUntil } from '../../lib/format'
+import { catalogCountLabel, catalogFormat, catalogStatus, type CatalogMode } from '../../lib/catalog'
+import { CatalogLink } from './CatalogLink'
 
-export function AnimeCard(props: { anime: AniListMedia; rank?: number }) {
+export function AnimeCard(props: { anime: AniListMedia; mode?: CatalogMode; rank?: number }) {
+  const mode = () => props.mode ?? 'ANIME'
   const title = () => titleOf(props.anime)
   const nativeTitle = () => props.anime.title?.native || props.anime.title?.romaji || ''
   const cover = () => props.anime.coverImage?.large || props.anime.coverImage?.extraLarge || ''
@@ -12,12 +14,11 @@ export function AnimeCard(props: { anime: AniListMedia; rank?: number }) {
   const genres = () => (props.anime.genres ?? []).filter((genre): genre is string => Boolean(genre)).slice(0, 3)
 
   return (
-    <Link
+    <CatalogLink
+      media={props.anime}
+      mode={mode()}
       class="group editorial-row grid min-h-[152px] min-w-0 grid-cols-[96px_minmax(0,1fr)_40px] text-inherit no-underline sm:grid-cols-[112px_minmax(0,1fr)_46px]"
-      preload={false}
       style={{ '--accent': accent() }}
-      to="/anime/$animeId"
-      params={{ animeId: String(props.anime.id) }}
     >
       <div class="relative min-h-[152px] overflow-hidden bg-[var(--accent)] after:pointer-events-none after:absolute after:inset-0 after:shadow-cover-inset">
         <Show when={props.rank !== undefined}>
@@ -39,11 +40,11 @@ export function AnimeCard(props: { anime: AniListMedia; rank?: number }) {
       <div class="flex min-w-0 flex-col px-[18px] pb-[15px] pt-[16px]">
         <div class="flex items-center gap-[8px] font-mono text-[9px] font-medium uppercase tracking-[.08em] text-text-muted">
           <Show when={props.anime.status}>
-            <span class="inline-flex items-center gap-[5px] font-medium text-emerald"><i class="inline-block size-[5px] rounded-full bg-emerald" />{formatStatus(props.anime.status)}</span>
+            <span class="inline-flex items-center gap-[5px] font-medium text-emerald"><i class="inline-block size-[5px] rounded-full bg-emerald" />{catalogStatus(mode(), props.anime.status)}</span>
           </Show>
-          <Show when={props.anime.format || props.anime.seasonYear}>
+          <Show when={catalogFormat(mode(), props.anime)}>
             <span>
-              {[props.anime.format ? formatEnum(props.anime.format) : null, props.anime.seasonYear].filter(Boolean).join(' · ')}
+              {catalogFormat(mode(), props.anime)}
             </span>
           </Show>
         </div>
@@ -55,12 +56,12 @@ export function AnimeCard(props: { anime: AniListMedia; rank?: number }) {
           <span class="overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-text-quiet">{nativeTitle()}</span>
         </Show>
 
-        <Show when={score() || props.anime.episodes}>
+        <Show when={score() || catalogCountLabel(mode(), props.anime)}>
           <div class="mt-auto flex flex-wrap items-center gap-x-[13px] gap-y-[7px] pt-[13px] font-mono text-[10px] font-medium text-text-muted">
             <Show when={score()}>
               {(value) => <span class="inline-flex items-center gap-[5px] rounded-[6px] border border-line bg-white/55 px-[8px] py-[3px] text-[10px]"><b class="font-medium text-ink">★ {value()}</b></span>}
             </Show>
-            <Show when={props.anime.episodes}>{(episodes) => <span><b class="font-medium text-ink">{episodes()}</b> episodes</span>}</Show>
+            <Show when={catalogCountLabel(mode(), props.anime)}>{(count) => <span><b class="font-medium text-ink">{count()}</b></span>}</Show>
           </div>
         </Show>
 
@@ -69,7 +70,7 @@ export function AnimeCard(props: { anime: AniListMedia; rank?: number }) {
             {genres().join(' · ')}
           </div>
         </Show>
-        <Show when={props.anime.nextAiringEpisode}>
+        <Show when={mode() === 'ANIME' && props.anime.nextAiringEpisode}>
           {(airing) => (
             <span class="mt-[8px] overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[9px] uppercase tracking-[.08em] text-text-quiet">
               Next ep {airing().episode} · {timeUntil(airing().timeUntilAiring)}
@@ -84,6 +85,6 @@ export function AnimeCard(props: { anime: AniListMedia; rank?: number }) {
       >
         ↗
       </span>
-    </Link>
+    </CatalogLink>
   )
 }

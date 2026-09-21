@@ -1,6 +1,6 @@
 # AniSource Web
 
-A SolidJS anime discovery and watch vertical slice built with TanStack Start, TanStack Router, Solid Query, AniList, and AniSource.
+A SolidJS anime and manga discovery platform with anime playback and manga reading, built with TanStack Start, TanStack Router, Solid Query, AniList, and AniSource.
 
 ## Requirements
 

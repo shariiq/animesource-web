@@ -3,9 +3,10 @@ import { Link, useNavigate } from '@tanstack/solid-router'
 import { createEffect, createMemo, For, on, Show, type Accessor } from 'solid-js'
 import { browseQuery, genresQuery } from '../../data/options'
 import { AnimeCard } from '../home/AnimeCard'
+import { useOptionalCatalogMode } from '../layout/CatalogModeSwitch'
 import {
   BROWSE_FILTER_KEYS,
-  BROWSE_FORMATS,
+  BROWSE_COUNTRIES,
   BROWSE_MAX_PAGE,
   BROWSE_PER_PAGE,
   BROWSE_SEASONS,
@@ -14,6 +15,7 @@ import {
   type BrowseFilterKey,
   type BrowseSearch,
   browseSearchSchema,
+  browseFormats,
   makeBrowseSearch,
   pageWindow,
   searchAtPage,
@@ -28,7 +30,7 @@ const SORT_LABELS: Record<(typeof BROWSE_SORTS)[number], string> = {
   POPULARITY_DESC: 'Most popular',
   SCORE_DESC: 'Top rated',
   START_DATE_DESC: 'Recently released',
-  UPDATE_DESC: 'Recently updated',
+  UPDATED_AT_DESC: 'Recently updated',
 }
 
 const FILTER_LABELS: Record<BrowseFilterKey, string> = {
@@ -36,15 +38,20 @@ const FILTER_LABELS: Record<BrowseFilterKey, string> = {
   genre: 'Genre',
   format: 'Format',
   status: 'Status',
+  countryOfOrigin: 'Country of origin',
   season: 'Season',
   year: 'Year',
 }
 
 export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
   const navigate = useNavigate()
+  const catalogMode = useOptionalCatalogMode()
+  const mode = () => catalogMode?.mode() ?? 'ANIME'
+  const catalogName = () => mode() === 'MANGA' ? 'manga' : 'anime'
+  const catalogNameTitle = () => mode() === 'MANGA' ? 'Manga' : 'Anime'
   let resultsHeading: HTMLHeadingElement | undefined
   const results = createQuery(() => ({
-    ...browseQuery(toBrowseParams(props.search())),
+    ...browseQuery(toBrowseParams(props.search(), mode()), mode()),
     placeholderData: keepPreviousData,
   }))
   const genres = createQuery(genresQuery)
@@ -53,17 +60,18 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
   const title = () => {
     const search = props.search()
     if (search.query) return `Results for “${search.query}”`
-    if (search.genre) return `${search.genre} anime`
-    return 'Explore anime'
+    if (search.genre) return `${search.genre} ${catalogName()}`
+    return `Explore ${catalogName()}`
   }
   const filters = createMemo(() => BROWSE_FILTER_KEYS.flatMap((key) => {
+    if (mode() === 'MANGA' && key === 'season') return []
     const value = props.search()[key]
     return value === undefined ? [] : [{ key, value: String(value) }]
   }))
   const pages = createMemo(() => pageWindow(props.search().page, pageInfo()?.lastPage ?? null))
   const visibleRange = () => {
     const count = resultPage()?.media.length ?? 0
-    if (count === 0) return 'No anime match these filters'
+    if (count === 0) return `No ${catalogName()} match these filters`
     const first = (props.search().page - 1) * BROWSE_PER_PAGE + 1
     return `${first}–${first + count - 1} of ${pageInfo()?.total.toLocaleString() ?? 'many'} titles`
   }
@@ -81,6 +89,22 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
       })
     },
   ))
+
+  createEffect(on(mode, (nextMode) => {
+    const search = props.search()
+    const formats = browseFormats(nextMode)
+    if ((search.format && !formats.includes(search.format)) || (nextMode === 'MANGA' && search.season)) {
+      void navigate({
+        to: '/explore',
+        search: {
+          ...search,
+          format: search.format && formats.includes(search.format) ? search.format : undefined,
+          season: nextMode === 'MANGA' ? undefined : search.season,
+          page: 1,
+        },
+      })
+    }
+  }))
 
   const submit = (event: SubmitEvent) => {
     event.preventDefault()
@@ -101,10 +125,10 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
     <section class="explore-page" aria-labelledby="explore-title">
       <header class="explore-masthead">
         <div class="explore-masthead-copy">
-          <p class="explore-kicker">Anime catalog / browse and filter</p>
+          <p class="explore-kicker">{catalogNameTitle()} catalog / browse and filter</p>
           <h1 id="explore-title">{title()}</h1>
           <p class="explore-summary">
-            <Show when={filters().length > 0} fallback={<>Find a new series, revisit a classic, or follow what is airing now.</>}>
+            <Show when={filters().length > 0} fallback={mode() === 'MANGA' ? <>Browse manga by title, genre, or status.</> : <>Browse anime by title, genre, season, or status.</>}>
               {filters().length} active {filters().length === 1 ? 'filter' : 'filters'} shape these results.
             </Show>
           </p>
@@ -116,25 +140,45 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
         </div>
       </header>
 
-      <form class="explore-filter-deck" onSubmit={submit} aria-label="Anime discovery filters">
+      <form class="explore-filter-deck" onSubmit={submit} aria-label={`${catalogNameTitle()} discovery filters`}>
         <div class="explore-search-row">
           <div class="explore-search-field">
             <label for="explore-query">Search titles</label>
-            <input class="editorial-field" id="explore-query" name="query" type="search" value={props.search().query ?? ''} placeholder="Find a title, world, or memory…" autocomplete="off" />
+            <input class="editorial-field" id="explore-query" name="query" type="search" value={props.search().query ?? ''} placeholder="Search by title" autocomplete="off" />
           </div>
-          <button class="btn primary explore-search-submit" type="submit">Search anime</button>
+          <button class="btn primary explore-search-submit" type="submit">Search {catalogName()}</button>
         </div>
         <div class="explore-filter-fields">
+          <label>Type
+            <select
+              class="editorial-field"
+              value={mode()}
+              aria-label="Catalog type"
+              onChange={(event) => {
+                const next = event.currentTarget.value === 'MANGA' ? 'MANGA' : 'ANIME'
+                if (catalogMode) void catalogMode.changeMode(next)
+              }}
+            >
+              <option value="ANIME">Anime</option>
+              <option value="MANGA">Manga</option>
+            </select>
+          </label>
           <label>Genre
             <select class="editorial-field" name="genre" value={props.search().genre ?? ''}>
               <option value="">All genres</option>
               <For each={genres.data ?? []}>{(genre) => <option value={genre}>{genre}</option>}</For>
             </select>
           </label>
+          <label>Country of origin
+            <select class="editorial-field" name="countryOfOrigin" value={props.search().countryOfOrigin ?? ''}>
+              <option value="">Any country</option>
+              <For each={BROWSE_COUNTRIES}>{([code, label]) => <option value={code}>{label}</option>}</For>
+            </select>
+          </label>
           <label>Format
             <select class="editorial-field" name="format" value={props.search().format ?? ''}>
               <option value="">Any format</option>
-              <For each={BROWSE_FORMATS}>{(format) => <option value={format}>{formatEnum(format)}</option>}</For>
+              <For each={browseFormats(mode())}>{(format) => <option value={format}>{formatEnum(format)}</option>}</For>
             </select>
           </label>
           <label>Status
@@ -143,12 +187,14 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
               <For each={BROWSE_STATUSES}>{(status) => <option value={status}>{formatStatus(status)}</option>}</For>
             </select>
           </label>
-          <label>Season
-            <select class="editorial-field" name="season" value={props.search().season ?? ''}>
-              <option value="">Any season</option>
-              <For each={BROWSE_SEASONS}>{(season) => <option value={season}>{formatSeason(season)}</option>}</For>
-            </select>
-          </label>
+          <Show when={mode() === 'ANIME'}>
+            <label>Season
+              <select class="editorial-field" name="season" value={props.search().season ?? ''}>
+                <option value="">Any season</option>
+                <For each={BROWSE_SEASONS}>{(season) => <option value={season}>{formatSeason(season)}</option>}</For>
+              </select>
+            </label>
+          </Show>
           <label>Year
             <input class="editorial-field" name="year" type="number" min="1960" max="2100" value={props.search().year ?? ''} placeholder="Any year" inputmode="numeric" />
           </label>
@@ -174,7 +220,7 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
       <Show when={!results.isPending} fallback={<ExploreLoading />}>
         <Show when={!results.isError} fallback={
           <section class="explore-state" role="alert">
-            <p class="explore-kicker">Unable to load results</p>
+            <p class="explore-kicker">Unable to load {catalogName()} results</p>
             <h2>Discovery is temporarily unavailable.</h2>
             <p>AniList could not return this collection. Try the request again.</p>
             <button class="btn primary" type="button" onClick={() => { void results.refetch() }}>Retry discovery</button>
@@ -183,7 +229,7 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
           <Show when={resultPage()!.media.length > 0} fallback={
             <section class="explore-state">
               <p class="explore-kicker">No results found</p>
-              <Show when={props.search().page > 1} fallback={<><h2>No anime match this combination.</h2><p>Try removing a filter or searching with a broader title.</p><button class="btn" type="button" onClick={reset}>Clear filters</button></>}>
+              <Show when={props.search().page > 1} fallback={<><h2>No {catalogName()} match this combination.</h2><p>Try removing a filter or searching with a broader title.</p><button class="btn" type="button" onClick={reset}>Clear filters</button></>}>
                 <h2>Page {props.search().page} is beyond this collection.</h2>
                 <p>The catalog ends before this page.</p>
                 <Link class="btn primary" to="/explore" search={searchAtPage(props.search(), 1)}>Return to page 1</Link>
@@ -202,7 +248,7 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
                 </div>
               </div>
               <div class="explore-grid" classList={{ 'is-retuning': results.isFetching }}>
-                <For each={resultPage()!.media}>{(anime) => <AnimeCard anime={anime} />}</For>
+                <For each={resultPage()!.media}>{(anime) => <AnimeCard anime={anime} mode={mode()} />}</For>
               </div>
               <nav class="explore-pagination" aria-label="Explore results pages" aria-busy={results.isFetching}>
                 <span class="explore-pagination-label">Pages</span>
@@ -232,5 +278,5 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
 }
 
 function ExploreLoading() {
-  return <section class="explore-state" aria-busy="true"><p class="explore-kicker">Loading anime</p><h2>Loading the collection…</h2></section>
+  return <section class="explore-state" aria-busy="true"><p class="explore-kicker">Loading catalog</p><h2>Loading the collection…</h2></section>
 }

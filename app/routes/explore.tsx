@@ -14,8 +14,8 @@ export const Route = createFileRoute('/explore')({
   },
   head: () => ({
     meta: [
-      { title: 'Explore anime — AniSource' },
-      { name: 'description', content: 'Search, filter, and discover anime with AniSource.' },
+      { title: 'Explore catalog — AniSource' },
+      { name: 'description', content: 'Search, filter, and discover anime and manga with AniSource.' },
     ],
   }),
   component: ExploreRoute,

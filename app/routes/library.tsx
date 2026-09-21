@@ -5,7 +5,7 @@ export const Route = createFileRoute('/library')({
   head: () => ({
     meta: [
       { title: 'Your library — AniSource' },
-      { name: 'description', content: 'Organize saved anime and continue watching from this device.' },
+      { name: 'description', content: 'Organize saved anime and manga from this device.' },
     ],
   }),
   component: LibraryPage,

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { browseSearchSchema, makeBrowseSearch, pageWindow, searchAtPage, searchWithoutFilter } from '../app/lib/browse'
+import { BROWSE_COUNTRIES, browseSearchSchema, makeBrowseSearch, pageWindow, searchAtPage, searchWithoutFilter } from '../app/lib/browse'
 
 const { request } = vi.hoisted(() => ({ request: vi.fn() }))
 vi.mock('../app/data/anilist/client', async (importOriginal) => {
@@ -10,6 +10,15 @@ vi.mock('../app/data/anilist/client', async (importOriginal) => {
 import { alBrowse, alHome } from '../app/data/anilist/queries'
 
 describe('browse search state', () => {
+  it('uses the AniList catalog origin choices', () => {
+    expect(BROWSE_COUNTRIES).toEqual([
+      ['JP', 'Japan'],
+      ['KR', 'South Korea'],
+      ['CN', 'China'],
+      ['TW', 'Taiwan'],
+    ])
+  })
+
   it('normalizes blank controls and restores page and sort defaults', () => {
     expect(browseSearchSchema.parse({ format: '', status: '', season: '', sort: '', page: '' })).toEqual({
       query: undefined,

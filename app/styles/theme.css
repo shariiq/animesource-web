@@ -1,30 +1,33 @@
 :root {
-  --ink: #09090b;
+  --ink: #060609;
   --paper: #f8f8fa;
-  --line: rgb(9 9 11 / .13);
-  --line-strong: rgb(9 9 11 / .2);
-  --line-light: rgb(255 255 255 / .18);
-  --text-primary: #09090b;
-  --text-secondary: #42404b;
-  --text-muted: #4f4e57;
-  --text-quiet: #777580;
-  --muted: #62616b;
-  --quiet: #8b8993;
-  --surface-panel: rgb(255 255 255 / .64);
-  --surface-control: rgb(255 255 255 / .78);
-  --surface-soft: rgb(255 255 255 / .48);
-  --shadow-panel: 0 28px 80px -50px rgb(0 0 0 / .35);
-  --radius-control: 10px;
-  --radius-panel: 22px;
-  --radius-shell: 26px;
+  --line: rgb(6 6 9 / .12);
+  --line-strong: rgb(6 6 9 / .22);
+  --line-light: rgb(255 255 255 / .2);
+  --text-primary: #060609;
+  --text-secondary: #3c3b46;
+  --text-muted: #4c4b56;
+  --text-quiet: #73717e;
+  --muted: #5f5e6a;
+  --quiet: #888793;
+  --surface-panel: rgb(255 255 255 / .58);
+  --surface-control: rgb(255 255 255 / .76);
+  --surface-soft: rgb(255 255 255 / .44);
+  --surface-hi: rgb(255 255 255 / .88);
+  --shadow-panel: 0 30px 90px -48px rgb(6 6 9 / .4), 0 4px 18px -10px rgb(6 6 9 / .14);
+  --shadow-lift: 0 38px 78px -32px rgb(6 6 9 / .46);
+  --radius-control: 11px;
+  --radius-panel: 24px;
+  --radius-shell: 30px;
   --control-height: 42px;
   --prominent-control-height: 54px;
-  --violet: #7665e8;
-  --plum: #ae6a8d;
-  --mint: #9de4c4;
-  --acid: #d9f56a;
-  --orange: #fa775f;
+  --violet: #6a5af9;
+  --plum: #b45f95;
+  --mint: #8ef0c1;
+  --acid: #d7f651;
+  --orange: #ff6a4d;
   --emerald: #00c853;
+  --signal: #ff2e1f;
   --ease: cubic-bezier(.16, 1, .3, 1);
   --font-display: "Instrument Serif", Georgia, serif;
   --font-body: "Manrope", system-ui, sans-serif;
@@ -32,33 +35,40 @@
 }
 
 @theme {
-  --color-ink: #09090b;
+  --color-ink: #060609;
   --color-paper: #f8f8fa;
-  --color-line: rgb(9 9 11 / .13);
-  --color-line-strong: rgb(9 9 11 / .2);
-  --color-line-light: rgb(255 255 255 / .18);
-  --color-surface-panel: rgb(255 255 255 / .64);
-  --color-surface-control: rgb(255 255 255 / .78);
-  --color-surface-soft: rgb(255 255 255 / .48);
-  --color-text-primary: #09090b;
-  --color-text-secondary: #42404b;
-  --color-text-muted: #4f4e57;
-  --color-text-quiet: #777580;
-  --color-muted: #62616b;
-  --color-quiet: #8b8993;
-  --color-violet: #7665e8;
-  --color-plum: #ae6a8d;
-  --color-mint: #9de4c4;
-  --color-acid: #d9f56a;
-  --color-orange: #fa775f;
+  --color-line: rgb(6 6 9 / .12);
+  --color-line-strong: rgb(6 6 9 / .22);
+  --color-line-light: rgb(255 255 255 / .2);
+  --color-surface-panel: rgb(255 255 255 / .58);
+  --color-surface-control: rgb(255 255 255 / .76);
+  --color-surface-soft: rgb(255 255 255 / .44);
+  --color-surface-hi: rgb(255 255 255 / .88);
+  --color-text-primary: #060609;
+  --color-text-secondary: #3c3b46;
+  --color-text-muted: #4c4b56;
+  --color-text-quiet: #73717e;
+  --color-muted: #5f5e6a;
+  --color-quiet: #888793;
+  --color-violet: #6a5af9;
+  --color-plum: #b45f95;
+  --color-mint: #8ef0c1;
+  --color-acid: #d7f651;
+  --color-orange: #ff6a4d;
   --color-emerald: #00c853;
+  --color-signal: #ff2e1f;
   --font-display: "Instrument Serif", Georgia, serif;
   --font-body: "Manrope", system-ui, sans-serif;
   --font-mono: "DM Mono", ui-monospace, monospace;
   --ease-fluid: cubic-bezier(.16, 1, .3, 1);
   --radius-catalog-rank: 6px;
-  --radius-panel: 22px;
-  --radius-shell: 26px;
-  --shadow-glass: 0 38px 110px -40px rgb(0 0 0 / .38), inset 0 1.5px rgb(255 255 255);
+  --radius-panel: 24px;
+  --radius-shell: 30px;
+  --shadow-glass:
+    0 42px 120px -38px rgb(6 6 9 / .42),
+    0 10px 34px -18px rgb(6 6 9 / .2),
+    inset 0 1.5px rgb(255 255 255 / .98),
+    inset 0 -1px rgb(6 6 9 / .05),
+    inset 0 0 0 1px rgb(255 255 255 / .28);
   --shadow-cover-inset: inset -1px 0 rgb(255 255 255 / .3), inset 0 0 0 1px rgb(0 0 0 / .08);
 }

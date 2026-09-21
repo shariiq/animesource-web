@@ -207,6 +207,7 @@ export function resolveEpisodeId(
 export function orderStreams(streams: readonly Stream[]): Stream[] {
   return [...streams].sort(
     (left, right) =>
+      Number(left.is_audio) - Number(right.is_audio) ||
       (Number.parseInt(right.quality, 10) || 0) - (Number.parseInt(left.quality, 10) || 0),
   )
 }

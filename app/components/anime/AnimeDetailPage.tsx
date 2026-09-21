@@ -94,6 +94,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
   const description = createMemo(() => renderDescription(props.anime.description))
   const poster = createMemo(() => props.anime.coverImage?.extraLarge || props.anime.coverImage?.large || '')
   const banner = createMemo(() => props.anime.bannerImage || poster())
+  const accent = createMemo(() => props.anime.coverImage?.color || '#7665e8')
   const titles = createMemo(() => getDetailTitles(props.anime))
   const studios = createMemo(() => getStudios(props.anime))
   const staff = createMemo(() => getStaffMembers(props.anime))
@@ -133,15 +134,20 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
     <PageShell>
       <section aria-labelledby="anime-title">
         <SectionHeading title="Anime Details" description="AniList metadata / streaming access / episode information" />
-        <article class="relative isolate overflow-hidden rounded-[26px] border border-white/80 bg-white/54 shadow-glass backdrop-blur-[54px]">
+        <article class="relative isolate overflow-hidden rounded-[26px] border border-white/80 bg-white/54 shadow-glass backdrop-blur-[54px]" style={{ '--accent': accent() }}>
           <Show when={banner()}>
             <div
-              class="absolute inset-x-0 top-0 h-[390px] bg-cover bg-center opacity-70"
+              class="absolute inset-x-0 top-0 h-[430px] bg-cover bg-[center_28%] opacity-80 [mask-image:linear-gradient(180deg,black_0%,black_46%,transparent_96%)]"
               style={{ 'background-image': `url("${banner()?.replaceAll('"', '%22')}")` }}
               aria-hidden="true"
             />
           </Show>
-          <div class="absolute inset-x-0 top-0 h-[430px] bg-[linear-gradient(90deg,rgb(255_255_255_/_0.94),rgb(250_250_253_/_0.58),rgb(250_250_253_/_0.14)),linear-gradient(0deg,rgb(250_250_253)_0%,transparent_100%)]" aria-hidden="true" />
+          <div
+            class="absolute inset-x-0 top-0 h-[430px] opacity-60"
+            style={{ background: `linear-gradient(180deg, color-mix(in srgb, var(--accent) 34%, transparent), transparent 70%)` }}
+            aria-hidden="true"
+          />
+          <div class="absolute inset-x-0 top-0 h-[430px] bg-[linear-gradient(90deg,rgb(255_255_255_/_0.92),rgb(250_250_253_/_0.5),rgb(250_250_253_/_0.1)),linear-gradient(0deg,rgb(250_250_253)_4%,transparent_100%)]" aria-hidden="true" />
           <div class="relative z-10 flex justify-between border-b border-white/50 px-6 py-4 font-mono text-[9px] uppercase tracking-[.1em] text-[#42404b]">
             <Link class="hover:text-black" to="/">← Back to discovery</Link>
             <span>{formatStatus(props.anime.status) || 'Catalog'} · {formatEnum(props.anime.format) || 'Anime'}</span>
@@ -149,9 +155,9 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
 
           <div class="relative z-10 grid gap-6 px-6 pb-9 pt-8 lg:grid-cols-[240px_minmax(0,1fr)_300px] lg:px-8">
             <div>
-              <div class="overflow-hidden rounded-[15px] border border-white/70 bg-black/10 shadow-[0_22px_45px_rgb(0_0_0/.18)]">
+              <div class="overflow-hidden rounded-[15px] border border-white/70 bg-black/10 shadow-[0_22px_45px_rgb(0_0_0/.18)] ring-1 ring-black/5">
                 <Show when={poster()} fallback={<div class="aspect-[2/3] bg-black/10" />}>
-                  <img class="aspect-[2/3] w-full object-cover" src={poster()} alt={`${titleOf(props.anime)} poster`} />
+                  <img class="aspect-[2/3] w-full object-cover transition-transform duration-500 ease-fluid hover:scale-[1.03]" src={poster()} alt={`${titleOf(props.anime)} poster`} />
                 </Show>
               </div>
               <button
@@ -219,7 +225,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
               </Show>
 
               <div class="mt-7">
-                <Link class="ink-control inline-flex px-5 py-3 hover:bg-white hover:text-black" to="/anime/$animeId/watch/$episodeId" params={{ animeId: String(props.anime.id), episodeId: 'next' }}>▶ Watch now</Link>
+                <Link class="ink-control inline-flex min-h-[50px] items-center gap-[10px] px-6 py-3 text-[11px]" to="/anime/$animeId/watch/$episodeId" params={{ animeId: String(props.anime.id), episodeId: 'next' }}>▶ Watch now</Link>
               </div>
               <Show when={persistenceError()}>{(message) => <p class="mt-3 text-xs text-red-700" role="alert">{message()}</p>}</Show>
 

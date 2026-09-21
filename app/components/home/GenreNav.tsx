@@ -5,9 +5,9 @@ import { genresQuery } from '../../data/options'
 import { makeBrowseSearch } from '../../lib/browse'
 
 const ACCENTS = [
-  { surface: 'from-violet/35 via-white/85 to-plum/48', accent: '#7665e8' },
+  { surface: 'from-violet/35 via-white/85 to-plum/48', accent: '#6a5af9' },
   { surface: 'from-mint/75 via-white/85 to-acid/60', accent: '#00c853' },
-  { surface: 'from-orange/55 via-white/85 to-plum/48', accent: '#fa775f' },
+  { surface: 'from-orange/55 via-white/85 to-plum/48', accent: '#ff6a4d' },
 ] as const
 
 function accentFor(index: number) {

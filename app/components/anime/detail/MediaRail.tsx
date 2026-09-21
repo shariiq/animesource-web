@@ -27,15 +27,19 @@ export function MediaRail(props: { heading: string; items: MediaRailItem[] }) {
           <For each={props.items}>
             {(item) => {
               const content = <>
-                <div class="card-media">
-                  <Show when={item.cover} fallback={<div />}>
+                <div class="poster-card-media">
+                  <Show when={item.cover} fallback={<div class="aspect-[2/3]" />}>
                     <img src={item.cover} alt={`${item.title} cover`} loading="lazy" />
                   </Show>
-                  <Show when={item.score != null}><span class="card-score">★ {(item.score! / 10).toFixed(1)}</span></Show>
+                  <Show when={item.score != null}><span class="poster-card-score poster-card-score-float">★ {(item.score! / 10).toFixed(1)}</span></Show>
                 </div>
-                <Show when={item.label}><span class="card-meta">{item.label}</span></Show>
-                <h3 class="card-title">{item.title}</h3>
-                <span class="card-meta">{formatEnum(item.format)}</span>
+                <div class="poster-card-body">
+                  <Show when={item.label}><span class="card-meta">{item.label}</span></Show>
+                  <h3 class="poster-card-title">{item.title}</h3>
+                  <div class="poster-card-meta">
+                    <span class="poster-card-sub">{formatEnum(item.format)}</span>
+                  </div>
+                </div>
               </>
 
               return item.type === 'ANIME'

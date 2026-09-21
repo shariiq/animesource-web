@@ -22,6 +22,7 @@ Tier by impact; shared tokens, multiple consumers, or an explicit fidelity targe
 
 ## Guardrails
 
+- ONLY Test meaningful logic or observable behavior. Do not render components to static markup to assert props or attributes, or add tests that merely assert callback wiring or mirror the implementation.
 - Prefer the repository's existing sound patterns over introducing new ones unnecessarily unless they are better. Changes should maintain or improve the existing level of architectural and code quality; do not regress it, always do an improvement on the codebase.
 - Fix root causes not just the sideeffects; never hide errors with catch/defaults/optional chaining, `as any`, or `@ts-ignore`. No stubs, fake production data, dead controls, or silently unsupported states. Report incomplete work as incomplete.
 - Validate AniList, AniSource, and IndexedDB data with Zod at boundaries. Handle AniList HTTP-200 `errors[]`, rate limits, and network failures distinctly; batch related queries with aliases. Surface AniSource cold-start delays.

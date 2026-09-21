@@ -1,5 +1,142 @@
-@utility app-background { position: fixed; z-index: 0; inset: 0; overflow: hidden; pointer-events: none; background: radial-gradient(circle at 42% 15%, #fff 0 13%, #f4f4f8 58%, #fff 100%); }
-@utility atmospheric-ink { position: absolute; width: 60vw; height: 57vw; right: -9vw; top: -24vw; border-radius: 50%; opacity: .92; filter: blur(88px); background: radial-gradient(circle at 47% 58%, #11111a 0 14%, #30303f 29%, rgb(35 35 48 / .66) 46%, transparent 72%); }
-@utility atmospheric-depth { position: absolute; width: 56vw; height: 46vw; bottom: -26vw; left: 5vw; border-radius: 50%; opacity: .83; filter: blur(88px); background: radial-gradient(circle at 48% 38%, #151823 0 18%, rgb(47 53 72 / .74) 38%, transparent 70%); }
-@utility atmospheric-bloom { position: absolute; width: 38vw; height: 42vw; top: 8vw; left: 2vw; border-radius: 50%; opacity: .92; filter: blur(100px); background: radial-gradient(circle, rgb(203 154 181 / .86), rgb(169 134 164 / .34) 51%, transparent 76%); }
-@utility film-grain { position: fixed; z-index: 50; inset: 0; pointer-events: none; opacity: .36; mix-blend-mode: multiply; background-image: radial-gradient(rgb(0 0 0 / .13) .55px, transparent .7px), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.07'/%3E%3C/svg%3E"); background-size: 6px 6px, 180px 180px; }
+﻿@utility app-background {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 78% -8%, rgb(255 255 255) 0 18%, transparent 62%),
+    radial-gradient(circle at 30% 8%, rgb(253 253 255) 0 22%, transparent 60%),
+    linear-gradient(178deg, #fbfbfe 0%, #f4f4fa 46%, #f8f7fb 78%, #fdfdfe 100%);
+}
+
+/* Deep ink masses: the stark-contrast counterweight that makes the glass
+   read as optically thick material instead of a white wash. */
+@utility atmospheric-ink {
+  position: absolute;
+  width: 58vw;
+  height: 54vw;
+  right: -20vw;
+  top: -38vw;
+  border-radius: 50%;
+  opacity: .95;
+  filter: blur(74px);
+  background: radial-gradient(circle at 46% 56%, #06060c 0 16%, #1b1b28 34%, rgb(28 28 42 / .62) 52%, transparent 74%);
+  animation: atmosphere-drift 34s var(--ease) infinite alternate;
+}
+
+@utility atmospheric-depth {
+  position: absolute;
+  width: 60vw;
+  height: 50vw;
+  bottom: -28vw;
+  left: 2vw;
+  border-radius: 50%;
+  opacity: .88;
+  filter: blur(78px);
+  background: radial-gradient(circle at 48% 36%, #0d1020 0 20%, rgb(38 44 66 / .7) 42%, transparent 72%);
+  animation: atmosphere-drift 42s var(--ease) infinite alternate-reverse;
+}
+
+/* Aurora blooms: the niche semantic palette diffusing through the field so
+   frosted surfaces refract colour, not just light. */
+@utility atmospheric-bloom {
+  position: absolute;
+  width: 42vw;
+  height: 46vw;
+  top: 6vw;
+  left: 0;
+  border-radius: 50%;
+  opacity: .9;
+  filter: blur(92px);
+  background: radial-gradient(circle, rgb(224 132 178 / .8), rgb(180 122 162 / .34) 50%, transparent 76%);
+  animation: atmosphere-float 28s ease-in-out infinite alternate;
+}
+
+@utility atmospheric-violet {
+  position: absolute;
+  width: 40vw;
+  height: 40vw;
+  right: 4vw;
+  bottom: -14vw;
+  border-radius: 50%;
+  opacity: .62;
+  filter: blur(88px);
+  background: radial-gradient(circle, rgb(106 90 249 / .55), rgb(106 90 249 / .14) 56%, transparent 78%);
+  animation: atmosphere-float 36s ease-in-out infinite alternate-reverse;
+}
+
+@utility atmospheric-mint {
+  position: absolute;
+  width: 34vw;
+  height: 30vw;
+  left: 24vw;
+  bottom: 4vw;
+  border-radius: 50%;
+  opacity: .5;
+  filter: blur(84px);
+  background: radial-gradient(circle, rgb(74 220 164 / .5), rgb(142 240 193 / .16) 55%, transparent 78%);
+  animation: atmosphere-drift 30s ease-in-out infinite alternate;
+}
+
+@utility atmospheric-orange {
+  position: absolute;
+  width: 26vw;
+  height: 30vw;
+  right: 26vw;
+  top: -8vw;
+  border-radius: 50%;
+  opacity: .44;
+  filter: blur(80px);
+  background: radial-gradient(circle, rgb(255 106 77 / .5), rgb(255 158 122 / .16) 54%, transparent 78%);
+  animation: atmosphere-float 24s ease-in-out infinite alternate-reverse;
+}
+
+@utility atmospheric-light {
+  position: absolute;
+  width: 50vw;
+  height: 34vw;
+  left: 18vw;
+  top: -18vw;
+  border-radius: 50%;
+  opacity: .95;
+  filter: blur(82px);
+  background: radial-gradient(circle, rgb(255 255 255 / .98), rgb(255 255 255 / .22) 58%, transparent 80%);
+}
+
+/* British industrial registration layer: a dot-matrix field, denser near the
+   viewport edges and dissolving toward the reading column. */
+@utility dot-grid {
+  position: fixed;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  opacity: .5;
+  background-image: radial-gradient(rgb(6 6 9 / .16) 1px, transparent 1.4px);
+  background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(120% 100% at 50% 40%, transparent 30%, rgb(0 0 0 / .55) 78%, rgb(0 0 0) 100%);
+  mask-image: radial-gradient(120% 100% at 50% 40%, transparent 30%, rgb(0 0 0 / .55) 78%, rgb(0 0 0) 100%);
+}
+
+@utility film-grain {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  pointer-events: none;
+  opacity: .34;
+  mix-blend-mode: multiply;
+  background-image:
+    radial-gradient(rgb(0 0 0 / .12) .55px, transparent .7px),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.07'/%3E%3C/svg%3E");
+  background-size: 6px 6px, 180px 180px;
+}
+
+@keyframes atmosphere-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-4vw, 3vw, 0) scale(1.06); }
+}
+
+@keyframes atmosphere-float {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(3vw, -2.4vw, 0); }
+}

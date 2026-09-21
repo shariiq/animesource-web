@@ -322,6 +322,7 @@ describe("LazyPlayer", () => {
     headers: {},
     subtitles: [],
     is_hls: false,
+    is_audio: false,
   };
   const hlsStream = {
     url: "https://api.test/proxy/hls/token",
@@ -329,6 +330,13 @@ describe("LazyPlayer", () => {
     headers: {},
     subtitles: [],
     is_hls: true,
+    is_audio: false,
+  };
+  const audioStream = {
+    ...hlsStream,
+    url: "https://api.test/proxy/hls/audio",
+    quality: "Japanese",
+    is_audio: true,
   };
   const subtitled = {
     ...hlsStream,
@@ -455,6 +463,13 @@ describe("LazyPlayer", () => {
     await waitFor(() => expect(hls.instances).toHaveLength(2));
     expect(hls.instances[0]!.destroy).toHaveBeenCalled();
     expect(hls.instances[1]!.loadSource).toHaveBeenCalledWith(variants[1]!.url);
+  });
+
+  it("labels audio-only variants as streams", () => {
+    render(() => <LazyPlayer streams={[hlsStream, audioStream]} />);
+
+    expect(screen.getByLabelText("Stream")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Audio · Japanese" })).toBeInTheDocument();
   });
 
   it("destroys the hls.js instance when the player unmounts", async () => {

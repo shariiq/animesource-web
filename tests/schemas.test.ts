@@ -11,7 +11,8 @@ describe('boundary schemas', () => {
   })
   it('defaults episode flags and stream metadata', () => {
     expect(episodeSchema.parse({ id: 'ep', number: 1, title: 'Episode' })).toMatchObject({ is_filler: false, has_sub: false, has_dub: false })
-    expect(streamSchema.parse({ url: 'https://video.test/a.m3u8', quality: '1080p' })).toMatchObject({ headers: {}, subtitles: [], is_hls: false })
+    expect(streamSchema.parse({ url: 'https://video.test/a.m3u8', quality: '1080p' })).toMatchObject({ headers: {}, subtitles: [], is_hls: false, is_audio: false })
+    expect(streamSchema.parse({ url: 'https://audio.test/a.m3u8', quality: 'Japanese audio', is_audio: true }).is_audio).toBe(true)
   })
   it('accepts GraphQL data with optional errors omitted', () => {
     expect(graphQLResponseShape.parse({ data: { Media: null } })).toEqual({ data: { Media: null } })

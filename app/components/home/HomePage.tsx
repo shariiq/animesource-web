@@ -6,6 +6,7 @@ import type { AniListMedia } from '../../data/anilist/types'
 import { HeroCarousel } from './HeroCarousel'
 import { AnimeCard } from './AnimeCard'
 import { GenreNav } from './GenreNav'
+import { Rail } from './Rail'
 import { currentSeason, nextSeasonOf } from '../../lib/format'
 import { makeBrowseSearch } from '../../lib/browse'
 import { PageShell } from '../ui/PageShell'
@@ -39,6 +40,11 @@ export function HomePage() {
           <Show when={home.data} fallback={<State title="No anime available" />} keyed>
             {(data) => <>
               <HeroCarousel items={data.trending.media} />
+              <Rail
+                title="New this season"
+                items={data.season.media}
+                explore={makeBrowseSearch({ sort: 'POPULARITY_DESC', season: season.season, year: season.year })}
+              />
               <section class="mt-[104px]" aria-labelledby="collection-heading">
                 <SectionHeading id="collection-heading" title="Trending Anime" description="Popular series / real-time updates / useful details" />
                 <div class="material-panel overflow-hidden">
@@ -84,7 +90,19 @@ function CollectionFilterButton(props: { current: () => CollectionFilter; setCur
 }
 
 function AnimeColumn(props: { title: string; items: AniListMedia[]; search: ReturnType<typeof makeBrowseSearch> }) {
-  return <section class="material-panel overflow-hidden"><div class="flex items-center justify-between border-b border-line px-4 py-3"><h3 class="text-sm font-bold">{props.title}</h3><Link class="font-mono text-[8px] uppercase tracking-[.1em]" to="/explore" search={props.search}>View all →</Link></div><div class="divide-y divide-line"><For each={props.items.slice(0, 3)}>{(anime, index) => <AnimeCard anime={anime} rank={index() + 1} />}</For></div></section>
+  return (
+    <section class="material-panel flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between border-b border-line px-4 py-3">
+        <h3 class="text-sm font-bold">{props.title}</h3>
+        <Link class="font-mono text-[8px] uppercase tracking-[.1em]" to="/explore" search={props.search}>View all →</Link>
+      </div>
+      {/* Rows stretch evenly to fill the stretched grid panel so every column's
+          last row lands flush on the panel's bottom border. */}
+      <div class="flex flex-1 flex-col divide-y divide-line [&>*]:flex-1 [&>*:last-child]:border-b-0">
+        <For each={props.items.slice(0, 3)}>{(anime, index) => <AnimeCard anime={anime} rank={index() + 1} />}</For>
+      </div>
+    </section>
+  )
 }
 
 function HomeLoading() {

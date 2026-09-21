@@ -70,6 +70,31 @@ test("manga detail opens the reader through the full chapter flow", async ({ pag
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test("legacy zero reader routes resolve to the first numbered chapter", async ({ page }) => {
+  await page.goto("/manga/1/read/0?source=test");
+  await expect(page).toHaveURL(/\/manga\/1\/read\/1(?:\?|$)/);
+  await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
+  await expect(page.getByText("Chapter 1", { exact: true }).first()).toBeVisible();
+});
+
+test("continuous reader keeps both progress controls aligned with scrolling", async ({ page }) => {
+  await page.goto("/manga/1/read/start?source=test");
+  const scroll = page.locator(".manga-reader-scroll");
+  const scrubber = page.getByRole("slider", { name: "Page scrubber" });
+
+  await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
+  await expect(scrubber).toHaveValue("0");
+
+  await scroll.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+
+  await expect(scrubber).toHaveValue("1");
+  await expect(page.locator(".manga-reader-page-label")).toHaveText("Page 2 / 2");
+  await expect(page.locator(".manga-reader-hairline i")).toHaveAttribute("style", /width: 100%/);
+});
+
 test("Explore stays active for filtered Explore routes", async ({ page }) => {
   await page.goto("/explore?sort=POPULARITY_DESC&page=1");
   await expect(page.getByRole("link", { name: "Explore" })).toHaveAttribute("aria-current", "page");

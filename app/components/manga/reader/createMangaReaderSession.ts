@@ -122,9 +122,18 @@ const START_CHAPTER_TOKEN = 'start'
 const LATEST_CHAPTER_TOKEN = 'latest'
 const CONTINUE_CHAPTER_TOKEN = 'continue'
 
+const SOURCE_CHAPTER_NUMBER_PATTERN = /\b(?:chapter|chap\.?|ch\.?|episode|ep\.?)\s*#?\s*(\d+(?:\.\d+)?)/i
+
+function chapterNumberFromSource(chapter: MangaChapter): number {
+  if (Number.isFinite(chapter.number) && chapter.number !== 0) return chapter.number
+  const match = `${chapter.title} ${chapter.url}`.match(SOURCE_CHAPTER_NUMBER_PATTERN)
+  const inferred = match?.[1] ? Number(match[1]) : NaN
+  return Number.isFinite(inferred) ? inferred : chapter.number
+}
+
 export function normalizeChapters(chapters: readonly MangaChapter[]): MangaChapter[] {
   return chapters
-    .map((chapter, index) => ({ chapter, index }))
+    .map((chapter, index) => ({ chapter: { ...chapter, number: chapterNumberFromSource(chapter) }, index }))
     .sort((left, right) => {
       const numberOrder = left.chapter.number - right.chapter.number
       return Number.isFinite(numberOrder) && numberOrder !== 0 ? numberOrder : left.index - right.index
@@ -172,6 +181,10 @@ export function resolveStartChapterId(
 
 function isSpecialChapterToken(value: string): boolean {
   return value === START_CHAPTER_TOKEN || value === LATEST_CHAPTER_TOKEN || value === CONTINUE_CHAPTER_TOKEN
+}
+
+function isLegacyZeroStartRoute(chapters: readonly MangaChapter[], value: string): boolean {
+  return value === '0' && !chapters.some((chapter) => chapter.number === 0)
 }
 
 function describeError(error: unknown, operation: MangaReaderError['operation']): MangaReaderError {
@@ -366,7 +379,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     const routeNumber = options.routeChapterNumber()
     if (routeNumber === CONTINUE_CHAPTER_TOKEN && record) return record.chapterId
     if (routeNumber === LATEST_CHAPTER_TOKEN) return chapters().at(-1)?.id ?? null
-    if (routeNumber === START_CHAPTER_TOKEN) {
+    if (routeNumber === START_CHAPTER_TOKEN || isLegacyZeroStartRoute(chapters(), routeNumber)) {
       return resolveStartChapterId(chapters(), record, selectedSource(), matchedManga()?.id ?? '')
     }
     return chapterIdForRoute(chapters(), routeNumber)
@@ -425,7 +438,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       if (chapterId && normalized.some((chapter) => chapter.id === chapterId)) {
         const routeNumber = options.routeChapterNumber()
         const legacyOpaqueRoute = chapterIdForNumber(normalized, routeNumber) === null
-        await loadPages(chapterId, isSpecialChapterToken(routeNumber) || legacyOpaqueRoute)
+        await loadPages(chapterId, isSpecialChapterToken(routeNumber) || isLegacyZeroStartRoute(normalized, routeNumber) || legacyOpaqueRoute)
       } else if (!isSpecialChapterToken(options.routeChapterNumber())) {
         setFailure({ kind: 'unavailable', operation: 'chapters', message: 'That chapter is no longer available from this source.', retryable: false })
       }

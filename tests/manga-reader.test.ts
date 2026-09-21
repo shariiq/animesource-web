@@ -19,6 +19,15 @@ describe('manga reader ordering', () => {
     expect(normalizeChapters([chapter('c3', 3), chapter('c1', 1), chapter('c2a', 2), chapter('c2b', 2)]).map((entry) => entry.id)).toEqual(['c1', 'c2a', 'c2b', 'c3'])
   })
 
+  it('derives missing chapter numbers from source titles before choosing a start chapter', () => {
+    const latest = { ...chapter('c155', 0), title: 'Episode 155' }
+    const first = { ...chapter('c1', 0), title: 'Episode 1' }
+    expect(normalizeChapters([latest, first]).map((entry) => [entry.id, entry.number])).toEqual([
+      ['c1', 1],
+      ['c155', 155],
+    ])
+  })
+
   it('resolves public chapter numbers without exposing source chapter ids', () => {
     const chapters = [chapter('opaque-1', 1), chapter('opaque-2', 2)]
     expect(chapterIdForNumber(chapters, '1')).toBe('opaque-1')

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findBestMatch, matchFlow, normTitle, rankCandidates, similarity, titleVariants, tokenSet } from '../app/data/matching'
+import { AUTO_MATCH_MARGIN, findBestMatch, matchFlow, normTitle, rankCandidates, similarity, titleVariants, tokenSet } from '../app/data/matching'
 import type { AniSourceAnime } from '../app/data/anisource/schema'
 
 const anime = (over: Partial<AniSourceAnime>): AniSourceAnime => ({
@@ -125,5 +125,60 @@ describe('matchFlow', () => {
     const result = matchFlow(anilistTitle, candidates)
     expect(result.kind).toBe('auto')
     if (result.kind === 'auto') expect(result.match.candidate.id).toBe('hxh')
+  })
+})
+
+describe('matching accuracy regressions', () => {
+  // Streaming sources write "×" as "x" — these must be identical after normalization.
+  it('unifies the × separator with x', () => {
+    expect(normTitle('SPY×FAMILY')).toBe(normTitle('Spy x Family'))
+    const result = matchFlow('HUNTER×HUNTER (2011)', [anime({ id: 'hxh', title: 'Hunter x Hunter (2011)' })])
+    expect(result.kind).toBe('auto')
+  })
+
+  // "Mob Psycho 100 II" on a source is "Mob Psycho 100 Season 2" on AniList.
+  it('treats a trailing roman numeral as a season ordinal', () => {
+    const ranked = rankCandidates(['Mob Psycho 100 II', 'Mob Psycho 100 Season 2'], [
+      anime({ id: 's1', title: 'Mob Psycho 100' }),
+      anime({ id: 's2', title: 'Mob Psycho 100 Season 2' }),
+    ])
+    expect(ranked[0]?.candidate.id).toBe('s2')
+  })
+
+  // Conflicting season ordinals must lose to agreement, not win on token overlap.
+  it('prefers the matching season over the wrong one', () => {
+    const ranked = rankCandidates(['Overlord IV'], [
+      anime({ id: 's3', title: 'Overlord III' }),
+      anime({ id: 's4', title: 'Overlord Season 4' }),
+    ])
+    expect(ranked[0]?.candidate.id).toBe('s4')
+  })
+
+  // Same franchise, different adaptations — the year is near-decisive.
+  it('separates adaptations by release year', () => {
+    const ranked = rankCandidates(['Hunter x Hunter (2011)'], [
+      anime({ id: 'old', title: 'Hunter x Hunter 1999' }),
+      anime({ id: 'new', title: 'Hunter x Hunter (2011)' }),
+    ])
+    expect(ranked[0]?.candidate.id).toBe('new')
+    expect(ranked[0]!.score - ranked[1]!.score).toBeGreaterThanOrEqual(AUTO_MATCH_MARGIN)
+  })
+
+  // A spin-off containing the parent title must never auto-confirm alone.
+  it('does not auto-confirm a spin-off by containment', () => {
+    const result = matchFlow('Attack on Titan', [anime({ title: 'Attack on Titan: Junior High' })])
+    expect(result.kind).toBe('picker')
+  })
+
+  // Long romaji vs short English variant of the same entry must still rank first.
+  it('ranks distinctive romaji tokens above filler overlap', () => {
+    const ranked = rankCandidates(
+      ['Kaguya-sama: Love is War', 'Kaguya-sama wa Kokurasetai: Tensai-tachi no Renai Zunousen'],
+      [
+        anime({ id: 'wrong', title: 'Kaguya-hime no Monogatari' }),
+        anime({ id: 'right', title: 'Kaguya-sama wa Kokurasetai' }),
+      ],
+    )
+    expect(ranked[0]?.candidate.id).toBe('right')
   })
 })

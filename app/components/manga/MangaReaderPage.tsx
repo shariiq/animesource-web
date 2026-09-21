@@ -93,6 +93,10 @@ function formatChapterDate(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? '' : chapterDateFormatter.format(date)
 }
 
+function formatChapterNumber(value: number | null | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : '—'
+}
+
 export function MangaReaderPage(props: MangaReaderPageProps) {
   const [chapterSheetOpen, setChapterSheetOpen] = createSignal(false)
   const [settingsSheetOpen, setSettingsSheetOpen] = createSignal(false)
@@ -107,8 +111,8 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
   const [loadRequested, setLoadRequested] = createSignal<ReadonlySet<number>>(new Set())
   let shellEl: HTMLElement | undefined
   let scrollEl: HTMLDivElement | undefined
-  let observer: IntersectionObserver | undefined
   let loadObserver: IntersectionObserver | undefined
+  let scrollFrame: number | null = null
   let chromeTimer: ReturnType<typeof setTimeout> | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let refreshPromise: Promise<boolean> | null = null
@@ -135,7 +139,7 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
   const reading = () => session.stage() === 'pages-ready' || session.stage() === 'empty'
   const chapterLabel = () => {
     const chapter = session.selectedChapter()
-    return chapter ? `Chapter ${chapter.number || '—'}` : 'Manga reader'
+    return chapter ? `Chapter ${formatChapterNumber(chapter.number)}` : 'Manga reader'
   }
   const chapterTitle = () => session.selectedChapter()?.title || 'Choose a chapter to begin'
   const pageLabel = () => {
@@ -171,16 +175,6 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     const previousBodyOverflow = document.body.style.overflow
     document.documentElement.style.overflow = 'hidden'
     document.body.style.overflow = 'hidden'
-
-    observer = new IntersectionObserver((entries) => {
-      const visible = entries
-        .filter((entry) => entry.isIntersecting)
-        .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
-      if (!visible) return
-      const index = Number((visible.target as HTMLElement).dataset.pageIndex)
-      if (Number.isInteger(index)) session.setPage(index)
-    }, { rootMargin: '-18% 0px -58% 0px', threshold: [0.1, 0.35, 0.7] })
-    observePages()
 
     const handleFullscreenChange = () => setFullscreen(Boolean(document.fullscreenElement))
     document.addEventListener('fullscreenchange', handleFullscreenChange)
@@ -246,8 +240,8 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
       document.removeEventListener('fullscreenchange', handleFullscreenChange)
       document.documentElement.style.overflow = previousHtmlOverflow
       document.body.style.overflow = previousBodyOverflow
-      observer?.disconnect()
       loadObserver?.disconnect()
+      if (scrollFrame !== null) cancelAnimationFrame(scrollFrame)
       if (chromeTimer !== null) clearTimeout(chromeTimer)
       if (refreshTimer !== null) clearTimeout(refreshTimer)
       imageLoadQueue.clear()
@@ -259,8 +253,8 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     session.pages()
     session.layout()
     queueMicrotask(() => {
-      observePages()
       setupLoadObserver()
+      syncContinuousProgress()
     })
   })
 
@@ -268,7 +262,6 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     const chapterId = session.selectedChapter()?.id ?? null
     if (chapterId === resetChapterId) return
     resetChapterId = chapterId
-    for (const node of pageNodes().values()) observer?.unobserve(node)
     loadObserver?.disconnect()
     setPageNodes(new Map())
     setLoadRequested(new Set<number>())
@@ -280,8 +273,8 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     preloadedUrls.clear()
     imageLoadQueue.clear()
     queueMicrotask(() => {
-      observePages()
       setupLoadObserver()
+      syncContinuousProgress()
     })
   })
 
@@ -332,10 +325,12 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
   // Keep the tab title honest about what is being read.
   createEffect(() => {
     const chapter = session.selectedChapter()
-    document.title = chapter ? `Chapter ${chapter.number || '—'} · ${title()} — AniSource` : `${title()} — Manga reader — AniSource`
+    if (typeof document !== 'undefined') {
+      document.title = chapter ? `Chapter ${formatChapterNumber(chapter.number)} · ${title()} — AniSource` : `${title()} — Manga reader — AniSource`
+    }
   })
   onCleanup(() => {
-    document.title = 'AniSource — Discover & Watch Anime'
+    if (typeof document !== 'undefined') document.title = 'AniSource — Discover & Watch Anime'
   })
 
   function scheduleChromeHide(): void {
@@ -377,15 +372,37 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     if (event.pointerType === 'mouse') revealChrome()
   }
 
-  function observePages(): void {
-    if (!observer || session.layout() !== 'continuous') return
-    for (const node of pageNodes().values()) observer.observe(node)
-  }
-
   function requestPageLoad(index: number): void {
     setLoadRequested((current) => {
       if (current.has(index)) return current
       return new Set(current).add(index)
+    })
+  }
+
+  function syncContinuousProgress(): void {
+    if (!scrollEl || session.layout() !== 'continuous' || pageCount() === 0) return
+    const root = scrollEl.getBoundingClientRect()
+    const anchor = root.top + root.height * 0.32
+    let activeIndex = 0
+    let nearestDistance = Number.POSITIVE_INFINITY
+
+    for (const [index, node] of pageNodes()) {
+      const page = node.getBoundingClientRect()
+      const distance = anchor < page.top ? page.top - anchor : anchor > page.bottom ? anchor - page.bottom : 0
+      if (distance < nearestDistance || (distance === nearestDistance && index > activeIndex)) {
+        nearestDistance = distance
+        activeIndex = index
+      }
+    }
+
+    if (activeIndex !== session.currentPage()) session.setPage(activeIndex)
+  }
+
+  function handleReaderScroll(): void {
+    if (scrollFrame !== null) return
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = null
+      syncContinuousProgress()
     })
   }
 
@@ -428,7 +445,6 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
       return next
     })
     if (session.layout() === 'continuous') {
-      observer?.observe(node)
       loadObserver?.observe(node)
     }
   }
@@ -725,6 +741,7 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
                   ref={(element) => { scrollEl = element }}
                   class="manga-reader-scroll"
                   onClick={handleCanvasClick}
+                  onScroll={handleReaderScroll}
                 >
                   <div class="manga-reader-stream" role="list" aria-label="Manga pages">
                     <For each={session.pages()}>
@@ -968,9 +985,9 @@ function ChapterButton(props: { chapter: MangaChapter; currentId: string | undef
       aria-current={isCurrent() || undefined}
       onClick={() => { void props.onChoose(props.chapter) }}
     >
-      <span class="manga-reader-chapter-number">{props.chapter.number || '—'}</span>
+      <span class="manga-reader-chapter-number">{formatChapterNumber(props.chapter.number)}</span>
       <span class="manga-reader-chapter-copy">
-        <strong>{props.chapter.title || `Chapter ${props.chapter.number || '—'}`}</strong>
+        <strong>{props.chapter.title || `Chapter ${formatChapterNumber(props.chapter.number)}`}</strong>
         <small>{[date(), props.chapter.scanlator].filter(Boolean).join(' · ') || 'Source chapter'}</small>
       </span>
       <span class="manga-reader-chapter-state" aria-hidden="true">
@@ -985,14 +1002,14 @@ function ChapterEndCard(props: { session: MangaReaderSession; mangaId: number; o
   const next = () => props.session.nextChapter()
   return (
     <section class="manga-reader-end" classList={{ 'is-overlay': props.overlay ?? false }} aria-label="End of chapter">
-      <span class="manga-reader-kicker">Chapter {chapter()?.number || '—'} complete</span>
+      <span class="manga-reader-kicker">Chapter {formatChapterNumber(chapter()?.number)} complete</span>
       <h2>{chapter()?.title || 'End of chapter'}</h2>
       <Show
         when={next()}
         fallback={<p class="manga-reader-end-copy">You're caught up — this is the latest chapter this source has.</p>}
       >
         {(nextChapter) => (
-          <p class="manga-reader-end-copy">Continue to Chapter {nextChapter().number || '—'}{nextChapter().title ? ` · ${nextChapter().title}` : ''}.</p>
+          <p class="manga-reader-end-copy">Continue to Chapter {formatChapterNumber(nextChapter().number)}{nextChapter().title ? ` · ${nextChapter().title}` : ''}.</p>
         )}
       </Show>
       <div class="manga-reader-end-actions">

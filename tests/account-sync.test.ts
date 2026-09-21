@@ -15,7 +15,7 @@ beforeEach(async () => {
 describe('viewer account data', () => {
   it('round-trips profile, preferences, library, progress, matches, and history', async () => {
     await browserViewerData.setViewerProfile({ displayName: 'Mina' })
-    await browserViewerData.setViewerPreferences({ adultContent: true, language: 'ja', timezone: 'Asia/Tokyo', notifications: true })
+    await browserViewerData.setViewerPreferences({ adultContent: true, catalogMode: 'MANGA', language: 'ja', timezone: 'Asia/Tokyo', notifications: true })
     await browserViewerData.setPlaybackPreferences({ quality: '1080p', audioLanguage: 'ja', audioLabel: '日本語', subtitleLanguage: 'ja', subtitleLabel: '日本語' })
     await browserViewerData.toggleFavorite({ id: 42, title: 'Orbit', cover: 'cover', format: 'TV', averageScore: 91 })
     await browserViewerData.recordContinue({ id: 42, title: 'Orbit', cover: 'cover', sourceId: 'src', sourceName: 'Source', animeId: 'orbit', episodeId: 'ep-1', episodeNumber: 1 })
@@ -30,7 +30,7 @@ describe('viewer account data', () => {
     await browserViewerData.importViewerData(snapshot, 'replace')
 
     await expect(browserViewerData.getViewerProfile()).resolves.toMatchObject({ displayName: 'Mina' })
-    await expect(browserViewerData.getViewerPreferences()).resolves.toMatchObject({ language: 'ja', timezone: 'Asia/Tokyo', adultContent: true })
+    await expect(browserViewerData.getViewerPreferences()).resolves.toMatchObject({ language: 'ja', timezone: 'Asia/Tokyo', adultContent: true, catalogMode: 'MANGA' })
     await expect(browserViewerData.getFavorites()).resolves.toMatchObject([{ id: 42 }])
     await expect(browserViewerData.getContinue()).resolves.toMatchObject([{ id: 42, episodeId: 'ep-1' }])
     await expect(browserViewerData.getPlaybackRecord(42, 'ep-1')).resolves.toMatchObject({ position: 120 })
@@ -97,7 +97,7 @@ function snapshot(overrides: Partial<ViewerExport> = {}): ViewerExport {
     version: 1,
     exportedAt: 1,
     profile: { displayName: '', updatedAt: 0 },
-    preferences: { adultContent: false, language: 'en', timezone: 'UTC', notifications: false, updatedAt: 0 },
+    preferences: { adultContent: false, catalogMode: 'ANIME', language: 'en', timezone: 'UTC', notifications: false, updatedAt: 0 },
     favorites: [],
     continue: [],
     playback: [],

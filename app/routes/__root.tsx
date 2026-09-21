@@ -9,6 +9,7 @@ import { HydrationScript } from 'solid-js/web'
 import { Suspense, JSX } from 'solid-js'
 import { QueryClientProvider, type QueryClient } from '@tanstack/solid-query'
 import { Header } from '../components/layout/Header'
+import { CatalogModeProvider } from '../components/layout/CatalogModeSwitch'
 import { Footer } from '../components/layout/Footer'
 import { ErrorBoundary } from '../components/shared/ErrorBoundary'
 import '../styles/app.css'
@@ -40,17 +41,19 @@ function RootLayout() {
   const queryClient = context().queryClient
   return (
     <QueryClientProvider client={queryClient}>
-      <div class="relative z-10 flex min-h-screen flex-col">
-        <Header />
-        <main id="main" class="flex-1">
-          <ErrorBoundary>
-            <Suspense>
-              <Outlet />
-            </Suspense>
-          </ErrorBoundary>
-        </main>
-        <Footer />
-      </div>
+      <CatalogModeProvider>
+        <div class="relative z-10 flex min-h-screen flex-col">
+          <Header />
+          <main id="main" class="flex-1">
+            <ErrorBoundary>
+              <Suspense>
+                <Outlet />
+              </Suspense>
+            </ErrorBoundary>
+          </main>
+          <Footer />
+        </div>
+      </CatalogModeProvider>
     </QueryClientProvider>
   )
 }

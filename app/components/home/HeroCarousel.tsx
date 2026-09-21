@@ -1,13 +1,17 @@
 import { createMemo, createSignal, onCleanup, onMount, For, Show } from 'solid-js'
 import { Link } from '@tanstack/solid-router'
 import type { AniListMedia } from '../../data/anilist/types'
-import { formatCompactNumber, formatEnum, formatScore, formatStatus, titleOf } from '../../lib/format'
+import { formatCompactNumber, formatEnum, formatScore, titleOf } from '../../lib/format'
+import { catalogCopy, catalogCountLabel, catalogFormat, catalogStatus, type CatalogMode } from '../../lib/catalog'
 import { SectionHeading } from '../ui/SectionHeading'
+import { CatalogLink } from './CatalogLink'
 
 const SLIDE_INTERVAL_MS = 7000
 const MAX_SLIDES = 6
 
-export function HeroCarousel(props: { items: AniListMedia[] }) {
+export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode }) {
+  const mode = () => props.mode ?? 'ANIME'
+  const copy = () => catalogCopy[mode()]
   const slides = () => props.items.filter((media) => media.bannerImage || media.coverImage?.extraLarge).slice(0, MAX_SLIDES)
   const [activeIndex, setActiveIndex] = createSignal(0)
   const [paused, setPaused] = createSignal(false)
@@ -22,9 +26,8 @@ export function HeroCarousel(props: { items: AniListMedia[] }) {
     return match ? { lead: match[1], separator: match[2], accent: match[3] } : { lead: title, separator: '', accent: '' }
   })
   const metaLine = createMemo(() => [
-    active()?.seasonYear,
-    active()?.format ? formatEnum(active()?.format) : null,
-    active()?.status ? formatStatus(active()?.status) : null,
+    catalogFormat(mode(), active() ?? null),
+    active()?.status ? catalogStatus(mode(), active()?.status) : null,
   ].filter(Boolean).join(' · '))
   const facts = createMemo(() => {
     const media = active()
@@ -36,7 +39,7 @@ export function HeroCarousel(props: { items: AniListMedia[] }) {
       media.countryOfOrigin || media.format
         ? { label: 'Origin', value: [media.countryOfOrigin, media.format ? formatEnum(media.format) : null].filter(Boolean).join(' · ') }
         : null,
-      media.episodes ? { label: 'Episodes', value: `${media.episodes} episodes` } : null,
+      catalogCountLabel(mode(), media) ? { label: copy().countFactLabel, value: catalogCountLabel(mode(), media) } : null,
     ].filter((fact): fact is { label: string; value: string } => fact !== null)
   })
   let timer: ReturnType<typeof setInterval> | undefined
@@ -60,14 +63,14 @@ export function HeroCarousel(props: { items: AniListMedia[] }) {
       <section class="featured-section relative" aria-labelledby="featured-heading" style={{ '--accent': accent() }}>
         <SectionHeading
           id="featured-heading"
-          title="Featured Anime"
-          description="Trending series / episode access / anime details"
+          title={copy().featuredTitle}
+          description={copy().featuredDescription}
         />
         <div class="hero-ambient" aria-hidden="true" />
         <article
           class="hero-shell featured-shell relative isolate"
           aria-roledescription="carousel"
-          aria-label="Featured anime"
+          aria-label={`Featured ${mode().toLowerCase()}`}
           onMouseEnter={() => setPaused(true)}
           onMouseLeave={() => setPaused(false)}
         >
@@ -91,9 +94,9 @@ export function HeroCarousel(props: { items: AniListMedia[] }) {
           <div class="relative z-10 flex min-h-[54px] items-center justify-between gap-4 border-b border-white/12 bg-black/28 px-6 font-mono text-[9px] uppercase tracking-[.12em] text-white/78 backdrop-blur-[14px] sm:px-8">
             <div class="flex items-center gap-[10px]">
               <i class="size-[6px] rounded-full bg-emerald shadow-[0_0_10px_rgb(0_200_83_/_0.7)]" />
-              <span>Trending now</span>
+              <span>{copy().collectionPulse}</span>
             </div>
-            <div class="flex items-center gap-[6px]" role="tablist" aria-label="Featured anime">
+            <div class="flex items-center gap-[6px]" role="tablist" aria-label={`Featured ${mode().toLowerCase()}`}>
               <span class="hidden sm:inline">Featured:</span>
               <For each={slides()}>
                 {(media, index) => (
@@ -141,24 +144,25 @@ export function HeroCarousel(props: { items: AniListMedia[] }) {
               <div class="mt-8 flex flex-wrap items-center gap-3">
                 <Show when={active()} keyed>
                   {(media) => (
-                    <Link
-                      class="inline-flex min-h-[48px] items-center justify-center gap-[10px] rounded-[11px] border border-white/60 bg-white px-[26px] font-mono text-[11px] font-bold normal-case tracking-normal text-ink shadow-[0_14px_34px_rgb(0_0_0_/_0.34),inset_0_1px_rgb(255_255_255_/_0.9)] transition-[background,box-shadow,transform] duration-200 hover:-translate-y-[2px] hover:shadow-[0_22px_44px_rgb(0_0_0_/_0.42),inset_0_1px_white]"
-                      to="/anime/$animeId/watch/$episodeId"
-                      params={{ animeId: String(media.id), episodeId: 'next' }}
+                    <Show
+                      when={mode() === 'ANIME'}
+                      fallback={<CatalogLink media={media} mode={mode()} class="inline-flex min-h-[48px] items-center justify-center gap-[10px] rounded-[11px] border border-white/60 bg-white px-[26px] font-mono text-[11px] font-bold normal-case tracking-normal text-ink shadow-[0_14px_34px_rgb(0_0_0_/_0.34),inset_0_1px_rgb(255_255_255_/_0.9)] transition-[background,box-shadow,transform] duration-200 hover:-translate-y-[2px] hover:shadow-[0_22px_44px_rgb(0_0_0_/_0.42),inset_0_1px_white]">{copy().heroPrimary}</CatalogLink>}
                     >
-                      ▶ Stream next episode
-                    </Link>
+                      <Link
+                        class="inline-flex min-h-[48px] items-center justify-center gap-[10px] rounded-[11px] border border-white/60 bg-white px-[26px] font-mono text-[11px] font-bold normal-case tracking-normal text-ink shadow-[0_14px_34px_rgb(0_0_0_/_0.34),inset_0_1px_rgb(255_255_255_/_0.9)] transition-[background,box-shadow,transform] duration-200 hover:-translate-y-[2px] hover:shadow-[0_22px_44px_rgb(0_0_0_/_0.42),inset_0_1px_white]"
+                        to="/anime/$animeId/watch/$episodeId"
+                        params={{ animeId: String(media.id), episodeId: 'next' }}
+                      >
+                        ▶ {copy().heroPrimary}
+                      </Link>
+                    </Show>
                   )}
                 </Show>
                 <Show when={active()} keyed>
                   {(media) => (
-                    <Link
-                      class="paper-control inline-flex min-h-[48px] items-center justify-center rounded-[10px] border-white/28 bg-white/10 px-5 text-[11px] font-bold normal-case tracking-normal text-white backdrop-blur-[12px] transition-[background,border-color,transform] duration-200 hover:-translate-y-[2px] hover:border-white/50 hover:bg-white/20"
-                      to="/anime/$animeId"
-                      params={{ animeId: String(media.id) }}
-                    >
-                      View details
-                    </Link>
+                    <Show when={mode() === 'ANIME'}>
+                      <CatalogLink media={media} mode={mode()} class="paper-control inline-flex min-h-[48px] items-center justify-center rounded-[10px] border-white/28 bg-white/10 px-5 text-[11px] font-bold normal-case tracking-normal text-white backdrop-blur-[12px] transition-[background,border-color,transform] duration-200 hover:-translate-y-[2px] hover:border-white/50 hover:bg-white/20">{copy().heroSecondary}</CatalogLink>
+                    </Show>
                   )}
                 </Show>
               </div>
@@ -166,10 +170,10 @@ export function HeroCarousel(props: { items: AniListMedia[] }) {
 
             <aside
               class="self-end rounded-[22px] border border-white/22 bg-black/40 p-6 shadow-[0_28px_70px_-26px_rgb(0_0_0_/_0.65),inset_0_1.5px_rgb(255_255_255_/_0.18)] backdrop-blur-[34px] backdrop-saturate-[180%]"
-              aria-label="Featured anime details"
+              aria-label={copy().heroFactsLabel}
             >
               <div class="flex items-center justify-between font-mono text-[9.5px] font-semibold uppercase tracking-[.1em] text-white/72">
-                <span>Anime details</span>
+                <span>{copy().heroFactsLabel}</span>
                 <Show when={formatScore(active()?.averageScore ?? active()?.meanScore)}>
                   {(score) => <b class="rounded-[6px] border border-mint/30 bg-mint/14 px-[10px] py-[4px] text-[11px] text-mint">★ {score()}</b>}
                 </Show>
@@ -180,8 +184,8 @@ export function HeroCarousel(props: { items: AniListMedia[] }) {
                 </div>
               </Show>
               <div class="mt-5 flex justify-between gap-4 border-t border-white/12 pt-[10px] font-mono text-[9px] uppercase tracking-[.08em] text-white/60">
-                <Show when={active()?.status}>{(status) => <span>Status: {formatStatus(status())}</span>}</Show>
-                <span>{active()?.nextAiringEpisode ? `Next: ep ${active()?.nextAiringEpisode?.episode}` : 'Finished'}</span>
+                <Show when={active()?.status}>{(status) => <span>Status: {catalogStatus(mode(), status())}</span>}</Show>
+                <span>{mode() === 'ANIME' ? (active()?.nextAiringEpisode ? `Next: ep ${active()?.nextAiringEpisode?.episode}` : 'Finished') : 'AniList record'}</span>
               </div>
             </aside>
           </div>

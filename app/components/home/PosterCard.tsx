@@ -1,27 +1,25 @@
-import { Link } from '@tanstack/solid-router'
 import { Show } from 'solid-js'
 import type { AniListMedia } from '../../data/anilist/types'
-import { formatEnum, formatScore, formatStatus, titleOf } from '../../lib/format'
+import { formatScore, titleOf } from '../../lib/format'
+import { catalogFormat, catalogStatus, type CatalogMode } from '../../lib/catalog'
+import { CatalogLink } from './CatalogLink'
 
 /** Poster-led catalog card for horizontal discovery rails. */
-export function PosterCard(props: { anime: AniListMedia; rank?: number }) {
+export function PosterCard(props: { anime: AniListMedia; mode?: CatalogMode; rank?: number }) {
+  const mode = () => props.mode ?? 'ANIME'
   const title = () => titleOf(props.anime)
   const cover = () => props.anime.coverImage?.large || props.anime.coverImage?.extraLarge || ''
   const accent = () => props.anime.coverImage?.color || '#6a5af9'
   const score = () => formatScore(props.anime.averageScore ?? props.anime.meanScore)
-  const meta = () => [
-    props.anime.format ? formatEnum(props.anime.format) : null,
-    props.anime.seasonYear,
-  ].filter(Boolean).join(' · ')
-  const status = () => (props.anime.status ? formatStatus(props.anime.status) : null)
+  const meta = () => catalogFormat(mode(), props.anime)
+  const status = () => (props.anime.status ? catalogStatus(mode(), props.anime.status) : null)
 
   return (
-    <Link
+    <CatalogLink
+      media={props.anime}
+      mode={mode()}
       class="poster-card group"
-      preload={false}
       style={{ '--accent': accent() }}
-      to="/anime/$animeId"
-      params={{ animeId: String(props.anime.id) }}
     >
       <div class="poster-card-media">
         <Show when={cover()}>
@@ -41,6 +39,6 @@ export function PosterCard(props: { anime: AniListMedia; rank?: number }) {
           <Show when={meta()}><span class="poster-card-sub">{meta()}</span></Show>
         </div>
       </div>
-    </Link>
+    </CatalogLink>
   )
 }

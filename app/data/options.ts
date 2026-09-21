@@ -3,29 +3,30 @@ import { queryKeys } from '../lib/queryKeys'
 import { alHome, alDetail, alByIds, alBrowse, alSuggest, alGenres, alSchedule } from './anilist/queries'
 import type { MediaSort } from './anilist/queries'
 import type { BrowseFormat, BrowseSeason, BrowseStatus } from '../lib/browse'
+import type { CatalogMode } from '../lib/catalog'
 
 // AniList queries: discovery metadata is public, slowly-changing, and cheap
 // to serve from cache. staleTime of 10 minutes keeps the tab responsive
 // without hammering the rate-limited API on back-navigation.
 
-export const homeQuery = () =>
+export const homeQuery = (mode: CatalogMode = 'ANIME') =>
   queryOptions({
-    queryKey: queryKeys.home,
-    queryFn: ({ signal }) => alHome(signal),
+    queryKey: queryKeys.home(mode),
+    queryFn: ({ signal }) => alHome(mode, signal),
     staleTime: 1000 * 60 * 10,
   })
 
-export const detailQuery = (id: number) =>
+export const detailQuery = (id: number, mode: CatalogMode = 'ANIME') =>
   queryOptions({
-    queryKey: queryKeys.detail(id),
-    queryFn: ({ signal }) => alDetail(id, signal),
+    queryKey: queryKeys.detail(id, mode),
+    queryFn: ({ signal }) => alDetail(id, mode, signal),
     staleTime: 1000 * 60 * 10,
   })
 
-export const byIdsQuery = (ids: readonly number[]) =>
+export const byIdsQuery = (ids: readonly number[], mode: CatalogMode = 'ANIME') =>
   queryOptions({
-    queryKey: queryKeys.byIds(ids),
-    queryFn: ({ signal }) => alByIds([...ids], signal),
+    queryKey: queryKeys.byIds(ids, mode),
+    queryFn: ({ signal }) => alByIds([...ids], mode, signal),
     enabled: ids.length > 0,
     staleTime: 1000 * 60 * 10,
   })
@@ -40,17 +41,17 @@ export const browseQuery = (params: {
   season?: BrowseSeason | null
   seasonYear?: number | null
   search?: string | null
-}) =>
+  }, mode: CatalogMode = 'ANIME') =>
   queryOptions({
-    queryKey: queryKeys.browse(params as Record<string, unknown>),
-    queryFn: ({ signal }) => alBrowse(params, signal),
+    queryKey: queryKeys.browse(params as Record<string, unknown>, mode),
+    queryFn: ({ signal }) => alBrowse(params, mode, signal),
     staleTime: 1000 * 60 * 5,
   })
 
-export const suggestQuery = (query: string) =>
+export const suggestQuery = (query: string, mode: CatalogMode = 'ANIME') =>
   queryOptions({
-    queryKey: queryKeys.suggest(query),
-    queryFn: ({ signal }) => alSuggest(query, signal),
+    queryKey: queryKeys.suggest(query, mode),
+    queryFn: ({ signal }) => alSuggest(query, mode, signal),
     enabled: query.trim().length > 1,
     staleTime: 1000 * 60 * 10,
   })

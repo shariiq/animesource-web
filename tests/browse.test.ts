@@ -7,7 +7,7 @@ vi.mock('../app/data/anilist/client', async (importOriginal) => {
   return { ...original, anilistClient: { request } }
 })
 
-import { alBrowse } from '../app/data/anilist/queries'
+import { alBrowse, alHome } from '../app/data/anilist/queries'
 
 describe('browse search state', () => {
   it('normalizes blank controls and restores page and sort defaults', () => {
@@ -53,5 +53,66 @@ describe('AniList browse boundary', () => {
     expect(query).toContain('pageInfo{ currentPage lastPage hasNextPage total }')
     expect(variables).toMatchObject({ page: 2, genre: 'Action' })
     expect(variables).not.toHaveProperty('status')
+  })
+
+  it('passes the canonical updated sort to AniList', async () => {
+    request.mockResolvedValue({
+      Page: {
+        pageInfo: { currentPage: 1, lastPage: 1, hasNextPage: false, total: 0 },
+        media: [],
+      },
+    })
+
+    const search = makeBrowseSearch({ sort: 'UPDATED_AT_DESC' })
+    await alBrowse({ page: search.page, sort: search.sort }, 'MANGA')
+
+    const [, variables] = request.mock.calls[0] as [string, Record<string, unknown>]
+    expect(variables).toMatchObject({ sort: ['UPDATED_AT_DESC'] })
+  })
+
+  it('uses the selected catalog type for manga browse requests', async () => {
+    request.mockResolvedValue({
+      Page: {
+        pageInfo: { currentPage: 1, lastPage: 1, hasNextPage: false, total: 1 },
+        media: [],
+      },
+    })
+
+    await alBrowse({ page: 1, format: 'MANGA' }, 'MANGA')
+
+    const [query] = request.mock.calls[0] as [string]
+    expect(query).toContain('type:MANGA')
+    expect(query).toContain('format:$format')
+  })
+})
+
+describe('AniList catalog home boundary', () => {
+  beforeEach(() => {
+    request.mockReset()
+    request.mockResolvedValue({
+      trending: { media: [] },
+      season: { media: [] },
+      allTime: { media: [] },
+      topRated: { media: [] },
+      upcoming: { media: [] },
+    })
+  })
+
+  it('requests manga rails with publication-aware sorts and fields', async () => {
+    await expect(alHome('MANGA')).resolves.toEqual({
+      trending: { media: [] },
+      season: { media: [] },
+      allTime: { media: [] },
+      topRated: { media: [] },
+      upcoming: { media: [] },
+    })
+
+    const [query, variables] = request.mock.calls[0] as [string, Record<string, unknown>]
+    expect(query).toContain('type:MANGA')
+    expect(query).toContain('sort:UPDATED_AT_DESC')
+    expect(query).toContain('chapters')
+    expect(query).toContain('volumes')
+    expect(query).not.toContain('$season:MediaSeason')
+    expect(variables).toEqual({})
   })
 })

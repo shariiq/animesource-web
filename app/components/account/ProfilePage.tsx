@@ -9,6 +9,7 @@ import { PageShell } from '../ui/PageShell'
 const DEFAULT_PROFILE: ViewerProfile = { displayName: '', updatedAt: 0 }
 const DEFAULT_PREFERENCES: ViewerPreferences = {
   adultContent: false,
+  catalogMode: 'ANIME',
   language: 'en',
   timezone: 'UTC',
   notifications: false,
@@ -96,7 +97,7 @@ export function ProfilePage() {
               </div>
             </div>
             <h1 class="mt-7 max-w-4xl font-display text-5xl leading-[.88] tracking-[-.04em] sm:text-7xl">{profileName()}</h1>
-            <p class="mt-5 max-w-2xl text-sm leading-6 text-text-secondary">A personal viewing space that stays with this browser. Name it now; account sign-in can connect it across devices later.</p>
+            <p class="mt-5 max-w-2xl text-sm leading-6 text-text-secondary">Your profile is stored in this browser. Name it now; account sign-in can connect it across devices later.</p>
             <div class="mt-6 flex flex-wrap gap-3">
               <Link class="paper-control px-4 py-3 text-xs" to="/library">Open library</Link>
               <Link class="ink-control px-4 py-3 text-xs" to="/settings">Settings</Link>
@@ -142,7 +143,7 @@ export function ProfilePage() {
         <aside class="grid gap-6" aria-labelledby="profile-state-title">
           <section class="material-panel p-6 sm:p-8">
             <p class="mono-signal">Account connection</p>
-            <h2 id="profile-state-title" class="mt-2 font-display text-4xl tracking-[-.03em]">Local by design.</h2>
+            <h2 id="profile-state-title" class="mt-2 font-display text-4xl tracking-[-.03em]">Local profile.</h2>
             <p class="mt-4 text-sm leading-6 text-text-secondary">{connectionCopy()}</p>
             <div class="mt-6 rounded-[14px] border border-black/10 bg-black px-4 py-4 text-white shadow-[0_20px_35px_-30px_rgb(0_0_0_/_1)]">
               <p class="font-mono text-[9px] uppercase tracking-[.12em] text-white/60">Current mode</p>
@@ -155,7 +156,7 @@ export function ProfilePage() {
             <div class="flex items-start justify-between gap-4">
               <div>
                 <p class="mono-signal text-violet">Viewer defaults</p>
-                <h2 id="profile-preferences-title" class="mt-2 font-display text-3xl tracking-[-.03em]">How this space behaves.</h2>
+                <h2 id="profile-preferences-title" class="mt-2 font-display text-3xl tracking-[-.03em]">Viewer defaults.</h2>
               </div>
               <span class="grid size-9 shrink-0 place-items-center rounded-[10px] border border-violet/20 bg-violet/12 font-mono text-[10px] font-medium text-violet" aria-hidden="true">02</span>
             </div>
@@ -181,9 +182,9 @@ export function ProfilePage() {
                 <div class="min-w-0">
                   <div class="flex items-center gap-2">
                     <span class="size-1.5 shrink-0 rounded-full bg-violet" aria-hidden="true" />
-                    <p class="font-mono text-[9px] uppercase tracking-[.1em] text-white/60">Fine-tune the signal</p>
+                    <p class="font-mono text-[9px] uppercase tracking-[.1em] text-white/60">More preferences</p>
                   </div>
-                  <p class="mt-2 text-xs leading-5 text-white/80">More controls are ready in Settings.</p>
+                  <p class="mt-2 text-xs leading-5 text-white/80">Edit all preferences in Settings.</p>
                 </div>
                 <Link class="group inline-flex min-h-12 w-full items-center justify-between gap-4 rounded-[12px] border border-white/20 bg-white px-4 py-3 text-left font-mono text-[10px] font-medium uppercase tracking-[.08em] text-ink shadow-[0_8px_18px_-12px_rgb(0_0_0_/_80%)] transition-[background-color,border-color,transform,box-shadow] hover:border-violet hover:bg-violet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet/70 sm:w-auto sm:min-w-[11rem]" to="/settings">
                   <span>Adjust preferences</span>

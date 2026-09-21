@@ -12,9 +12,9 @@ const SUBTITLE_URL = `${HOST}/subtitles.vtt`;
 const EPISODE_ID = "episode-1&eps=1";
 let failAniList = false;
 
-const media = (id, title) => ({
+const media = (id, title, type = "ANIME") => ({
   id,
-  type: "ANIME",
+  type,
   title: { romaji: title, english: title, native: null },
   coverImage: {
     extraLarge: null,
@@ -25,19 +25,22 @@ const media = (id, title) => ({
   bannerImage: null,
   averageScore: 80,
   popularity: 100,
-  format: "TV",
+  format: type === "MANGA" ? "MANGA" : "TV",
   status: "RELEASING",
-  episodes: 12,
+  episodes: type === "MANGA" ? null : 12,
+  chapters: type === "MANGA" ? 108 : null,
+  volumes: type === "MANGA" ? 12 : null,
+  updatedAt: type === "MANGA" ? 1_758_000_000 : null,
   season: "FALL",
   seasonYear: 2026,
   genres: ["Action"],
   nextAiringEpisode: { episode: 1, airingAt: 0, timeUntilAiring: 0 },
 });
 
-const detail = () => ({
-  ...media(1, "Test Anime"),
-  description: "A test description.",
-  duration: 24,
+const detail = (type = "ANIME") => ({
+  ...media(1, type === "MANGA" ? "Test Manga" : "Test Anime", type),
+  description: type === "MANGA" ? "A test publication description." : "A test description.",
+  duration: type === "MANGA" ? null : 24,
   startDate: null,
   endDate: null,
   source: null,
@@ -79,7 +82,7 @@ createServer(async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
     if (body.includes("Media(id:"))
-      return send(response, 200, { data: { Media: detail() } });
+      return send(response, 200, { data: { Media: detail(body.includes("type:MANGA") ? "MANGA" : "ANIME") } });
     if (body.includes("GenreCollection"))
       return send(response, 200, {
         data: { GenreCollection: ["Action", "Comedy"] },

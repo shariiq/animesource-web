@@ -14,7 +14,7 @@ export interface MediaRailItem {
   label?: string
 }
 
-/** Grid of related anime cards with explicit continuity labels. */
+/** Grid of related media cards with explicit continuity labels. */
 export function MediaRail(props: { heading: string; items: MediaRailItem[] }) {
   return (
     <Show when={props.items.length > 0}>
@@ -42,9 +42,13 @@ export function MediaRail(props: { heading: string; items: MediaRailItem[] }) {
                 </div>
               </>
 
-              return item.type === 'ANIME'
-                ? <Link class="card detail-relation-card" to="/anime/$animeId" params={{ animeId: String(item.id) }} role="listitem">{content}</Link>
-                : <a class="card detail-relation-card" href={item.siteUrl ?? `https://anilist.co/manga/${item.id}`} target="_blank" rel="noopener noreferrer" role="listitem">{content}</a>
+              if (item.type === 'ANIME') {
+                return <Link class="card detail-relation-card" to="/anime/$animeId" params={{ animeId: String(item.id) }} role="listitem">{content}</Link>
+              }
+              if (item.type === 'MANGA') {
+                return <Link class="card detail-relation-card" to="/manga/$mangaId" params={{ mangaId: String(item.id) }} role="listitem">{content}</Link>
+              }
+              return <a class="card detail-relation-card" href={item.siteUrl ?? `https://anilist.co/manga/${item.id}`} target="_blank" rel="noopener noreferrer" role="listitem">{content}</a>
             }}
           </For>
         </div>
@@ -55,7 +59,7 @@ export function MediaRail(props: { heading: string; items: MediaRailItem[] }) {
 
 /** Adapts an AniListMedia shape (relation node / recommendation) to MediaRailItem. */
 export function toRailItem(
-  node: { id: number; title?: { romaji?: string | null; english?: string | null; native?: string | null } | null; coverImage?: { large?: string | null; extraLarge?: string | null } | null; format?: string | null | undefined; averageScore?: number | null | undefined } | null | undefined,
+  node: { id: number; type?: string | null; title?: { romaji?: string | null; english?: string | null; native?: string | null } | null; coverImage?: { large?: string | null; extraLarge?: string | null } | null; format?: string | null | undefined; averageScore?: number | null | undefined } | null | undefined,
   label?: string,
 ): MediaRailItem | null {
   if (!node) return null
@@ -65,7 +69,7 @@ export function toRailItem(
     cover: node.coverImage?.large || node.coverImage?.extraLarge || '',
     format: node.format,
     score: node.averageScore,
-    type: 'ANIME',
+    type: node.type,
     siteUrl: null,
     label,
   }

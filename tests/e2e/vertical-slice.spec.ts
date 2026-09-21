@@ -32,6 +32,35 @@ test("explore cards keep the detail-only destination", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Watch now" })).not.toBeVisible();
 });
 
+test("manga detail uses its publication layout and shelf controls", async ({ page }) => {
+  await page.goto("/manga/1");
+  await expect(page.getByRole("heading", { name: "Manga Details" })).toBeVisible();
+  await expect(page.getByText("Genres", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Test Manga" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add manga to favorites" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "← Back to manga" })).toHaveAttribute("href", "/");
+  await expect(page.getByText("Test Anime", { exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Add manga to favorites" }).click();
+  await expect(page.getByRole("button", { name: "Remove manga from favorites" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Reading status" })).toBeVisible();
+  await expect(page.locator("select option").first()).toHaveText("Reading");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Manga Details" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("Explore stays active for filtered Explore routes", async ({ page }) => {
+  await page.goto("/explore?sort=POPULARITY_DESC&page=1");
+  await expect(page.getByRole("link", { name: "Explore" })).toHaveAttribute("aria-current", "page");
+
+  await page.goto("/explore?sort=UPDATED_AT_DESC&page=1");
+  await expect(page.getByRole("link", { name: "Explore" })).toHaveAttribute("aria-current", "page");
+});
+
 test("home to detail to watch resolves a stream and mounts the player", async ({
   page,
 }) => {
@@ -172,7 +201,7 @@ test("schedule switches views and stays within desktop and mobile viewports", as
   await page.getByRole("button", { name: "Day", exact: true }).click();
   await expect(page).toHaveURL(/view=day/);
   await page.getByRole("button", { name: "Next period" }).click();
-  await expect(page.getByRole("heading", { name: "A quiet stretch." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No releases found." })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
@@ -233,7 +262,7 @@ test("a named local viewer is not described as anonymous", async ({ page }) => {
 
 test("settings stays usable across desktop and mobile layouts", async ({ page }) => {
   await page.goto("/settings");
-  await expect(page.getByRole("heading", { name: "Make it yours." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Viewer settings." })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Language" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Timezone" })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: /adult-content/i })).toBeVisible();
@@ -245,7 +274,7 @@ test("settings stays usable across desktop and mobile layouts", async ({ page })
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Make it yours." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Viewer settings." })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/settings-mobile.png", fullPage: true });
 });

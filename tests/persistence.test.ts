@@ -40,6 +40,21 @@ describe('persistence store', () => {
     favorites = await browserViewerData.getFavorites()
     expect(favorites).toHaveLength(0)
   })
+  it('keeps Anime and Manga favorites with the same AniList id separate', async () => {
+    await browserViewerData.toggleFavorite({ id: 42, title: 'Anime 42', cover: '', format: 'TV', averageScore: null, catalogMode: 'ANIME' })
+    await browserViewerData.toggleFavorite({ id: 42, title: 'Manga 42', cover: '', format: 'MANGA', averageScore: null, catalogMode: 'MANGA' })
+
+    await browserViewerData.updateFavoriteStatus(42, 'WATCHING', 'MANGA')
+    expect(await browserViewerData.getFavorites()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 42, title: 'Anime 42', catalogMode: 'ANIME', status: 'PLANNING' }),
+      expect.objectContaining({ id: 42, title: 'Manga 42', catalogMode: 'MANGA', status: 'WATCHING' }),
+    ]))
+
+    await browserViewerData.removeFavorite(42, 'MANGA')
+    await expect(browserViewerData.getFavorites()).resolves.toEqual([
+      expect.objectContaining({ id: 42, title: 'Anime 42', catalogMode: 'ANIME' }),
+    ])
+  })
   it('records continue-watching entries newest-first and dedupes by media id', async () => {
     await browserViewerData.recordContinue(continueItem(1, 'ep-1', 1))
     await browserViewerData.recordContinue(continueItem(2, 'ep-9', 9))

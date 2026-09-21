@@ -2,13 +2,13 @@ import { For, Show } from 'solid-js'
 import type { DetailStaffMember } from './model'
 import { formatEnum } from '../../../lib/format'
 
-export function StaffRail(props: { members: DetailStaffMember[] }) {
+export function StaffRail(props: { members: DetailStaffMember[]; heading?: string; description?: string }) {
   return (
     <Show when={props.members.length > 0}>
       <section class="detail-section" aria-labelledby="staff-heading">
         <div class="detail-section-heading">
-          <h2 id="staff-heading">Staff</h2>
-          <p>Key creative roles</p>
+          <h2 id="staff-heading">{props.heading ?? 'Staff'}</h2>
+          <p>{props.description ?? 'Key creative roles'}</p>
         </div>
         <div class="detail-identity-rail" role="list">
           <For each={props.members}>

@@ -78,7 +78,7 @@ export function SchedulePage(props: { search: Accessor<ScheduleSearch> }) {
         <div class="schedule-masthead-copy">
           <p class="schedule-kicker">Release calendar / AniList airing data</p>
           <h1>What’s airing.</h1>
-          <p>Track upcoming episodes in your local time, then narrow the signal to anime already saved on this device.</p>
+          <p>Track upcoming episodes in your local time. Filter to anime saved on this device.</p>
         </div>
         <nav class="schedule-period-nav" aria-label="Schedule period">
           <button class="schedule-period-button" type="button" onClick={() => move(-1)} aria-label="Previous period">← Previous</button>
@@ -128,7 +128,7 @@ export function SchedulePage(props: { search: Accessor<ScheduleSearch> }) {
 
         <Show when={!schedule.isPending} fallback={<div class="schedule-state schedule-loading"><p class="mono-signal">Reading the release calendar…</p></div>}>
           <Show when={!schedule.isError} fallback={<div class="schedule-state" role="alert"><p class="schedule-kicker">Connection issue</p><h3>The schedule is unavailable.</h3><p>AniList could not return airing times right now.</p><button class="ink-control schedule-state-action" type="button" onClick={() => { void schedule.refetch() }}>Retry schedule</button></div>}>
-            <Show when={items().length > 0} fallback={<div class="schedule-state"><p class="schedule-kicker">No releases in this view</p><h3>A quiet stretch.</h3><p>Try another date, genre, or turn off filters to see the full AniList calendar.</p></div>}>
+            <Show when={items().length > 0} fallback={<div class="schedule-state"><p class="schedule-kicker">No releases match these filters</p><h3>No releases found.</h3><p>Change the date or filters to view more releases.</p></div>}>
               <div class="schedule-days">
                 <For each={[...grouped().entries()]}>{([day, dayItems]) => <section class="schedule-day" aria-labelledby={`schedule-${day}`}>
                   <div class="schedule-day-heading"><h3 id={`schedule-${day}`}>{new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(dateFromKey(day))}</h3><span class="mono-signal">{dayItems.length} {dayItems.length === 1 ? 'release' : 'releases'}</span></div>

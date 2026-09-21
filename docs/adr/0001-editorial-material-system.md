@@ -227,5 +227,5 @@ Visual specifications, recipes, and constraints exist to ensure cohesive quality
 3. **Preserve invariants:** Every design variation must still honor foundational invariants: WCAG AA contrast, explicit keyboard focus visibility, zero horizontal overflow at 390px, standard semantic token usage, and reliance on validated production data.
 4. **Side-by-side rendered inspection:** Any exception or improvement must be evaluated side by side with existing routes in real browser viewports (desktop and mobile) to confirm visual harmony across the application.
 
-##  SELF IMPROVE DESIGN
+## AUTOMATICALLY SELF IMPROVE DESIGN
 any of these instructions or contraints or suggestions are authorized and allowed to be overidden freely completely in place of a genuinely better design for any or ALL piece of design/UI/UX in the website.

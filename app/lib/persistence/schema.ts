@@ -10,6 +10,8 @@ export type FavoriteStatus = z.infer<typeof favoriteStatusSchema>
 
 export const favoriteItemSchema = z.object({
   id: z.number(),
+  // Legacy favorites predate catalog separation and are treated as anime.
+  catalogMode: z.enum(['ANIME', 'MANGA']).optional(),
   title: z.string(),
   cover: z.string().default(''),
   format: z.string().nullable().default(null),
@@ -19,6 +21,10 @@ export const favoriteItemSchema = z.object({
   ts: z.number(),
 })
 export type FavoriteItem = z.infer<typeof favoriteItemSchema>
+
+export function favoriteStorageKey(id: number, catalogMode: FavoriteItem['catalogMode'] = 'ANIME'): string {
+  return catalogMode === 'ANIME' ? String(id) : `${catalogMode}:${id}`
+}
 
 export const continueItemSchema = z.object({
   id: z.number(),
@@ -72,6 +78,7 @@ export type ViewerProfile = z.infer<typeof viewerProfileSchema>
 
 export const viewerPreferencesSchema = z.object({
   adultContent: z.boolean().default(false),
+  catalogMode: z.enum(['ANIME', 'MANGA']).default('ANIME'),
   language: z.string().trim().min(2).max(20).default('en'),
   timezone: z.string().trim().min(1).max(100).default('UTC'),
   notifications: z.boolean().default(false),

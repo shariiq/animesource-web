@@ -47,7 +47,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
     const animeId = props.anime.id
     void viewerData.getFavorites()
       .then((items) => {
-        const saved = items.find((item) => item.id === animeId)
+        const saved = items.find((item) => item.id === animeId && (item.catalogMode ?? 'ANIME') === 'ANIME')
         setFavorite(Boolean(saved))
         setFavoriteStatus(saved?.status)
       })
@@ -61,6 +61,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
       const anime = props.anime
       const nextFavorite = await viewerData.toggleFavorite({
         id: anime.id,
+        catalogMode: 'ANIME',
         title: titleOf(anime),
         cover: anime.coverImage?.large || anime.coverImage?.extraLarge || '',
         format: anime.format ?? null,
@@ -81,7 +82,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
     if (!favorite() || savingStatus()) return
     setSavingStatus(true)
     try {
-      await viewerData.updateFavoriteStatus(props.anime.id, status)
+      await viewerData.updateFavoriteStatus(props.anime.id, status, 'ANIME')
       setFavoriteStatus(status)
       setPersistenceError(null)
     } catch {

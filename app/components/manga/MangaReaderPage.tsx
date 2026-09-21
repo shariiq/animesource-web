@@ -25,16 +25,19 @@ import {
   type MangaReaderLayout,
   type MangaReaderSession,
 } from './reader/createMangaReaderSession'
+import { createImageLoadQueue, type ImageLoadHandle } from './reader/imageLoadQueue'
 
 interface MangaReaderPageProps {
   manga: AniListDetail
-  routeChapterId: Accessor<string>
+  routeChapterNumber: Accessor<string>
   sourceSearchParam: Accessor<string | undefined>
-  navigateToChapter: (chapterId: string, sourceId: string, replace?: boolean) => Promise<void>
+  navigateToChapter: (chapterNumber: string, sourceId: string, replace?: boolean) => Promise<void>
 }
 
 const CHROME_HIDE_DELAY_MS = 2_600
-const CONTINUOUS_EAGER_PAGES = 3
+const IMAGE_LOAD_CONCURRENCY = 2
+const CONTINUOUS_INITIAL_PAGES = 2
+const CONTINUOUS_PRELOAD_MARGIN = '1400px 0px'
 const PAGED_PRELOAD_AHEAD = 3
 
 const LAYOUT_OPTIONS: { value: MangaReaderLayout; label: string }[] = [
@@ -90,17 +93,6 @@ function formatChapterDate(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? '' : chapterDateFormatter.format(date)
 }
 
-/** Warms the browser image cache so the next page turn has no decode or network stall. */
-function warmImage(url: string): void {
-  const image = new Image()
-  image.decoding = 'async'
-  image.onload = () => {
-    void image.decode().catch(() => undefined)
-  }
-  image.src = url
-}
-
-
 export function MangaReaderPage(props: MangaReaderPageProps) {
   const [chapterSheetOpen, setChapterSheetOpen] = createSignal(false)
   const [settingsSheetOpen, setSettingsSheetOpen] = createSignal(false)
@@ -112,16 +104,23 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
   const [fullscreen, setFullscreen] = createSignal(false)
   const [pastEnd, setPastEnd] = createSignal(false)
   const [pageNodes, setPageNodes] = createSignal<ReadonlyMap<number, HTMLElement>>(new Map())
+  const [loadRequested, setLoadRequested] = createSignal<ReadonlySet<number>>(new Set())
   let shellEl: HTMLElement | undefined
   let scrollEl: HTMLDivElement | undefined
   let observer: IntersectionObserver | undefined
+  let loadObserver: IntersectionObserver | undefined
   let chromeTimer: ReturnType<typeof setTimeout> | null = null
+  let refreshTimer: ReturnType<typeof setTimeout> | null = null
+  let refreshPromise: Promise<boolean> | null = null
+  let automaticRefreshes = 0
   let resetChapterId: string | null | undefined
   let restoredChapterId: string | null | undefined
+  const imageLoadQueue = createImageLoadQueue(IMAGE_LOAD_CONCURRENCY)
+  const preloadedUrls = new Set<string>()
 
   const session = createMangaReaderSession({
     manga: props.manga,
-    routeChapterId: props.routeChapterId,
+    routeChapterNumber: props.routeChapterNumber,
     sourceSearchParam: props.sourceSearchParam,
     api: anisourceClient,
     navigateToChapter: props.navigateToChapter,
@@ -248,7 +247,10 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
       document.documentElement.style.overflow = previousHtmlOverflow
       document.body.style.overflow = previousBodyOverflow
       observer?.disconnect()
+      loadObserver?.disconnect()
       if (chromeTimer !== null) clearTimeout(chromeTimer)
+      if (refreshTimer !== null) clearTimeout(refreshTimer)
+      imageLoadQueue.clear()
       session.dispose()
     })
   })
@@ -256,7 +258,10 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
   createEffect(() => {
     session.pages()
     session.layout()
-    queueMicrotask(observePages)
+    queueMicrotask(() => {
+      observePages()
+      setupLoadObserver()
+    })
   })
 
   createEffect(() => {
@@ -264,11 +269,20 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     if (chapterId === resetChapterId) return
     resetChapterId = chapterId
     for (const node of pageNodes().values()) observer?.unobserve(node)
+    loadObserver?.disconnect()
     setPageNodes(new Map())
+    setLoadRequested(new Set<number>())
     setFailedPages(new Set<number>())
     setRetryVersions({})
     setPastEnd(false)
-    queueMicrotask(observePages)
+    automaticRefreshes = 0
+    refreshPromise = null
+    preloadedUrls.clear()
+    imageLoadQueue.clear()
+    queueMicrotask(() => {
+      observePages()
+      setupLoadObserver()
+    })
   })
 
   // Restore the saved reading position once a chapter's pages are on screen.
@@ -305,14 +319,14 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     if (isPaged()) {
       const pages = session.pages()
       const current = session.currentPage()
-      for (let offset = -1; offset <= PAGED_PRELOAD_AHEAD; offset += 1) {
+      for (let offset = 1; offset <= PAGED_PRELOAD_AHEAD; offset += 1) {
         const page = pages[current + offset]
-        if (page) warmImage(pageSource(page))
+        if (page) preloadImage(pageSource(page))
       }
     }
     const next = session.nextChapter()
     const upcoming = next ? session.cachedPages(next.id) : undefined
-    if (upcoming) for (const page of upcoming.slice(0, 2)) warmImage(pageSource(page))
+    if (upcoming) for (const page of upcoming.slice(0, 2)) preloadImage(pageSource(page))
   })
 
   // Keep the tab title honest about what is being read.
@@ -368,13 +382,55 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     for (const node of pageNodes().values()) observer.observe(node)
   }
 
+  function requestPageLoad(index: number): void {
+    setLoadRequested((current) => {
+      if (current.has(index)) return current
+      return new Set(current).add(index)
+    })
+  }
+
+  function setupLoadObserver(): void {
+    loadObserver?.disconnect()
+    loadObserver = undefined
+    if (!scrollEl || session.layout() !== 'continuous') return
+    loadObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        const index = Number((entry.target as HTMLElement).dataset.pageIndex)
+        if (Number.isInteger(index)) requestPageLoad(index)
+      }
+    }, { root: scrollEl, rootMargin: CONTINUOUS_PRELOAD_MARGIN, threshold: 0 })
+    for (const node of pageNodes().values()) loadObserver.observe(node)
+    for (let index = 0; index < Math.min(CONTINUOUS_INITIAL_PAGES, pageCount()); index += 1) requestPageLoad(index)
+  }
+
+  function preloadImage(url: string): void {
+    if (preloadedUrls.has(url)) return
+    preloadedUrls.add(url)
+    imageLoadQueue.enqueue((complete) => {
+      const image = new Image()
+      image.decoding = 'async'
+      image.onload = () => {
+        void image.decode().catch(() => undefined).finally(complete)
+      }
+      image.onerror = () => {
+        preloadedUrls.delete(url)
+        complete()
+      }
+      image.src = url
+    })
+  }
+
   function registerPage(node: HTMLElement, index: number): void {
     setPageNodes((current) => {
       const next = new Map(current)
       next.set(index, node)
       return next
     })
-    if (session.layout() === 'continuous') observer?.observe(node)
+    if (session.layout() === 'continuous') {
+      observer?.observe(node)
+      loadObserver?.observe(node)
+    }
   }
 
   function scrollByScreenful(direction: 1 | -1): void {
@@ -437,6 +493,12 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
 
   function markPageFailed(index: number): void {
     setFailedPages((current) => new Set(current).add(index))
+    if (automaticRefreshes >= 2 || refreshTimer !== null) return
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null
+      automaticRefreshes += 1
+      void refreshFailedPages()
+    }, 120)
   }
 
   function markPageLoaded(index: number): void {
@@ -448,7 +510,34 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     })
   }
 
-  function retryPage(index: number): void {
+  function refreshPageTargets(): Promise<boolean> {
+    if (!refreshPromise) {
+      refreshPromise = session.refreshPages().finally(() => {
+        refreshPromise = null
+      })
+    }
+    return refreshPromise
+  }
+
+  async function refreshFailedPages(): Promise<void> {
+    const refreshed = await refreshPageTargets()
+    if (!refreshed) return
+    const failed = failedPages()
+    setFailedPages(new Set<number>())
+    setRetryVersions((current) => {
+      const next = { ...current }
+      for (const index of failed) next[index] = (next[index] ?? 0) + 1
+      return next
+    })
+  }
+
+  async function retryPage(index: number): Promise<void> {
+    if (refreshTimer !== null) {
+      clearTimeout(refreshTimer)
+      refreshTimer = null
+    }
+    const refreshed = await refreshPageTargets()
+    if (!refreshed) return
     markPageLoaded(index)
     setRetryVersions((current) => ({ ...current, [index]: (current[index] ?? 0) + 1 }))
   }
@@ -645,7 +734,8 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
                           index={index()}
                           total={pageCount()}
                           title={title()}
-                          eager={index() < CONTINUOUS_EAGER_PAGES}
+                          loadRequested={loadRequested().has(index())}
+                          loadQueue={imageLoadQueue}
                           failed={failedPages().has(index())}
                           retryVersion={retryVersions()[index()] ?? 0}
                           register={registerPage}
@@ -675,7 +765,8 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
                           index={index}
                           total={pageCount()}
                           title={title()}
-                          eager
+                          loadRequested
+                          loadQueue={imageLoadQueue}
                           paged
                           failed={failedPages().has(index)}
                           retryVersion={retryVersions()[index] ?? 0}
@@ -926,7 +1017,8 @@ function ReaderPageFrame(props: {
   index: number
   total: number
   title: string
-  eager: boolean
+  loadRequested: boolean
+  loadQueue: ReturnType<typeof createImageLoadQueue>
   paged?: boolean
   failed: boolean
   retryVersion: number
@@ -936,6 +1028,28 @@ function ReaderPageFrame(props: {
   onRetry: () => void
 }) {
   const [loaded, setLoaded] = createSignal(false)
+  const [armed, setArmed] = createSignal(false)
+  let loadHandle: ImageLoadHandle | null = null
+  let loadKey = ''
+
+  createEffect(() => {
+    const source = props.page ? pageSource(props.page) : ''
+    const nextKey = props.loadRequested && source ? `${props.retryVersion}:${source}` : ''
+    if (nextKey === loadKey) return
+    loadHandle?.cancel()
+    loadHandle = null
+    loadKey = nextKey
+    setLoaded(false)
+    setArmed(false)
+    if (nextKey) loadHandle = props.loadQueue.enqueue(() => setArmed(true))
+  })
+
+  onCleanup(() => loadHandle?.cancel())
+
+  function settleLoad(): void {
+    loadHandle?.complete()
+  }
+
   return (
     <figure
       class="manga-reader-frame"
@@ -948,18 +1062,20 @@ function ReaderPageFrame(props: {
       <Show when={props.page} fallback={<div class="manga-reader-frame-missing">Page unavailable.</div>}>
         {(page) => (
           <>
-            <Show when={`v${props.retryVersion}`} keyed>
-              {(version) => (
-                <img
-                  data-retry={version}
-                  src={pageSource(page())}
-                  alt={`${props.title}, page ${props.index + 1}`}
-                  loading={props.eager ? 'eager' : 'lazy'}
-                  decoding="async"
-                  onLoad={() => { setLoaded(true); props.onLoad() }}
-                  onError={() => { setLoaded(false); props.onError() }}
-                />
-              )}
+            <Show when={armed()}>
+              <Show when={`v${props.retryVersion}`} keyed>
+                {(version) => (
+                  <img
+                    data-retry={version}
+                    src={pageSource(page())}
+                    alt={`${props.title}, page ${props.index + 1}`}
+                    loading="eager"
+                    decoding="async"
+                    onLoad={() => { settleLoad(); setLoaded(true); props.onLoad() }}
+                    onError={() => { settleLoad(); setLoaded(false); props.onError() }}
+                  />
+                )}
+              </Show>
             </Show>
             <Show when={!loaded() && !props.failed}>
               <div class="manga-reader-frame-loader" aria-hidden="true"><span>{props.index + 1}</span></div>

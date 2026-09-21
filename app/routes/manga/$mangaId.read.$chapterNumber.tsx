@@ -8,12 +8,12 @@ const readerSearchSchema = z.object({
   source: z.string().min(1).optional(),
 })
 
-export const Route = createFileRoute('/manga/$mangaId/read/$chapterId')({
+export const Route = createFileRoute('/manga/$mangaId/read/$chapterNumber')({
   validateSearch: (search) => readerSearchSchema.parse(search),
   loader: ({ context, params }) => {
     const id = Number(params.mangaId)
     if (!Number.isInteger(id) || id <= 0) throw new Error('Invalid manga id.')
-    if (!params.chapterId) throw new Error('Missing chapter id.')
+    if (!params.chapterNumber) throw new Error('Missing chapter number.')
     return context.queryClient.ensureQueryData(detailQuery(id, 'MANGA'))
   },
   head: () => ({
@@ -29,13 +29,13 @@ export const Route = createFileRoute('/manga/$mangaId/read/$chapterId')({
 
 function MangaReaderRoute() {
   const manga = Route.useLoaderData()
-  const params = useParams({ from: '/manga/$mangaId/read/$chapterId' })
-  const search = useSearch({ from: '/manga/$mangaId/read/$chapterId' })
+  const params = useParams({ from: '/manga/$mangaId/read/$chapterNumber' })
+  const search = useSearch({ from: '/manga/$mangaId/read/$chapterNumber' })
   const navigate = useNavigate()
-  const navigateToChapter = async (chapterId: string, sourceId: string, replace = false) => {
+  const navigateToChapter = async (chapterNumber: string, sourceId: string, replace = false) => {
     await navigate({
-      to: '/manga/$mangaId/read/$chapterId',
-      params: { mangaId: params().mangaId, chapterId },
+      to: '/manga/$mangaId/read/$chapterNumber',
+      params: { mangaId: params().mangaId, chapterNumber },
       search: sourceId ? { source: sourceId } : {},
       replace,
     })
@@ -45,7 +45,7 @@ function MangaReaderRoute() {
       {(data) => (
         <MangaReaderPage
           manga={data}
-          routeChapterId={() => params().chapterId}
+          routeChapterNumber={() => params().chapterNumber}
           sourceSearchParam={() => search().source}
           navigateToChapter={navigateToChapter}
         />

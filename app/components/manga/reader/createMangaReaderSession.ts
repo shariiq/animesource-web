@@ -59,11 +59,11 @@ export interface MangaSourceClient {
 
 export interface MangaReaderSessionOptions {
   manga: AniListDetail
-  routeChapterId: Accessor<string>
+  routeChapterNumber: Accessor<string>
   sourceSearchParam: Accessor<string | undefined>
   api: MangaSourceClient
   persistence?: MangaReaderPersistence
-  navigateToChapter: (chapterId: string, sourceId: string, replace?: boolean) => Promise<void>
+  navigateToChapter: (chapterNumber: string, sourceId: string, replace?: boolean) => Promise<void>
 }
 
 export interface MangaReaderSession {
@@ -96,6 +96,7 @@ export interface MangaReaderSession {
   chooseChapter: (chapterId: string) => Promise<void>
   retry: () => Promise<void>
   retryPages: () => Promise<void>
+  refreshPages: () => Promise<boolean>
   setPage: (pageIndex: number) => void
   setLayout: (layout: MangaReaderLayout) => void
   setDirection: (direction: MangaReaderDirection) => void
@@ -144,6 +145,29 @@ export function chapterNeighbors(chapters: readonly MangaChapter[], chapterId: s
     previous: index > 0 ? chapters[index - 1] ?? null : null,
     next: index >= 0 ? chapters[index + 1] ?? null : null,
   }
+}
+
+export function chapterIdForNumber(chapters: readonly MangaChapter[], chapterNumber: string): string | null {
+  const requested = Number(chapterNumber)
+  if (!Number.isFinite(requested)) return null
+  return chapters.find((chapter) => chapter.number === requested)?.id ?? null
+}
+
+export function chapterIdForRoute(chapters: readonly MangaChapter[], routeValue: string): string | null {
+  return chapterIdForNumber(chapters, routeValue) ?? chapters.find((chapter) => chapter.id === routeValue)?.id ?? null
+}
+
+export function resolveStartChapterId(
+  chapters: readonly MangaChapter[],
+  record: MangaReaderRecord | null,
+  sourceId: string,
+  mangaId: string,
+): string | null {
+  if (!record || record.sourceId !== sourceId || record.mangaId !== mangaId) return chapters[0]?.id ?? null
+  const lastReadIndex = chapters.findIndex((chapter) => chapter.id === record.chapterId)
+  if (lastReadIndex < 0) return chapters[0]?.id ?? null
+  if (!record.completed) return chapters[lastReadIndex]?.id ?? null
+  return chapters[lastReadIndex + 1]?.id ?? chapters[lastReadIndex]?.id ?? null
 }
 
 function isSpecialChapterToken(value: string): boolean {
@@ -339,14 +363,13 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   }
 
   function resolveRouteChapterId(record: MangaReaderRecord | null): string | null {
-    const routeId = options.routeChapterId()
-    if (!isSpecialChapterToken(routeId)) return routeId
-    if (routeId === CONTINUE_CHAPTER_TOKEN && record) return record.chapterId
-    if (routeId === LATEST_CHAPTER_TOKEN) return chapters().at(-1)?.id ?? null
-    if (record && record.sourceId === selectedSource() && record.mangaId === matchedManga()?.id) {
-      return chapters().some((chapter) => chapter.id === record.chapterId) ? record.chapterId : chapters()[0]?.id ?? null
+    const routeNumber = options.routeChapterNumber()
+    if (routeNumber === CONTINUE_CHAPTER_TOKEN && record) return record.chapterId
+    if (routeNumber === LATEST_CHAPTER_TOKEN) return chapters().at(-1)?.id ?? null
+    if (routeNumber === START_CHAPTER_TOKEN) {
+      return resolveStartChapterId(chapters(), record, selectedSource(), matchedManga()?.id ?? '')
     }
-    return chapters()[0]?.id ?? null
+    return chapterIdForRoute(chapters(), routeNumber)
   }
 
   async function loadPages(chapterId: string, replaceRoute: boolean): Promise<void> {
@@ -372,7 +395,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
         : 0
       setCurrentPage(resumeIndex)
       setStage('pages-ready')
-      if (replaceRoute) await options.navigateToChapter(chapterId, source, true)
+      if (replaceRoute) await options.navigateToChapter(String(selectedChapter()!.number), source, true)
       await persistRecord(recordBase(selectedChapter()!, resumeIndex, false))
       void prefetchNextChapter()
     } catch (caught) {
@@ -400,8 +423,10 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       setStage('ready')
       const chapterId = resolveRouteChapterId(record)
       if (chapterId && normalized.some((chapter) => chapter.id === chapterId)) {
-        await loadPages(chapterId, isSpecialChapterToken(options.routeChapterId()))
-      } else if (!isSpecialChapterToken(options.routeChapterId())) {
+        const routeNumber = options.routeChapterNumber()
+        const legacyOpaqueRoute = chapterIdForNumber(normalized, routeNumber) === null
+        await loadPages(chapterId, isSpecialChapterToken(routeNumber) || legacyOpaqueRoute)
+      } else if (!isSpecialChapterToken(options.routeChapterNumber())) {
         setFailure({ kind: 'unavailable', operation: 'chapters', message: 'That chapter is no longer available from this source.', retryable: false })
       }
     } catch (caught) {
@@ -569,6 +594,32 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     await loadPages(chapter.id, false)
   }
 
+  async function refreshPages(): Promise<boolean> {
+    const source = selectedSource()
+    const chapter = selectedChapter()
+    if (!source || !chapter) return false
+    const request = beginRequest()
+    try {
+      const refreshed = normalizePages(await options.api.mangaPages(source, chapter.id, () => setSlow(true), request.signal))
+      if (!isCurrent(request.id, request.signal)) return false
+      if (refreshed.length === 0) {
+        setError({ kind: 'empty', operation: 'pages', message: 'This chapter has no readable pages.', retryable: true })
+        return false
+      }
+      cachePages(chapter.id, refreshed)
+      setPages(refreshed)
+      setError(null)
+      setStage('pages-ready')
+      return true
+    } catch (caught) {
+      if (!isCurrent(request.id, request.signal)) return false
+      const nextError = describeError(caught, 'pages')
+      lastFailedOperation = 'pages'
+      setError(nextError)
+      return false
+    }
+  }
+
   function setPage(pageIndex: number): void {
     setCurrentPage(validPageIndex(pageIndex, pages().length))
     scheduleProgressSave()
@@ -642,6 +693,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     chooseChapter,
     retry,
     retryPages,
+    refreshPages,
     setPage,
     setLayout: setLayoutPreference,
     setDirection: setDirectionPreference,

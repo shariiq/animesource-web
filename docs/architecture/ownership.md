@@ -9,7 +9,7 @@ This application keeps discovery data, playback orchestration, and viewer data i
 | `/anime/$animeId` Detail | AniList detail loader, metadata presentation, favorite action through `ViewerData` | Source matching, episode/server/stream state |
 | `/anime/$animeId/watch/$episodeId` Watch | AniList detail loader plus mounted `createWatchSession` orchestration and playback presentation | Discovery query ownership, low-level IndexedDB transactions |
 | `/manga/$mangaId` Manga detail | AniList manga detail loader, metadata presentation, favorite and reading actions | Source matching, chapter/page state |
-| `/manga/$mangaId/read/$chapterId` Manga Reader | AniList manga detail loader plus mounted `createMangaReaderSession` orchestration and page presentation | Discovery query ownership, low-level IndexedDB transactions |
+| `/manga/$mangaId/read/$chapterNumber` Manga Reader | AniList manga detail loader plus mounted `createMangaReaderSession` orchestration and page presentation | Discovery query ownership, low-level IndexedDB transactions |
 | `/profile` Profile | Local viewer profile presentation and account-state messaging | Authentication, remote account identity |
 | `/settings` Settings | Viewer preferences, export/import, local deletion, provider import, and sync-state presentation | Authentication and provider credentials |
 | `app/data/anilist` | GraphQL transport, response schemas, discovery query functions | Route navigation or viewer state |

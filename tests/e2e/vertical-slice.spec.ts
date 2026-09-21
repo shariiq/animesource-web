@@ -57,7 +57,7 @@ test("manga detail uses its publication layout and shelf controls", async ({ pag
 test("manga detail opens the reader through the full chapter flow", async ({ page }) => {
   await page.goto("/manga/1");
   await page.getByRole("link", { name: "Open reader →" }).click();
-  await expect(page).toHaveURL(/\/manga\/1\/read\/start$/);
+  await expect(page).toHaveURL(/\/manga\/1\/read\/1(?:\?|$)/);
   await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Chapters" })).toBeVisible();
   await page.getByRole("button", { name: "Chapters" }).click();
@@ -65,6 +65,7 @@ test("manga detail opens the reader through the full chapter flow", async ({ pag
   const secondChapter = page.locator("button.manga-reader-chapter").filter({ hasText: "Second chapter" });
   await expect(secondChapter).toBeVisible();
   await secondChapter.click();
+  await expect(page).toHaveURL(/\/manga\/1\/read\/2(?:\?|$)/);
   await expect(page.getByText("Second chapter · Test Manga Source", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

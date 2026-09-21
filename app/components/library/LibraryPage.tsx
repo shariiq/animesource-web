@@ -190,7 +190,7 @@ export function LibraryPage() {
           <h1 class="mt-3 max-w-4xl font-display text-6xl leading-[.88] tracking-[-.04em] sm:text-8xl">Your {copy().singular} library.</h1>
           <p class="mt-5 max-w-2xl text-sm leading-6 text-text-secondary">{mode() === 'ANIME' ? 'Review saved anime, track watch progress, and return to the episode you left.' : 'Review saved manga and update reading status.'}</p>
         </div>
-        <dl class="grid grid-cols-2 gap-3 text-right sm:grid-cols-3">
+        <dl class="grid grid-cols-3 gap-2 text-center sm:gap-3 sm:text-right">
           <LibraryStat label="Saved" value={counts().all} />
           <LibraryStat label={mode() === 'MANGA' ? 'Reading' : 'Watching'} value={counts().watching} />
           <LibraryStat label={mode() === 'ANIME' ? 'In progress' : 'To read'} value={activeHistory().filter((item) => !item.completed).length || (mode() === 'MANGA' ? counts().all : 0)} />
@@ -209,22 +209,22 @@ export function LibraryPage() {
                   <h2 id="library-collection-title" class="mt-1 font-display text-3xl tracking-[-.03em]">Saved {copy().plural}</h2>
                 </div>
                 <Show when={tab() !== 'history'}>
-                  <div class="flex flex-wrap gap-2">
-                  <label class="editorial-label">Format
-                    <select class="editorial-field ml-2 h-10 px-3 text-xs" value={format()} onChange={(event) => setFormat(event.currentTarget.value)}>
+                  <div class="grid w-full grid-cols-2 gap-3 sm:flex sm:w-auto sm:flex-wrap sm:gap-2">
+                  <label class="editorial-label grid min-w-0 gap-1.5 sm:flex sm:items-center sm:gap-2">Format
+                    <select class="editorial-field h-11 w-full min-w-0 px-3 text-xs sm:h-10 sm:w-auto" value={format()} onChange={(event) => setFormat(event.currentTarget.value)}>
                       <option value="">All formats</option>
                       <For each={formats()}>{(value) => <option value={value}>{formatEnum(value)}</option>}</For>
                     </select>
                   </label>
-                  <label class="editorial-label">Sort
-                    <select class="editorial-field ml-2 h-10 px-3 text-xs" value={sort()} onChange={(event) => setSort(event.currentTarget.value as LibrarySort)}>
+                  <label class="editorial-label grid min-w-0 gap-1.5 sm:flex sm:items-center sm:gap-2">Sort
+                    <select class="editorial-field h-11 w-full min-w-0 px-3 text-xs sm:h-10 sm:w-auto" value={sort()} onChange={(event) => setSort(event.currentTarget.value as LibrarySort)}>
                       <For each={LIBRARY_SORTS}>{(value) => <option value={value}>{sortLabel(value, mode())}</option>}</For>
                     </select>
                   </label>
                   </div>
                 </Show>
               </div>
-              <div class="mt-4 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label={`${copy().singular} library categories`}>
+              <div class="library-tabs mt-4 flex gap-2 overflow-x-auto" role="tablist" aria-label={`${copy().singular} library categories`}>
                 <For each={LIBRARY_TABS.filter((value) => mode() === 'ANIME' || value !== 'history')}>{(value) => (
                   <button
                     id={`library-tab-${value}`}
@@ -281,7 +281,7 @@ export function LibraryPage() {
 }
 
 function LibraryStat(props: { label: string; value: number }) {
-  return <div class="rounded-[12px] border border-white/80 bg-white/58 px-4 py-3 shadow-[0_12px_30px_-22px_rgb(0_0_0/.4)]"><dt class="mono-signal">{props.label}</dt><dd class="mt-1 font-display text-4xl leading-none">{props.value}</dd></div>
+  return <div class="min-w-0 rounded-[12px] border border-white/80 bg-white/58 px-2.5 py-3 shadow-[0_12px_30px_-22px_rgb(0_0_0/.4)] sm:px-4"><dt class="mono-signal">{props.label}</dt><dd class="mt-1 font-display text-3xl leading-none sm:text-4xl">{props.value}</dd></div>
 }
 
 function LibraryLoading() {

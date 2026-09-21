@@ -11,6 +11,7 @@ import { QueryClientProvider, type QueryClient } from '@tanstack/solid-query'
 import { Header } from '../components/layout/Header'
 import { CatalogModeProvider } from '../components/layout/CatalogModeSwitch'
 import { Footer } from '../components/layout/Footer'
+import { MobileTabBar } from '../components/layout/MobileTabBar'
 import { ErrorBoundary } from '../components/shared/ErrorBoundary'
 import '../styles/app.css'
 
@@ -18,7 +19,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+      { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
       { title: 'AniSource — Discover & Watch Anime' },
       { name: 'description', content: 'Browse trending, seasonal and top-rated anime with rich AniList metadata, then watch instantly through live-resolved streams.' },
     ],
@@ -52,6 +53,7 @@ function RootLayout() {
             </ErrorBoundary>
           </main>
           <Footer />
+          <MobileTabBar />
         </div>
       </CatalogModeProvider>
     </QueryClientProvider>

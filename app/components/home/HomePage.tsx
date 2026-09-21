@@ -51,7 +51,7 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
                 mode={mode()}
                 explore={mode() === 'ANIME' ? makeBrowseSearch({ sort: 'POPULARITY_DESC', season: season.season, year: season.year }) : makeBrowseSearch({ sort: 'UPDATED_AT_DESC' })}
               />
-              <section class="mt-[104px]" aria-labelledby="collection-heading">
+              <section class="section" aria-labelledby="collection-heading">
                 <SectionHeading id="collection-heading" title={copy().collectionTitle} description={copy().collectionDescription} />
                 <div class="material-panel overflow-hidden">
                   <div class="flex min-h-[58px] flex-wrap items-center justify-between gap-4 border-b border-line px-5 py-3 sm:px-6">
@@ -72,7 +72,7 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
                   </Show>
                 </div>
               </section>
-              <section class="home-deferred-section mt-[104px]" aria-labelledby="season-heading">
+              <section class="home-deferred-section section" aria-labelledby="season-heading">
                 <SectionHeading id="season-heading" title={copy().seasonalTitle} description={copy().seasonalDescription} />
                 <div class="grid gap-5 lg:grid-cols-3">
                   <AnimeColumn mode={mode()} title={copy().columnTrending} items={data.trending.media} search={mode() === 'ANIME' ? makeBrowseSearch({ sort: 'TRENDING_DESC' }) : undefined} />
@@ -81,7 +81,7 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
                 </div>
                 <div class="mt-5"><AnimeColumn mode={mode()} title={copy().columnFourth} items={data.upcoming.media} search={mode() === 'ANIME' ? makeBrowseSearch({ sort: 'POPULARITY_DESC', status: 'NOT_YET_RELEASED', season: nextSeason.season, year: nextSeason.year }) : undefined} /></div>
               </section>
-              <section class="home-deferred-section mt-[104px]" aria-labelledby="genre-heading">
+              <section class="home-deferred-section section" aria-labelledby="genre-heading">
                 <SectionHeading id="genre-heading" title={copy().genreLabel} description={copy().genreDescription} />
                 <GenreNav mode={mode()} />
               </section>
@@ -94,7 +94,7 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
 }
 
 function CollectionFilterButton(props: { current: () => CollectionFilter; setCurrent: (value: CollectionFilter) => void; value: CollectionFilter; label: string }) {
-  return <button type="button" class="paper-control min-h-[30px] rounded-[6px] px-3 text-[8.5px]" classList={{ 'border-ink bg-ink text-white': props.current() === props.value }} aria-pressed={props.current() === props.value} onClick={() => props.setCurrent(props.value)}>{props.label}</button>
+  return <button type="button" class="paper-control min-h-[40px] rounded-[6px] px-3 text-[8.5px] sm:min-h-[30px]" classList={{ 'border-ink bg-ink text-white': props.current() === props.value }} aria-pressed={props.current() === props.value} onClick={() => props.setCurrent(props.value)}>{props.label}</button>
 }
 
 function AnimeColumn(props: { mode: CatalogMode; title: string; items: AniListMedia[]; search?: ReturnType<typeof makeBrowseSearch> }) {

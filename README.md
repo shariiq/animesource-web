@@ -5,13 +5,13 @@ A SolidJS anime discovery and watch vertical slice built with TanStack Start, Ta
 ## Requirements
 
 - Node.js 22.12.0 or newer
-- npm
+- Bun 1.4+
 
 ## Development
 
 ```bash
-npm ci
-npm run dev
+bun install --frozen-lockfile
+bun run dev
 ```
 
 The development server runs at `http://localhost:3000`.
@@ -29,26 +29,26 @@ These are public endpoint values. Never put credentials or private tokens in `VI
 
 The repository uses two separate CI tracks:
 
-- **Deterministic merge gate** — `npm run verify` runs ESLint with zero warnings, strict TypeScript checking, the Nitro/Vercel build, Vitest, and mocked Playwright E2E tests. CI uses `tests/e2e/mock-api.mjs` and never calls live AniList or AniSource services.
-- **Live operational smoke** — `npm run test:live` calls the real services, validates their response contracts, and reports health, sources, search, and latency diagnostics. GitHub runs it twice daily and on manual dispatch; it is operational only and does not block merges.
+- **Deterministic merge gate** — `bun run verify` runs ESLint with zero warnings, strict TypeScript checking, the Nitro/Vercel build, Vitest, and mocked Playwright E2E tests. CI uses `tests/e2e/mock-api.mjs` and never calls live AniList or AniSource services.
+- **Live operational smoke** — `bun run test:live` calls the real services, validates their response contracts, and reports health, sources, search, and latency diagnostics. GitHub runs it twice daily and on manual dispatch; it is operational only and does not block merges.
 
 Run the complete local gate with:
 
 ```bash
-npm run verify
+bun run verify
 ```
 
 Run the real-service smoke checks when service health needs verification:
 
 ```bash
-npm run test:live
+bun run test:live
 ```
 
 ## Production build
 
 ```bash
-npm run build
-npm start
+bun run build
+bun start
 ```
 
 The Nitro Vercel preset emits `.vercel/output/`. This generated directory is not committed. See [`docs/deployment/vercel.md`](docs/deployment/vercel.md) for deployment and rollback guidance.

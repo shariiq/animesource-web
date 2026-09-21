@@ -13,7 +13,7 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "test:live": "node --env-file=.env.example --env-file-if-exists=.env scripts/live-smoke.mjs",
-    "verify": "npm run lint && npm run typecheck && npm run build && npm test && npm run e2e"
+    "verify": "bun run lint && bun run typecheck && bun run build && bun run test && bun run e2e"
   },
   "dependencies": {
     "@tanstack/solid-query": "^5.102.8",
@@ -39,7 +39,7 @@
     "eslint-plugin-solid": "^0.14.5",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^30.0.1",
-    "nitro": "npm:nitro-nightly@^3.0.1-20260915-165946-4f902851",
+    "nitro": "https://registry.npmjs.org/nitro-nightly/-/nitro-nightly-3.0.1-20260915-165946-4f902851.tgz",
     "typescript": "^6.0.3",
     "vite": "^8.3.0",
     "vite-plugin-solid": "^2.11.11",

@@ -61,7 +61,7 @@ const detail = (type = "ANIME", id = 1) => ({
         }]
       : [{
           relationType: "ADAPTATION",
-          node: media(1, "Test Anime", "ANIME"),
+          node: media(1, "Manga Adaptation", "ANIME"),
         }, ...(id === 4 ? [] : [{
           relationType: "ADAPTATION",
           node: media(3, "Other Anime", "ANIME"),

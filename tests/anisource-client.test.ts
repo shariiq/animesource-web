@@ -109,6 +109,30 @@ describe('AniSource client', () => {
       'https://api.test/api/v1/manga/source%2Fid/pages/chapter%2Fid',
     ])
   })
+
+  it('resolves relative page, stream, and subtitle assets against the configured client base', async () => {
+    const fetch = vi.fn(async (url: string) => {
+      if (url.includes('/pages/')) return response([{ index: 0, url: '/proxy/page-1', page_url: '/proxy/page-1' }])
+      return response([{
+        url: '/proxy/hls/master.m3u8',
+        quality: 'Auto',
+        headers: {},
+        subtitles: [{ url: '/proxy/subtitles/en.vtt', label: 'English', language: 'en' }],
+        is_hls: true,
+        is_audio: false,
+      }])
+    })
+    const client = createAniSourceClient({ baseUrl: 'https://api.test', transport: transport(fetch) })
+
+    await expect(client.mangaPages('source', 'chapter')).resolves.toMatchObject([{
+      url: 'https://api.test/proxy/page-1',
+      page_url: 'https://api.test/proxy/page-1',
+    }])
+    await expect(client.streams('source', 'episode', 'server')).resolves.toMatchObject([{
+      url: 'https://api.test/proxy/hls/master.m3u8',
+      subtitles: [{ url: 'https://api.test/proxy/subtitles/en.vtt' }],
+    }])
+  })
   it('encodes source and query parameters', async () => {
     const fetch = vi.fn(async (_url: string, _init?: RequestInit) => response({ items: [], page: 1, has_next: false, total_returned: 0 }))
     const client = createAniSourceClient({ baseUrl: 'https://api.test', transport: transport(fetch) })

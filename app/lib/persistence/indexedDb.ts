@@ -60,6 +60,40 @@ function writeTransaction<T>(db: IDBDatabase, key: string, value: Versioned<T>):
   return completion
 }
 
+export interface StoreWrite {
+  key: string
+  version: number
+  value: unknown
+  schema: z.ZodTypeAny
+}
+
+export interface StoreReplacement {
+  deleteKeys?: readonly string[]
+  deletePrefixes?: readonly string[]
+  writes: readonly StoreWrite[]
+}
+
+function replaceTransaction(db: IDBDatabase, replacement: StoreReplacement, documents: readonly { key: string; value: unknown }[]): Promise<void> {
+  const tx = db.transaction(STORE, 'readwrite')
+  const completion = transactionToPromise(tx)
+  const store = tx.objectStore(STORE)
+  const deleteKeys = new Set(replacement.deleteKeys ?? [])
+  const deletePrefixes = replacement.deletePrefixes ?? []
+  const keysRequest = store.getAllKeys()
+  keysRequest.onerror = () => tx.abort()
+  keysRequest.onsuccess = () => {
+    for (const rawKey of keysRequest.result) {
+      if (typeof rawKey !== 'string') continue
+      if (deleteKeys.has(rawKey) || deletePrefixes.some((prefix) => rawKey.startsWith(prefix))) {
+        store.delete(rawKey)
+      }
+    }
+    for (const document of documents) store.put(document.value, document.key)
+    tx.commit()
+  }
+  return completion
+}
+
 export interface KeyValueStore {
   read<T>(key: string, schema: z.ZodType<Versioned<T>>): Promise<T | null>
   write<T>(
@@ -74,6 +108,7 @@ export interface KeyValueStore {
     schema: z.ZodType<Versioned<T>>,
     updateValue: (value: T | null) => T,
   ): Promise<T>
+  replace(replacement: StoreReplacement): Promise<void>
   remove(key: string): Promise<void>
   keys(prefix?: string): Promise<string[]>
 }
@@ -116,6 +151,15 @@ export const indexedDbStore: KeyValueStore = {
     store.put(validated.data, key)
     await transactionToPromise(tx)
     return updated
+  },
+  async replace(replacement) {
+    const documents = replacement.writes.map((write) => {
+      const parsed = write.schema.safeParse({ v: write.version, data: write.value })
+      if (!parsed.success) throw new Error('Cannot persist an invalid viewer record.')
+      return { key: write.key, value: parsed.data }
+    })
+    const db = await openDb()
+    return replaceTransaction(db, replacement, documents)
   },
   async remove(key) {
     const db = await openDb()

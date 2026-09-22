@@ -1,5 +1,5 @@
 import { createSignal, type Accessor } from 'solid-js'
-import { AniSourceError, resolveUrl } from '../../../data/anisource/client'
+import { AniSourceError } from '../../../data/anisource/client'
 import type {
   AniSourceManga,
   ChapterPage,
@@ -7,9 +7,12 @@ import type {
   SourceInfo,
   SourceListResponse,
 } from '../../../data/anisource/schema'
-import { matchFlow, titleVariants, type RankedCandidate } from '../../../data/matching'
+import { titleVariants, type RankedCandidate } from '../../../data/matching'
 import type { AniListDetail } from '../../../data/anilist/types'
 import { titleOf } from '../../../lib/format'
+import { describeSourceFailure } from '../../../lib/source-session/errors'
+import { runSourceMatchFlow } from '../../../lib/source-session/matchFlow'
+import { createCancellableScope, type ScopeOperation } from '../../../lib/source-session/scope'
 import {
   DEFAULT_MANGA_READER_SETTINGS,
   mangaReaderData,
@@ -52,10 +55,10 @@ export interface MangaReaderError {
 }
 
 export interface MangaSourceClient {
-  mangaSources(onSlow?: () => void, signal?: AbortSignal): Promise<SourceListResponse>
-  mangaSearch(sourceId: string, query: string, page?: number, onSlow?: () => void, signal?: AbortSignal): Promise<{ items: AniSourceManga[]; page: number; has_next: boolean; total_returned: number }>
-  mangaChapters(sourceId: string, mangaId: string, onSlow?: () => void, signal?: AbortSignal): Promise<MangaChapter[]>
-  mangaPages(sourceId: string, chapterId: string, onSlow?: () => void, signal?: AbortSignal): Promise<ChapterPage[]>
+  mangaSources(onSlow: () => void, signal: AbortSignal): Promise<SourceListResponse>
+  mangaSearch(sourceId: string, query: string, page: number, onSlow: () => void, signal: AbortSignal): Promise<{ items: AniSourceManga[]; page: number; has_next: boolean; total_returned: number }>
+  mangaChapters(sourceId: string, mangaId: string, onSlow: () => void, signal: AbortSignal): Promise<MangaChapter[]>
+  mangaPages(sourceId: string, chapterId: string, onSlow: () => void, signal: AbortSignal): Promise<ChapterPage[]>
 }
 
 export interface MangaReaderSessionOptions {
@@ -184,19 +187,13 @@ function isLegacyZeroStartRoute(chapters: readonly MangaChapter[], value: string
 }
 
 function describeError(error: unknown, operation: MangaReaderError['operation']): MangaReaderError {
-  if (error instanceof AniSourceError) {
-    return {
-      kind: error.kind === 'cancelled' ? 'cancelled' : error.kind === 'http' ? 'unavailable' : error.kind,
-      operation,
-      message: error.message,
-      retryable: error.kind !== 'invalid' && error.kind !== 'cancelled',
-    }
-  }
+  const failure = describeSourceFailure(error, operation)
+  const kind: MangaReaderErrorKind = failure.kind === 'expired' ? 'unavailable' : failure.kind
   return {
-    kind: 'network',
+    kind,
     operation,
-    message: error instanceof Error ? error.message : 'The manga reading service returned an unexpected error.',
-    retryable: true,
+    message: failure.message,
+    retryable: failure.retryable,
   }
 }
 
@@ -230,9 +227,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   const [gap, setGap] = createSignal<MangaReaderGap>(DEFAULT_MANGA_READER_SETTINGS.gap)
   const [savedRecord, setSavedRecord] = createSignal<MangaReaderRecord | null>(null)
 
-  let disposed = false
-  let operationId = 0
-  let controller: AbortController | null = null
+  const scope = createCancellableScope()
   let prefetchController: AbortController | null = null
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   let persistenceWrite: Promise<void> = Promise.resolve()
@@ -248,27 +243,22 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   const nextChapter = () => neighbors().next
 
   function cancelActiveRequest(): void {
-    operationId += 1
-    controller?.abort()
-    controller = null
+    scope.cancelAll()
     if (saveTimer !== null) {
       clearTimeout(saveTimer)
       saveTimer = null
     }
   }
 
-  function beginRequest(): { signal: AbortSignal; id: number } {
-    controller?.abort()
-    const nextController = new AbortController()
-    controller = nextController
-    const id = ++operationId
+  function beginRequest(): ScopeOperation {
+    const operation = scope.restart()
     setSlow(false)
     setError(null)
-    return { signal: nextController.signal, id }
+    return operation
   }
 
-  function isCurrent(id: number, signal: AbortSignal): boolean {
-    return !disposed && operationId === id && !signal.aborted
+  function isCurrent(operation: ScopeOperation): boolean {
+    return scope.current(operation)
   }
 
   function cachePages(chapterId: string, chapterPages: ChapterPage[]): void {
@@ -424,7 +414,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     setStage('pages-loading')
     try {
       const normalized = await fetchChapterPages(source, chapterId, () => setSlow(true), request.signal)
-      if (!isCurrent(request.id, request.signal)) return
+      if (!isCurrent(request)) return
       if (normalized.length === 0) {
         setStage('empty')
         setFailure({ kind: 'empty', operation: 'pages', message: 'This chapter has no readable pages.', retryable: true })
@@ -441,9 +431,11 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       await persistRecord(recordBase(selectedChapter()!, resumeIndex, false))
       void prefetchNextChapter()
     } catch (caught) {
-      if (!isCurrent(request.id, request.signal)) return
+      if (!isCurrent(request)) return
       const nextError = describeError(caught, 'pages')
       setFailure(nextError)
+    } finally {
+      scope.finish(request)
     }
   }
 
@@ -455,7 +447,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     setStage('chapters-loading')
     try {
       const result = await options.api.mangaChapters(source, manga.id, () => setSlow(true), request.signal)
-      if (!isCurrent(request.id, request.signal)) return
+      if (!isCurrent(request)) return
       const normalized = normalizeChapters(result)
       setChapters(normalized)
       if (normalized.length === 0) {
@@ -472,8 +464,10 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
         setFailure({ kind: 'unavailable', operation: 'chapters', message: 'That chapter is no longer available from this source.', retryable: false })
       }
     } catch (caught) {
-      if (!isCurrent(request.id, request.signal)) return
+      if (!isCurrent(request)) return
       setFailure(describeError(caught, 'chapters'))
+    } finally {
+      scope.finish(request)
     }
   }
 
@@ -495,19 +489,20 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     setMatchedManga(null)
     setPickerCandidates([])
     try {
-      const found = new Map<string, AniSourceManga>()
-      for (const query of queryTitles.slice(0, 4)) {
-        const result = await options.api.mangaSearch(sourceId, query, 1, () => setSlow(true), request.signal)
-        if (!isCurrent(request.id, request.signal)) return
-        for (const candidate of result.items) found.set(candidate.id, candidate)
-        const ranked = matchFlow(queryTitles, [...found.values()])
-        if (ranked.kind === 'auto') {
-          await applyMatch(ranked.match.candidate, record)
-          return
-        }
-      }
-      if (!isCurrent(request.id, request.signal)) return
-      const ranked = matchFlow(queryTitles, [...found.values()])
+      const flow = await runSourceMatchFlow<AniSourceManga>({
+        queries: queryTitles,
+        maxQueries: 4,
+        search: async (query) => (
+          await options.api.mangaSearch(sourceId, query, 1, () => setSlow(true), request.signal)
+        ).items,
+        isCurrent: () => isCurrent(request),
+        onQueryFailure: (cause) => {
+          if (cause instanceof AniSourceError && cause.kind === 'cancelled') return 'abort'
+          return 'continue'
+        },
+      })
+      if (!flow) return
+      const ranked = flow.result
       if (ranked.kind === 'empty') {
         const nextSource = attemptedSources
           ? sources().find((source) => !attemptedSources.has(source.id))
@@ -516,15 +511,25 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
           await initializeSource(nextSource.id, true, attemptedSources)
           return
         }
+        if (flow.lastFailure) {
+          setFailure(describeError(flow.lastFailure, 'match'))
+          return
+        }
         setStage('match-empty')
         setError(null)
+        return
+      }
+      if (ranked.kind === 'auto') {
+        await applyMatch(ranked.match.candidate, record)
         return
       }
       setPickerCandidates(ranked.ranked)
       setStage('match-picker')
     } catch (caught) {
-      if (!isCurrent(request.id, request.signal)) return
+      if (!isCurrent(request)) return
       setFailure(describeError(caught, 'match'))
+    } finally {
+      scope.finish(request)
     }
   }
 
@@ -560,12 +565,13 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     setStage('sources-loading')
     setError(null)
     setPersistenceError(null)
+    let request: ScopeOperation | null = null
     try {
       const [stored, defaults] = await Promise.all([
         persistence.get(options.manga.id),
         persistence.getDefaults(),
       ])
-      if (disposed) return
+      if (scope.disposed) return
       setSavedRecord(stored)
       const settings = stored ?? defaults
       setLayout(settings.layout)
@@ -573,9 +579,9 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       setFit(settings.fit)
       setBackground(settings.background)
       setGap(settings.gap)
-      const request = beginRequest()
+      request = beginRequest()
       const result = await options.api.mangaSources(() => setSlow(true), request.signal)
-      if (!isCurrent(request.id, request.signal)) return
+      if (!isCurrent(request)) return
       setSources(result.sources)
       if (result.sources.length === 0) {
         setFailure({ kind: 'empty', operation: 'sources', message: 'No manga sources are currently available.', retryable: true })
@@ -589,8 +595,10 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
           : result.sources[0]!.id
       await initializeSource(preferred, false)
     } catch (caught) {
-      if (disposed) return
+      if (scope.disposed) return
       setFailure(describeError(caught, 'sources'))
+    } finally {
+      if (request) scope.finish(request)
     }
   }
 
@@ -658,7 +666,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     const request = beginRequest()
     try {
       const refreshed = normalizePages(await options.api.mangaPages(source, chapter.id, () => setSlow(true), request.signal))
-      if (!isCurrent(request.id, request.signal)) return false
+      if (!isCurrent(request)) return false
       if (refreshed.length === 0) {
         setError({ kind: 'empty', operation: 'pages', message: 'This chapter has no readable pages.', retryable: true })
         return false
@@ -669,11 +677,13 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       setStage('pages-ready')
       return true
     } catch (caught) {
-      if (!isCurrent(request.id, request.signal)) return false
+      if (!isCurrent(request)) return false
       const nextError = describeError(caught, 'pages')
       lastFailedOperation = 'pages'
       setError(nextError)
       return false
+    } finally {
+      scope.finish(request)
     }
   }
 
@@ -715,7 +725,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   }
 
   function dispose(): void {
-    disposed = true
+    scope.dispose()
     cancelActiveRequest()
     clearPageCache()
   }
@@ -765,5 +775,5 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
 }
 
 export function pageSource(page: ChapterPage): string {
-  return resolveUrl(page.url) ?? page.url
+  return page.url
 }

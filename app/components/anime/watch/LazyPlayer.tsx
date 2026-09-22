@@ -3,7 +3,7 @@ import type Hls from 'hls.js'
 import type { Stream } from '../../../data/anisource/schema'
 import type { PlaybackPreferenceValues } from '../../../lib/persistence/viewer'
 import type { PlaybackIdentity } from './createWatchSession'
-import { loadSubtitle, resolveUrl } from '../../../data/anisource/client'
+import { loadSubtitle } from '../../../data/anisource/client'
 
 type PlayerStatus = 'connecting' | 'buffering' | 'ready' | 'reconnecting' | 'error'
 
@@ -105,7 +105,7 @@ export function LazyPlayer(props: {
   let resumeDecisionIdentity: string | undefined
 
   const activeStream = () => props.streams[activeIndex()]
-  const streamUrl = (stream: Stream) => resolveUrl(stream.url) ?? stream.url
+  const streamUrl = (stream: Stream) => stream.url
   const streamOptions = () => {
     const options = props.streams.map((stream, index) => ({ stream, index }))
     return options.some(({ stream }) => !stream.is_audio) ? options.filter(({ stream }) => !stream.is_audio) : options
@@ -204,7 +204,7 @@ export function LazyPlayer(props: {
       const trackElement = document.createElement('track')
       trackElement.kind = 'subtitles'
       const hasProviderHeaders = Object.keys(stream.headers).some((name) => /^(?:origin|referer)$/i.test(name))
-      if (!hasProviderHeaders) trackElement.src = resolveUrl(subtitle.url) ?? subtitle.url
+      if (!hasProviderHeaders) trackElement.src = subtitle.url
       trackElement.label = subtitle.label || subtitle.language || 'Subtitle'
       if (subtitle.language) trackElement.srclang = subtitle.language
       element.appendChild(trackElement)
@@ -223,7 +223,7 @@ export function LazyPlayer(props: {
           // Keep the direct URL as a fallback: some subtitle hosts allow native
           // track loading even when script fetches are blocked by CORS.
           if (generation === loadGeneration) {
-            trackElement.src = resolveUrl(subtitle.url) ?? subtitle.url
+            trackElement.src = subtitle.url
             setSubtitleFailure('One subtitle language could not be normalized; native captions may still be available.')
           }
         })

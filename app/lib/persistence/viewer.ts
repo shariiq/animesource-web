@@ -1,5 +1,6 @@
 import { indexedDbStore } from './indexedDb'
-import { browserSearchHistory } from './searchHistory'
+import { browserSearchHistory, SEARCH_HISTORY_KEY } from './searchHistory'
+import { notifySearchHistoryChanged } from '../search'
 import { mergeViewerSnapshots } from './snapshot'
 import type { CatalogMode } from '../catalog'
 import {
@@ -7,12 +8,15 @@ import {
   favoriteStorageKey,
   favoritesDoc,
   matchDoc,
+  matchRecordDoc,
   prefSourceDoc,
+  searchHistoryDoc,
   timestampDoc,
   type ContinueItem,
   type FavoriteItem,
   type FavoriteStatus,
   type MatchItem,
+  type MatchRecord,
   playbackDoc,
   playbackPrefsDoc,
   viewerExportSchema,
@@ -37,6 +41,18 @@ const MATCH_PREFIX = 'match:'
 const VIEWER_PROFILE = 'viewerProfile'
 const VIEWER_PREFERENCES = 'viewerPreferences'
 const VIEWER_TOMBSTONES = 'viewerTombstones'
+
+const VIEWER_SINGLETON_KEYS = [
+  FAVORITES,
+  CONTINUE,
+  PLAYBACK_PREFS,
+  PREF_SOURCE,
+  PREF_SOURCE_UPDATED_AT,
+  VIEWER_PROFILE,
+  VIEWER_PREFERENCES,
+  VIEWER_TOMBSTONES,
+  SEARCH_HISTORY_KEY,
+] as const
 
 export type { ContinueItem, FavoriteItem, FavoriteStatus, MatchItem, PlaybackRecord, PlaybackPreferenceValues }
 export type { ViewerExport, ViewerPreferences, ViewerProfile }
@@ -348,11 +364,18 @@ async function getViewerMatches(): Promise<ViewerExport['matches']> {
   const keys = await indexedDbStore.keys(MATCH_PREFIX)
   const matches = await Promise.all(keys.map(async (key) => {
     const anilistId = Number(key.slice(MATCH_PREFIX.length))
-    const match = await indexedDbStore.read(key, matchDoc)
-    if (!Number.isInteger(anilistId) || anilistId <= 0 || !match) return null
-    return { anilistId, match, updatedAt: 0 }
+    const stored = await readStoredMatch(key)
+    if (!Number.isInteger(anilistId) || anilistId <= 0 || !stored) return null
+    return { anilistId, match: stored.match, updatedAt: stored.updatedAt }
   }))
   return matches.filter((entry): entry is ViewerExport['matches'][number] => entry !== null)
+}
+
+async function readStoredMatch(key: string): Promise<MatchRecord | null> {
+  const current = await indexedDbStore.read(key, matchRecordDoc)
+  if (current) return current
+  const legacy = await indexedDbStore.read(key, matchDoc)
+  return legacy ? { match: legacy, updatedAt: 0 } : null
 }
 
 async function getViewerProfile(): Promise<ViewerProfile> {
@@ -401,36 +424,44 @@ async function getViewerExport(): Promise<ViewerExport> {
 }
 
 async function writeViewerExport(snapshot: ViewerExport): Promise<void> {
-  await indexedDbStore.write(FAVORITES, 1, snapshot.favorites, favoritesDoc)
-  await indexedDbStore.write(CONTINUE, 1, snapshot.continue, continueDoc)
-  await indexedDbStore.write(PLAYBACK_PREFS, 1, snapshot.playbackPreferences, playbackPrefsDoc)
-  await indexedDbStore.write(VIEWER_PROFILE, 1, snapshot.profile, viewerProfileDoc)
-  await indexedDbStore.write(VIEWER_PREFERENCES, 1, snapshot.preferences, viewerPreferencesDoc)
-  await indexedDbStore.write(VIEWER_TOMBSTONES, 1, snapshot.tombstones, viewerTombstonesDoc)
-  if (snapshot.preferredSource) await indexedDbStore.write(PREF_SOURCE, 1, snapshot.preferredSource, prefSourceDoc)
-  else await indexedDbStore.remove(PREF_SOURCE)
-  if (snapshot.preferredSourceUpdatedAt > 0) await indexedDbStore.write(PREF_SOURCE_UPDATED_AT, 1, snapshot.preferredSourceUpdatedAt, timestampDoc)
-  else await indexedDbStore.remove(PREF_SOURCE_UPDATED_AT)
+  const writes = [
+    { key: FAVORITES, version: 1, value: snapshot.favorites, schema: favoritesDoc },
+    { key: CONTINUE, version: 1, value: snapshot.continue, schema: continueDoc },
+    { key: PLAYBACK_PREFS, version: 1, value: snapshot.playbackPreferences, schema: playbackPrefsDoc },
+    { key: VIEWER_PROFILE, version: 1, value: snapshot.profile, schema: viewerProfileDoc },
+    { key: VIEWER_PREFERENCES, version: 1, value: snapshot.preferences, schema: viewerPreferencesDoc },
+    { key: VIEWER_TOMBSTONES, version: 1, value: snapshot.tombstones, schema: viewerTombstonesDoc },
+    { key: SEARCH_HISTORY_KEY, version: 1, value: snapshot.searchHistory, schema: searchHistoryDoc },
+    ...(
+      snapshot.preferredSource !== null
+        ? [{ key: PREF_SOURCE, version: 1, value: snapshot.preferredSource, schema: prefSourceDoc }]
+        : []
+    ),
+    ...(
+      snapshot.preferredSourceUpdatedAt > 0
+        ? [{ key: PREF_SOURCE_UPDATED_AT, version: 1, value: snapshot.preferredSourceUpdatedAt, schema: timestampDoc }]
+        : []
+    ),
+    ...snapshot.playback.map((record) => ({
+      key: playbackKey(record.id, record.episodeId),
+      version: 1,
+      value: record,
+      schema: playbackDoc,
+    })),
+    ...snapshot.matches.map((entry) => ({
+      key: MATCH_PREFIX + entry.anilistId,
+      version: 2,
+      value: { match: entry.match, updatedAt: entry.updatedAt },
+      schema: matchRecordDoc,
+    })),
+  ]
 
-  const existingPlaybackKeys = await indexedDbStore.keys(PLAYBACK_PREFIX)
-  await Promise.all(existingPlaybackKeys.map((key) => indexedDbStore.remove(key)))
-  await Promise.all(snapshot.playback.map((record) => indexedDbStore.write(
-    playbackKey(record.id, record.episodeId),
-    1,
-    record,
-    playbackDoc,
-  )))
-
-  const existingMatchKeys = await indexedDbStore.keys(MATCH_PREFIX)
-  await Promise.all(existingMatchKeys.map((key) => indexedDbStore.remove(key)))
-  await Promise.all(snapshot.matches.map((entry) => indexedDbStore.write(
-    MATCH_PREFIX + entry.anilistId,
-    1,
-    entry.match,
-    matchDoc,
-  )))
-
-  await browserSearchHistory.replace(snapshot.searchHistory)
+  await indexedDbStore.replace({
+    deleteKeys: VIEWER_SINGLETON_KEYS,
+    deletePrefixes: [PLAYBACK_PREFIX, MATCH_PREFIX],
+    writes,
+  })
+  notifySearchHistoryChanged()
 }
 
 async function importViewerData(snapshot: unknown, mode: 'merge' | 'replace' = 'merge'): Promise<void> {
@@ -439,7 +470,6 @@ async function importViewerData(snapshot: unknown, mode: 'merge' | 'replace' = '
   const next = mode === 'merge'
     ? mergeViewerSnapshots(await getViewerExport(), parsed.data)
     : parsed.data
-  if (mode === 'replace') await clearViewerData()
   await writeViewerExport(next)
 }
 
@@ -470,9 +500,9 @@ export const browserViewerData: ViewerData = {
     await indexedDbStore.write(PREF_SOURCE, 1, sourceId, prefSourceDoc)
     await indexedDbStore.write(PREF_SOURCE_UPDATED_AT, 1, Date.now(), timestampDoc)
   },
-  getSavedMatch: (anilistId) => indexedDbStore.read(MATCH_PREFIX + anilistId, matchDoc),
+  getSavedMatch: async (anilistId) => (await readStoredMatch(MATCH_PREFIX + anilistId))?.match ?? null,
   saveMatch: async (anilistId, match) => {
-    await indexedDbStore.write(MATCH_PREFIX + anilistId, 1, match, matchDoc)
+    await indexedDbStore.write(MATCH_PREFIX + anilistId, 2, { match, updatedAt: Date.now() }, matchRecordDoc)
     await clearTombstone('matches', String(anilistId))
   },
   clearSavedMatch: async (anilistId) => {

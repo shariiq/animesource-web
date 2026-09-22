@@ -17,6 +17,8 @@ The application also needs an honest conflict policy. A remote write can fail af
 - Viewer data can be represented as a versioned, Zod-validated snapshot for export, import, migration, or transport.
 - Future account implementations satisfy `RemoteViewerAdapter` in `app/lib/sync/viewerSync.ts`; route components do not call a provider SDK directly.
 - Record conflicts use last-write-wins timestamps. Equal timestamps prefer local data.
+- Saved source matches carry an `updatedAt` timestamp so snapshot merges can apply the same last-write-wins rule; legacy version-1 match records remain readable with timestamp `0`.
+- Viewer snapshot imports validate every record before replacing viewer-owned IndexedDB keys in one read-write transaction, so invalid data or a transaction failure cannot leave a half-imported viewer snapshot.
 - Deletions create bounded tombstones. A tombstone at or after a record timestamp wins, preventing an offline deletion from silently reappearing.
 - Sync failures are visible as an error with pending data; local data is never discarded because a remote write failed.
 - Profile and content preferences are modeled now and stored locally. They become account-scoped when authentication is added.

@@ -168,6 +168,21 @@ test("manga reader restores settings after an immediate reload", async ({ page }
   }
 });
 
+test("manga library exposes saved reader progress", async ({ page }) => {
+  await page.goto("/manga/1/read/1?source=test");
+  await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
+
+  await page.goto("/manga/1");
+  await expect(page.getByRole("heading", { name: "Manga Details" })).toBeVisible();
+  await page.goto("/library");
+  await expect(page.getByRole("heading", { name: "Your manga library.", exact: true })).toBeVisible();
+  const continueReading = page.getByRole("tab", { name: /Continue Reading/ });
+  await expect(continueReading).toBeVisible();
+  await continueReading.click();
+  await expect(page.getByRole("heading", { name: "Continue reading", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Resume" })).toHaveAttribute("href", /\/manga\/1\/read\/1/);
+});
+
 test("Explore stays active for filtered Explore routes", async ({ page }) => {
   await page.goto("/explore?sort=POPULARITY_DESC&page=1");
   await expect(page.getByRole("link", { name: "Explore" })).toHaveAttribute("aria-current", "page");
@@ -380,10 +395,16 @@ test("settings stays usable across desktop and mobile layouts", async ({ page })
   await expect(page.getByRole("heading", { name: "Viewer settings." })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Language" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Timezone" })).toBeVisible();
+  const readerLayout = page.getByRole("combobox", { name: "Layout" });
+  await expect(readerLayout).toBeVisible();
   await expect(page.getByRole("checkbox", { name: /adult-content/i })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: /Release notifications/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save preferences" })).toBeEnabled();
+  await readerLayout.selectOption("paged");
   await page.getByRole("button", { name: "Save preferences" }).click();
   await expect(page.getByRole("status")).toContainText("Preferences saved on this device.");
+  await page.reload();
+  await expect(readerLayout).toHaveValue("paged");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/settings-desktop.png", fullPage: true });
 

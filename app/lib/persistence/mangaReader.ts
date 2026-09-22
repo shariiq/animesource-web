@@ -19,6 +19,23 @@ export type MangaReaderBackground = z.infer<typeof mangaReaderBackgroundSchema>
 export const mangaReaderGapSchema = z.enum(['none', 'small', 'large'])
 export type MangaReaderGap = z.infer<typeof mangaReaderGapSchema>
 
+export const mangaReaderSettingsSchema = z.object({
+  layout: mangaReaderLayoutSchema,
+  direction: mangaReaderDirectionSchema,
+  fit: mangaReaderFitSchema,
+  background: mangaReaderBackgroundSchema,
+  gap: mangaReaderGapSchema,
+})
+export type MangaReaderSettings = z.infer<typeof mangaReaderSettingsSchema>
+
+export const DEFAULT_MANGA_READER_SETTINGS: MangaReaderSettings = {
+  layout: 'continuous',
+  direction: 'rtl',
+  fit: 'fit-width',
+  background: 'ink',
+  gap: 'small',
+}
+
 export const mangaReaderRecordSchema = z.object({
   anilistId: z.number().int().positive(),
   title: z.string(),
@@ -44,20 +61,33 @@ export type MangaReaderRecord = z.infer<typeof mangaReaderRecordSchema>
 
 export interface MangaReaderPersistence {
   get(anilistId: number): Promise<MangaReaderRecord | null>
+  getDefaults(): Promise<MangaReaderSettings>
+  list(): Promise<MangaReaderRecord[]>
   save(record: MangaReaderRecord): Promise<void>
+  saveDefaults(settings: MangaReaderSettings): Promise<void>
   remove(anilistId: number): Promise<void>
 }
 
 const RECORD_PREFIX = 'manga-reader:'
+const DEFAULTS_KEY = `${RECORD_PREFIX}defaults`
+const recordDocument = z.object({ v: z.literal(1), data: mangaReaderRecordSchema })
+const settingsDocument = z.object({ v: z.literal(1), data: mangaReaderSettingsSchema })
 
 function recordKey(anilistId: number): string {
   return `${RECORD_PREFIX}${anilistId}`
 }
 
 export const mangaReaderData: MangaReaderPersistence = {
-  get: (anilistId) => indexedDbStore.read(recordKey(anilistId), z.object({ v: z.literal(1), data: mangaReaderRecordSchema })),
-  save: async (record) => {
-    await indexedDbStore.write(recordKey(record.anilistId), 1, record, z.object({ v: z.literal(1), data: mangaReaderRecordSchema }))
+  get: (anilistId) => indexedDbStore.read(recordKey(anilistId), recordDocument),
+  getDefaults: async () => (await indexedDbStore.read(DEFAULTS_KEY, settingsDocument)) ?? { ...DEFAULT_MANGA_READER_SETTINGS },
+  list: async () => {
+    const keys = await indexedDbStore.keys(RECORD_PREFIX)
+    const records = await Promise.all(keys.filter((key) => key !== DEFAULTS_KEY).map((key) => indexedDbStore.read(key, recordDocument)))
+    return records.filter((record): record is MangaReaderRecord => record !== null).sort((left, right) => right.updatedAt - left.updatedAt)
   },
+  save: async (record) => {
+    await indexedDbStore.write(recordKey(record.anilistId), 1, record, recordDocument)
+  },
+  saveDefaults: (settings) => indexedDbStore.write(DEFAULTS_KEY, 1, settings, settingsDocument),
   remove: (anilistId) => indexedDbStore.remove(recordKey(anilistId)),
 }

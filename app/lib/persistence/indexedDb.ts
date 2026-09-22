@@ -56,6 +56,7 @@ function writeTransaction<T>(db: IDBDatabase, key: string, value: Versioned<T>):
   const tx = db.transaction(STORE, 'readwrite')
   const completion = transactionToPromise(tx)
   tx.objectStore(STORE).put(value, key)
+  tx.commit()
   return completion
 }
 

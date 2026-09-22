@@ -137,6 +137,15 @@ export const matchDoc = z.object({
   v: z.literal(1),
   data: matchItemSchema,
 })
+export const matchRecordSchema = z.object({
+  match: matchItemSchema,
+  updatedAt: z.number().nonnegative().default(0),
+})
+export type MatchRecord = z.infer<typeof matchRecordSchema>
+export const matchRecordDoc = z.object({
+  v: z.literal(2),
+  data: matchRecordSchema,
+})
 export const searchHistoryDoc = z.object({
   v: z.literal(1),
   data: z.array(searchHistoryItemSchema).max(8),

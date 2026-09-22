@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/solid-query'
-import { queryKeys } from '../lib/queryKeys'
+import { canonicalIds, queryKeys } from '../lib/queryKeys'
 import { alHome, alDetail, alByIds, alBrowse, alSuggest, alGenres, alSchedule } from './anilist/queries'
 import type { MediaSort } from './anilist/queries'
 import type { BrowseCountry, BrowseFormat, BrowseSeason, BrowseStatus } from '../lib/browse'
@@ -23,13 +23,15 @@ export const detailQuery = (id: number, mode: CatalogMode = 'ANIME') =>
     staleTime: 1000 * 60 * 10,
   })
 
-export const byIdsQuery = (ids: readonly number[], mode: CatalogMode = 'ANIME') =>
-  queryOptions({
-    queryKey: queryKeys.byIds(ids, mode),
-    queryFn: ({ signal }) => alByIds([...ids], mode, signal),
-    enabled: ids.length > 0,
+export const byIdsQuery = (ids: readonly number[], mode: CatalogMode = 'ANIME') => {
+  const normalizedIds = canonicalIds(ids)
+  return queryOptions({
+    queryKey: queryKeys.byIds(normalizedIds, mode),
+    queryFn: ({ signal }) => alByIds(normalizedIds, mode, signal),
+    enabled: normalizedIds.length > 0,
     staleTime: 1000 * 60 * 10,
   })
+}
 
 export const browseQuery = (params: {
   page?: number

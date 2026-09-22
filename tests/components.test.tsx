@@ -64,7 +64,6 @@ const subtitleLoader = vi.hoisted(() => ({
 vi.mock("hls.js", () => ({ default: hls.FakeHls }));
 vi.mock("../app/data/anisource/client", () => ({
   loadSubtitle: subtitleLoader.load,
-  resolveUrl: (url: string) => url,
 }));
 
 // Keep these tests independent of a mounted TanStack Router and AniList.

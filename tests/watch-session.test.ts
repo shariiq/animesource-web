@@ -156,7 +156,7 @@ describe('Watch session', () => {
     await session.initialize()
 
     expect(api.sources).toHaveBeenCalledOnce()
-    expect(api.search).toHaveBeenCalledWith('source-a', 'Signal', 1, expect.any(Function))
+    expect(api.search).toHaveBeenCalledWith('source-a', 'Signal', 1, expect.any(Function), expect.any(AbortSignal))
     expect(session.match()?.kind).toBe('auto')
     expect(session.matchedAnime()?.id).toBe('signal-42')
     expect(session.episodes()).toHaveLength(1)
@@ -195,7 +195,7 @@ describe('Watch session', () => {
 
     // It should have only searched once for the primary title "Signal" and short-circuited
     expect(searchMock).toHaveBeenCalledTimes(1)
-    expect(searchMock).toHaveBeenCalledWith('source-a', 'Signal', 1, expect.any(Function))
+    expect(searchMock).toHaveBeenCalledWith('source-a', 'Signal', 1, expect.any(Function), expect.any(AbortSignal))
     expect(session.match()?.kind).toBe('auto')
   })
 
@@ -238,7 +238,7 @@ describe('Watch session', () => {
 
     expect(api.search).not.toHaveBeenCalled()
     expect(session.matchedAnime()).toMatchObject({ id: 'saved-42', title: 'Saved Signal' })
-    expect(api.episodes).toHaveBeenCalledWith('source-a', 'saved-42', expect.any(Function))
+    expect(api.episodes).toHaveBeenCalledWith('source-a', 'saved-42', expect.any(Function), expect.any(AbortSignal))
     expect(persistence.saveMatch).not.toHaveBeenCalled()
   })
 
@@ -264,8 +264,8 @@ describe('Watch session', () => {
 
     await session.initialize()
 
-    expect(search).toHaveBeenCalledWith('source-a', 'Signal', 1, expect.any(Function))
-    expect(search).toHaveBeenCalledWith('source-b', 'Signal', 1, expect.any(Function))
+    expect(search).toHaveBeenCalledWith('source-a', 'Signal', 1, expect.any(Function), expect.any(AbortSignal))
+    expect(search).toHaveBeenCalledWith('source-b', 'Signal', 1, expect.any(Function), expect.any(AbortSignal))
     expect(session.selectedSource()).toBe('source-b')
     expect(session.matchedAnime()?.id).toBe('signal-42')
   })
@@ -308,7 +308,7 @@ describe('Watch session', () => {
 
     // The stale match logic clears the bad savedMatch and falls back to normal matching
     expect(persistence.clearSavedMatch).toHaveBeenCalledWith(42)
-    expect(api.search).toHaveBeenCalledWith('source-a', 'Signal', 1, expect.any(Function))
+    expect(api.search).toHaveBeenCalledWith('source-a', 'Signal', 1, expect.any(Function), expect.any(AbortSignal))
     expect(persistence.saveMatch).toHaveBeenCalledWith(42, expect.objectContaining({ sourceId: 'source-a' }))
   })
 

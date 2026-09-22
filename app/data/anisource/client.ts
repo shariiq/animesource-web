@@ -13,13 +13,9 @@ import {
   streamSchema,
   type HealthResponse,
   type ChapterPage,
-  type MangaChapter,
   type MangaSearchResponse,
-  type AniSourceManga,
   type SourceListResponse,
   type SearchResponse,
-  type Episode,
-  type Server,
   type Stream,
 } from './schema'
 
@@ -67,6 +63,9 @@ export interface AniSourceClientOptions {
   fetchTimeoutMs?: number
   transport?: Partial<AniSourceTransport>
 }
+
+/** Catalog branch of the AniSource REST API; both share the same request machinery. */
+export type AniSourceCatalog = 'anime' | 'manga'
 
 /**
  * Client for the deployed AniSource API. All methods are client-only —
@@ -160,101 +159,103 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
     }
   }
 
-  /** In-memory cache for the source listing — it rarely changes within a session. */
-  let cachedSources: { promise: Promise<SourceListResponse>; ts: number } | null = null
-  let cachedMangaSources: { promise: Promise<SourceListResponse>; ts: number } | null = null
+  /** In-memory cache for source listings — they rarely change within a session. */
+  const sourceCache = new Map<AniSourceCatalog, { promise: Promise<SourceListResponse>; ts: number }>()
   const SOURCE_CACHE_TTL = 10 * 60 * 1000 // 10 minutes
+
+  const catalogPath = (catalog: AniSourceCatalog, sourceId: string, noun: string, itemId: string): string =>
+    `/api/v1/${catalog}/${encodeURIComponent(sourceId)}/${noun}/${encodeURIComponent(itemId)}`
+
+  const listSources = (
+    catalog: AniSourceCatalog,
+    onSlow?: () => void,
+    signal?: AbortSignal,
+  ): Promise<SourceListResponse> => {
+    const now = Date.now()
+    const cached = sourceCache.get(catalog)
+    if (cached && now - cached.ts < SOURCE_CACHE_TTL) return cached.promise
+    const promise = request(`/api/v1/${catalog}/sources`, sourceListResponseSchema, onSlow, signal)
+    sourceCache.set(catalog, { promise, ts: now })
+    // Evict the cache on failure so subsequent calls retry.
+    promise.catch(() => {
+      if (sourceCache.get(catalog)?.promise === promise) sourceCache.delete(catalog)
+    })
+    return promise
+  }
+
+  const searchPath = (catalog: AniSourceCatalog, sourceId: string, q: string, page: number): string =>
+    `/api/v1/${catalog}/${encodeURIComponent(sourceId)}/search` +
+    `?q=${encodeURIComponent(q)}&page=${encodeURIComponent(page)}`
+
+  const resolveAsset = (url: string): string => resolveUrl(url, baseUrl) ?? url
+  const normalizePages = (pages: ChapterPage[]): ChapterPage[] => pages.map((page) => ({
+    ...page,
+    url: resolveAsset(page.url),
+    page_url: resolveAsset(page.page_url),
+  }))
+  const normalizeStreams = (streams: Stream[]): Stream[] => streams.map((stream) => ({
+    ...stream,
+    url: resolveAsset(stream.url),
+    subtitles: stream.subtitles.map((subtitle) => ({ ...subtitle, url: resolveAsset(subtitle.url) })),
+  }))
 
   return {
     health(onSlow?: () => void, signal?: AbortSignal): Promise<HealthResponse> {
       return request('/health', healthResponseSchema, onSlow, signal)
     },
 
-    sources(onSlow?: () => void, signal?: AbortSignal): Promise<SourceListResponse> {
-      const now = Date.now()
-      if (cachedSources && now - cachedSources.ts < SOURCE_CACHE_TTL) {
-        return cachedSources.promise
-      }
-      const promise = request('/api/v1/anime/sources', sourceListResponseSchema, onSlow, signal)
-      cachedSources = { promise, ts: now }
-      // Evict the cache on failure so subsequent calls retry.
-      promise.catch(() => {
-        if (cachedSources?.promise === promise) cachedSources = null
-      })
-      return promise
-    },
+    sources: (onSlow?: () => void, signal?: AbortSignal) => listSources('anime', onSlow, signal),
 
-    mangaSources(onSlow?: () => void, signal?: AbortSignal): Promise<SourceListResponse> {
-      const now = Date.now()
-      if (cachedMangaSources && now - cachedMangaSources.ts < SOURCE_CACHE_TTL) return cachedMangaSources.promise
-      const promise = request('/api/v1/manga/sources', sourceListResponseSchema, onSlow, signal)
-      cachedMangaSources = { promise, ts: now }
-      promise.catch(() => {
-        if (cachedMangaSources?.promise === promise) cachedMangaSources = null
-      })
-      return promise
-    },
+    mangaSources: (onSlow?: () => void, signal?: AbortSignal) => listSources('manga', onSlow, signal),
 
-    search(sourceId: string, q: string, page = 1, onSlow?: () => void, signal?: AbortSignal): Promise<SearchResponse> {
-      const path =
-        `/api/v1/anime/${encodeURIComponent(sourceId)}/search` +
-        `?q=${encodeURIComponent(q)}&page=${encodeURIComponent(page)}`
-      return request(path, searchResponseSchema, onSlow, signal)
-    },
+    search: (sourceId: string, q: string, page = 1, onSlow?: () => void, signal?: AbortSignal): Promise<SearchResponse> =>
+      request(searchPath('anime', sourceId, q, page), searchResponseSchema, onSlow, signal),
 
-    mangaSearch(sourceId: string, q: string, page = 1, onSlow?: () => void, signal?: AbortSignal): Promise<MangaSearchResponse> {
-      const path =
-        `/api/v1/manga/${encodeURIComponent(sourceId)}/search` +
-        `?q=${encodeURIComponent(q)}&page=${encodeURIComponent(page)}`
-      return request(path, mangaSearchResponseSchema, onSlow, signal)
-    },
+    mangaSearch: (sourceId: string, q: string, page = 1, onSlow?: () => void, signal?: AbortSignal): Promise<MangaSearchResponse> =>
+      request(searchPath('manga', sourceId, q, page), mangaSearchResponseSchema, onSlow, signal),
 
-    mangaDetails(sourceId: string, mangaId: string, onSlow?: () => void, signal?: AbortSignal): Promise<AniSourceManga> {
-      const path = `/api/v1/manga/${encodeURIComponent(sourceId)}/manga/${encodeURIComponent(mangaId)}`
-      return request(path, anisourceMangaSchema, onSlow, signal)
-    },
+    mangaDetails: (sourceId: string, mangaId: string, onSlow?: () => void, signal?: AbortSignal) =>
+      request(catalogPath('manga', sourceId, 'manga', mangaId), anisourceMangaSchema, onSlow, signal),
 
-    mangaChapters(sourceId: string, mangaId: string, onSlow?: () => void, signal?: AbortSignal): Promise<MangaChapter[]> {
-      const path = `/api/v1/manga/${encodeURIComponent(sourceId)}/chapters/${encodeURIComponent(mangaId)}`
-      return request(path, mangaChapterSchema.array(), onSlow, signal)
-    },
+    mangaChapters: (sourceId: string, mangaId: string, onSlow?: () => void, signal?: AbortSignal) =>
+      request(catalogPath('manga', sourceId, 'chapters', mangaId), mangaChapterSchema.array(), onSlow, signal),
 
-    mangaPages(sourceId: string, chapterId: string, onSlow?: () => void, signal?: AbortSignal): Promise<ChapterPage[]> {
-      const path = `/api/v1/manga/${encodeURIComponent(sourceId)}/pages/${encodeURIComponent(chapterId)}`
-      return request(path, chapterPageSchema.array(), onSlow, signal)
-    },
+    mangaPages: async (sourceId: string, chapterId: string, onSlow?: () => void, signal?: AbortSignal) =>
+      normalizePages(await request(catalogPath('manga', sourceId, 'pages', chapterId), chapterPageSchema.array(), onSlow, signal)),
 
-    episodes(sourceId: string, animeId: string, onSlow?: () => void, signal?: AbortSignal): Promise<Episode[]> {
-      const path = `/api/v1/anime/${encodeURIComponent(sourceId)}/episodes/${encodeURIComponent(animeId)}`
-      return request(path, episodeSchema.array(), onSlow, signal)
-    },
+    episodes: (sourceId: string, animeId: string, onSlow?: () => void, signal?: AbortSignal) =>
+      request(catalogPath('anime', sourceId, 'episodes', animeId), episodeSchema.array(), onSlow, signal),
 
-    servers(sourceId: string, episodeId: string, onSlow?: () => void, signal?: AbortSignal): Promise<Server[]> {
-      const path = `/api/v1/anime/${encodeURIComponent(sourceId)}/servers/${encodeURIComponent(episodeId)}`
-      return request(path, serverSchema.array(), onSlow, signal)
-    },
+    servers: (sourceId: string, episodeId: string, onSlow?: () => void, signal?: AbortSignal) =>
+      request(catalogPath('anime', sourceId, 'servers', episodeId), serverSchema.array(), onSlow, signal),
 
-    streams(
-      sourceId: string,
-      episodeId: string,
-      serverId: string,
-      onSlow?: () => void,
-      signal?: AbortSignal,
-    ): Promise<Stream[]> {
-      const path =
-        `/api/v1/anime/${encodeURIComponent(sourceId)}/streams/${encodeURIComponent(episodeId)}` +
-        `?server_id=${encodeURIComponent(serverId)}`
-      return request(path, streamSchema.array(), onSlow, signal)
+    streams: async (sourceId: string, episodeId: string, serverId: string, onSlow?: () => void, signal?: AbortSignal) =>
+      normalizeStreams(await request(
+        `${catalogPath('anime', sourceId, 'streams', episodeId)}?server_id=${encodeURIComponent(serverId)}`,
+        streamSchema.array(),
+        onSlow,
+        signal,
+      )),
+
+    clearSourceCache(): void {
+      sourceCache.clear()
     },
   }
 }
 
-/** Resolves relative AniSource asset URLs against the configured base. */
-export function resolveUrl(url: string | null | undefined): string | null | undefined {
+/** Resolves relative AniSource asset URLs against the given (or configured) base. */
+export function resolveUrl(
+  url: string | null | undefined,
+  baseUrl: string = API_URLS.anisource,
+): string | null | undefined {
   if (!url) return url
   if (url.startsWith('http://') || url.startsWith('https://')) return url
-  if (url.startsWith('/')) return API_URLS.anisource + url
-  return url
+  try {
+    const resolved = new URL(url, `${normalizeApiUrl(baseUrl)}/`)
+    return resolved.protocol === 'http:' || resolved.protocol === 'https:' ? resolved.toString() : url
+  } catch {
+    return url
+  }
 }
 
 const MAX_SUBTITLE_BYTES = 2_000_000
@@ -286,53 +287,70 @@ function relaySubtitleHeaders(headers: Record<string, string>): { referer?: stri
   return relayHeaders
 }
 
-/** Fetches a subtitle payload and returns browser-ready WebVTT text. */
-export async function loadSubtitle(url: string, headers: Record<string, string> = {}): Promise<string> {
-  const resolved = resolveUrl(url) ?? url
-  const relayHeaders = relaySubtitleHeaders(headers)
-  const fetchDirect = async (): Promise<string> => {
-    const response = await fetch(resolved, { headers: { Accept: 'text/vtt, text/plain;q=0.9, */*;q=0.1' } })
+export interface SubtitleTransport {
+  /** Plain client-side fetch of the track body. */
+  fetchDirect(url: string): Promise<string>
+  /** Fetch through the same-origin relay with spoofed referer/origin headers. */
+  fetchViaRelay(url: string, headers: { referer?: string; origin?: string }): Promise<string>
+}
+
+/**
+ * Builds a subtitle loader over an explicit transport seam. Relay-first when the
+ * stream demands referer/origin headers a browser cannot set; direct-first
+ * otherwise, with the other path as fallback.
+ */
+export function createSubtitleLoader(transport: SubtitleTransport) {
+  return async function load(url: string, headers: Record<string, string> = {}): Promise<string> {
+    const relayHeaders = relaySubtitleHeaders(headers)
+    let text: string
+    if (Object.keys(relayHeaders).length > 0 && url.startsWith('http')) {
+      try {
+        text = await transport.fetchViaRelay(url, relayHeaders)
+      } catch (relayError) {
+        try {
+          text = await transport.fetchDirect(url)
+        } catch {
+          throw relayError
+        }
+      }
+    } else {
+      try {
+        text = await transport.fetchDirect(url)
+      } catch (error) {
+        if (!url.startsWith('http')) throw error
+        try {
+          text = await transport.fetchViaRelay(url, relayHeaders)
+        } catch {
+          throw error
+        }
+      }
+    }
+    if (new Blob([text]).size > MAX_SUBTITLE_BYTES) {
+      throw new AniSourceError('The subtitle track is too large to load safely.', 'invalid')
+    }
+    return normalizeSubtitleText(text)
+  }
+}
+
+const defaultSubtitleLoader = createSubtitleLoader({
+  fetchDirect: async (url) => {
+    const response = await fetch(url, { headers: { Accept: 'text/vtt, text/plain;q=0.9, */*;q=0.1' } })
     if (!response.ok) throw new AniSourceError(`Subtitle request failed (${response.status}).`, 'http', response.status)
     const length = Number(response.headers.get('content-length') ?? 0)
     if (Number.isFinite(length) && length > MAX_SUBTITLE_BYTES) {
       throw new AniSourceError('The subtitle track is too large to load safely.', 'invalid')
     }
     return response.text()
-  }
-
-  const fetchViaRelay = async (): Promise<string> => {
-    if (!resolved.startsWith('http')) throw new AniSourceError('The subtitle URL is not relayable.', 'invalid')
+  },
+  fetchViaRelay: async (url, headers) => {
     const { fetchSubtitleText } = await import('./subtitle-server')
-    return fetchSubtitleText({ data: { url: resolved, headers: relayHeaders } })
-  }
+    return fetchSubtitleText({ data: { url, headers } })
+  },
+})
 
-  let text: string
-  if (Object.keys(relayHeaders).length > 0 && resolved.startsWith('http')) {
-    try {
-      text = await fetchViaRelay()
-    } catch (relayError) {
-      try {
-        text = await fetchDirect()
-      } catch {
-        throw relayError
-      }
-    }
-  } else {
-    try {
-      text = await fetchDirect()
-    } catch (error) {
-      if (!resolved.startsWith('http')) throw error
-      try {
-        text = await fetchViaRelay()
-      } catch {
-        throw error
-      }
-    }
-  }
-  if (new Blob([text]).size > MAX_SUBTITLE_BYTES) {
-    throw new AniSourceError('The subtitle track is too large to load safely.', 'invalid')
-  }
-  return normalizeSubtitleText(text)
+/** Fetches a subtitle payload and returns browser-ready WebVTT text. */
+export function loadSubtitle(url: string, headers: Record<string, string> = {}): Promise<string> {
+  return defaultSubtitleLoader(resolveUrl(url) ?? url, headers)
 }
 
 export const anisourceClient = createAniSourceClient()

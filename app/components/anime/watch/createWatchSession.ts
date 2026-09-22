@@ -13,6 +13,9 @@ import type {
 } from '../../../data/anisource/schema'
 import { matchFlow, titleVariants, type MatchResult, type RankedCandidate } from '../../../data/matching'
 import { titleOf } from '../../../lib/format'
+import { describeSourceFailure } from '../../../lib/source-session/errors'
+import { runSourceMatchFlow } from '../../../lib/source-session/matchFlow'
+import { createCancellableScope, type ScopeOperation } from '../../../lib/source-session/scope'
 import type {
   ContinueDraft,
   ContinueItem,
@@ -85,33 +88,33 @@ export interface PlaybackIdentity {
 }
 
 export interface WatchSourceClient {
-  health?: (onSlow?: () => void, signal?: AbortSignal) => Promise<HealthResponse>
-  sources(onSlow?: () => void, signal?: AbortSignal): Promise<SourceListResponse>
+  health?: (onSlow: () => void, signal: AbortSignal) => Promise<HealthResponse>
+  sources(onSlow: () => void, signal: AbortSignal): Promise<SourceListResponse>
   search(
     sourceId: string,
     query: string,
-    page?: number,
-    onSlow?: () => void,
-    signal?: AbortSignal,
+    page: number,
+    onSlow: () => void,
+    signal: AbortSignal,
   ): Promise<SearchResponse>
   episodes(
     sourceId: string,
     animeId: string,
-    onSlow?: () => void,
-    signal?: AbortSignal,
+    onSlow: () => void,
+    signal: AbortSignal,
   ): Promise<Episode[]>
   servers(
     sourceId: string,
     episodeId: string,
-    onSlow?: () => void,
-    signal?: AbortSignal,
+    onSlow: () => void,
+    signal: AbortSignal,
   ): Promise<Server[]>
   streams(
     sourceId: string,
     episodeId: string,
     serverId: string,
-    onSlow?: () => void,
-    signal?: AbortSignal,
+    onSlow: () => void,
+    signal: AbortSignal,
   ): Promise<Stream[]>
 }
 
@@ -281,27 +284,24 @@ function classifyError(
 
   let kind: WatchErrorKind
   let retryable = true
+  let message: string
 
   if (cause instanceof AniSourceError) {
-    const expired =
-      operation === 'streams' &&
-      (cause.status === 401 ||
-        cause.status === 403 ||
-        cause.status === 410 ||
-        /expired|unauthori[sz]ed/i.test(cause.message))
-
-    kind = expired
+    const failure = describeSourceFailure(cause, operation)
+    kind = failure.kind === 'expired'
       ? 'expired-stream'
-      : cause.kind === 'timeout'
-        ? 'timeout'
-        : cause.kind === 'invalid'
-          ? 'invalid'
-          : operation === 'streams' && cause.kind === 'http'
-            ? 'unavailable-server'
+      : operation === 'streams' && failure.kind === 'unavailable'
+        ? 'unavailable-server'
+        : failure.kind === 'timeout'
+          ? 'timeout'
+          : failure.kind === 'invalid'
+            ? 'invalid'
             : 'network'
-    retryable = cause.kind !== 'invalid'
+    retryable = failure.retryable
+    message = failure.message
   } else {
     kind = operation === 'media' ? 'media' : operation === 'persistence' ? 'persistence' : 'network'
+    message = cause instanceof Error ? cause.message : publicErrorMessage(kind, operation)
   }
 
   if (operation === 'streams' && retryCount >= MAX_STREAM_RETRIES) retryable = false
@@ -309,12 +309,7 @@ function classifyError(
   return {
     kind,
     operation,
-    message:
-      cause instanceof AniSourceError
-        ? publicErrorMessage(kind, operation)
-        : cause instanceof Error
-          ? cause.message
-          : publicErrorMessage(kind, operation),
+    message,
     retryable,
     retryCount,
     sourceId,
@@ -323,25 +318,7 @@ function classifyError(
 }
 
 function healthStatusFromError(cause: unknown): SourceHealthStatus {
-  if (
-    cause instanceof AniSourceError &&
-    cause.kind === 'http' &&
-    (cause.status === 502 || cause.status === 503 || cause.status === 504)
-  ) {
-    return 'unavailable'
-  }
-  return 'degraded'
-}
-
-function observedSourceHealthFromError(cause: unknown): SourceHealthStatus {
-  if (
-    cause instanceof AniSourceError &&
-    cause.kind === 'http' &&
-    (cause.status === 502 || cause.status === 503 || cause.status === 504)
-  ) {
-    return 'unavailable'
-  }
-  return 'degraded'
+  return describeSourceFailure(cause, 'health').kind === 'unavailable' ? 'unavailable' : 'degraded'
 }
 
 export function createWatchSession(options: WatchSessionOptions): WatchSession {
@@ -374,34 +351,15 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
   const [continueNext, setContinueNext] = createSignal<Episode | null>(null)
   const [latestContinue, setLatestContinue] = createSignal<ContinueItem | null>(null)
 
-  let disposed = false
-  let generation = 0
+  const scope = createCancellableScope()
   let searchTimer: ReturnType<typeof setTimeout> | undefined
-  const controllers = new Set<AbortController>()
-  const operationGenerations = new WeakMap<AbortController, number>()
   const healthRetries = new Map<string, number>()
   const streamAttempts = new Map<string, number>()
 
-  const begin = () => {
-    generation += 1
-    for (const controller of controllers) controller.abort()
-    controllers.clear()
-
-    const controller = new AbortController()
-    operationGenerations.set(controller, generation)
-    controllers.add(controller)
-
-    return {
-      generation,
-      controller,
-      current: () =>
-        !disposed && generation === (operationGenerations.get(controller) ?? -1),
-    }
-  }
-
-  const current = (operation: ReturnType<typeof begin>) =>
-    operation.current() && !operation.controller.signal.aborted
-  const finish = (operation: ReturnType<typeof begin>) => controllers.delete(operation.controller)
+  /** Starts an operation on a fresh generation, aborting everything in flight. */
+  const begin = (): ScopeOperation => scope.restart()
+  const current = (operation: ScopeOperation) => scope.current(operation)
+  const finish = (operation: ScopeOperation) => scope.finish(operation)
 
   const variants = () => titleVariants(options.anime)
   const sourceName = () =>
@@ -457,7 +415,7 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     console.error(diagnostic.message, cause)
     setWatchError(diagnostic)
     setError(diagnostic.message)
-    if (sourceId) setHealth(sourceId, observedSourceHealthFromError(cause), diagnostic.message)
+    if (sourceId) setHealth(sourceId, healthStatusFromError(cause), diagnostic.message)
   }
 
   const setHealth = (sourceId: string, status: SourceHealthStatus, detail: string | null) => {
@@ -467,7 +425,7 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     }))
   }
 
-  const probeHealth = async (sourceId: string, operation: ReturnType<typeof begin>) => {
+  const probeHealth = async (sourceId: string, operation: ScopeOperation) => {
     if (!options.api.health || !current(operation)) return
 
     const retryCount = healthRetries.get(sourceId) ?? 0
@@ -485,7 +443,7 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
         () => {
           if (current(operation)) setSlow(true)
         },
-        operation.controller.signal,
+        operation.signal,
       )
       if (!current(operation)) return
 
@@ -534,52 +492,7 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     }
   }
 
-  // Compatibility lets existing narrow test adapters omit AbortSignal while the
-  // production client receives cancellation for every transport operation.
-  const callSources = (onSlow: () => void, signal: AbortSignal) =>
-    options.api.sources.length >= 2
-      ? options.api.sources(onSlow, signal)
-      : options.api.sources(onSlow)
-  const callSearch = (
-    sourceId: string,
-    query: string,
-    page: number,
-    onSlow: () => void,
-    signal: AbortSignal,
-  ) =>
-    options.api.search.length >= 5
-      ? options.api.search(sourceId, query, page, onSlow, signal)
-      : options.api.search(sourceId, query, page, onSlow)
-  const callEpisodes = (
-    sourceId: string,
-    animeId: string,
-    onSlow: () => void,
-    signal: AbortSignal,
-  ) =>
-    options.api.episodes.length >= 4
-      ? options.api.episodes(sourceId, animeId, onSlow, signal)
-      : options.api.episodes(sourceId, animeId, onSlow)
-  const callServers = (
-    sourceId: string,
-    episodeId: string,
-    onSlow: () => void,
-    signal: AbortSignal,
-  ) =>
-    options.api.servers.length >= 4
-      ? options.api.servers(sourceId, episodeId, onSlow, signal)
-      : options.api.servers(sourceId, episodeId, onSlow)
-  const callStreams = (
-    sourceId: string,
-    episodeId: string,
-    serverId: string,
-    onSlow: () => void,
-    signal: AbortSignal,
-  ) =>
-    options.api.streams.length >= 5
-      ? options.api.streams(sourceId, episodeId, serverId, onSlow, signal)
-      : options.api.streams(sourceId, episodeId, serverId, onSlow)
-
-  const loadServers = async (episodeId: string, parent?: ReturnType<typeof begin>) => {
+  const loadServers = async (episodeId: string, parent?: ScopeOperation) => {
     const sourceId = selectedSource()
     const operation = parent ?? begin()
     if (!sourceId) return
@@ -589,13 +502,13 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     setWatchError(null)
 
     try {
-      const result = await callServers(
+      const result = await options.api.servers(
         sourceId,
         episodeId,
         () => {
           if (current(operation)) setSlow(true)
         },
-        operation.controller.signal,
+        operation.signal,
       )
       if (
         !current(operation) ||
@@ -617,7 +530,7 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     }
   }
 
-  const chooseEpisode = async (episodeId: string, parent?: ReturnType<typeof begin>) => {
+  const chooseEpisode = async (episodeId: string, parent?: ScopeOperation) => {
     const episode = episodes().find((item) => item.id === episodeId)
     if (!episode) return
 
@@ -659,14 +572,14 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
 
     try {
       const result = orderStreams(
-        await callStreams(
+        await options.api.streams(
           sourceId,
           episodeId,
           serverId,
           () => {
             if (current(operation)) setSlow(true)
           },
-          operation.controller.signal,
+          operation.signal,
         ),
       )
       if (
@@ -684,7 +597,7 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
       streamAttempts.delete(attemptKey)
       setHealth(sourceId, 'healthy', null)
       const identity: PlaybackIdentity = {
-        key: `${sourceId}:${episodeId}:${serverId}:${operation.generation}`,
+        key: `${sourceId}:${episodeId}:${serverId}:${operation.id}`,
         sourceId,
         episodeId,
         serverId,
@@ -743,20 +656,20 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
   const loadEpisodes = async (
     sourceId: string,
     anime: AniSourceAnime,
-    parent?: ReturnType<typeof begin>,
+    parent?: ScopeOperation,
   ) => {
     const operation = parent ?? begin()
     setLoading('episodes')
     setError(null)
 
     try {
-      const result = await callEpisodes(
+      const result = await options.api.episodes(
         sourceId,
         anime.id,
         () => {
           if (current(operation)) setSlow(true)
         },
-        operation.controller.signal,
+        operation.signal,
       )
       if (!current(operation) || selectedSource() !== sourceId) return
 
@@ -820,38 +733,35 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
 
     try {
       const titles = variants().map((variant) => variant.title)
-      const found = new Map<string, AniSourceAnime>()
-      let lastSearchFailure: unknown
-
-      for (const query of titles) {
-        try {
-          const response = await callSearch(
-            sourceId,
-            query,
-            1,
-            () => {
-              if (current(operation)) setSlow(true)
-            },
-            operation.controller.signal,
-          )
-          if (!current(operation)) return
-
-          for (const item of response.items) found.set(item.id, item)
-          if (matchFlow(titles, [...found.values()]).kind === 'auto') break
-        } catch (cause) {
-          if (cause instanceof AniSourceError && cause.kind === 'cancelled') return
-          lastSearchFailure = cause
+      const flow = await runSourceMatchFlow<AniSourceAnime>({
+        queries: titles,
+        search: async (query) =>
+          (
+            await options.api.search(
+              sourceId,
+              query,
+              1,
+              () => {
+                if (current(operation)) setSlow(true)
+              },
+              operation.signal,
+            )
+          ).items,
+        isCurrent: () => current(operation),
+        onQueryFailure: (cause, query) => {
+          if (cause instanceof AniSourceError && cause.kind === 'cancelled') return 'abort'
           console.warn(`Search for “${query}” failed.`, cause)
-        }
-      }
+          return 'continue'
+        },
+      })
+      if (!flow) return
 
-      if (!current(operation)) return
-      if (!found.size && lastSearchFailure) {
-        setFailure(lastSearchFailure, 'match', sourceId)
+      if (!flow.candidates.length && flow.lastFailure) {
+        setFailure(flow.lastFailure, 'match', sourceId)
         return
       }
 
-      const result = matchFlow(titles, [...found.values()])
+      const result = flow.result
       if (result.kind === 'empty') {
         const nextSource = sources().find((source) => !attemptedSources.has(source.id))
         if (nextSource) {
@@ -932,14 +842,14 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     setWatchError(null)
 
     try {
-      const response = await callSearch(
+      const response = await options.api.search(
         sourceId,
         trimmed,
         1,
         () => {
           if (current(operation)) setSlow(true)
         },
-        operation.controller.signal,
+        operation.signal,
       )
       if (!current(operation)) return
 
@@ -1003,11 +913,11 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     setSlow(false)
 
     try {
-      const sourceResult = await callSources(
+      const sourceResult = await options.api.sources(
         () => {
           if (current(operation)) setSlow(true)
         },
-        operation.controller.signal,
+        operation.signal,
       )
       if (!current(operation)) return
 
@@ -1143,11 +1053,8 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     })
 
   const dispose = () => {
-    disposed = true
-    generation += 1
+    scope.dispose()
     if (searchTimer) clearTimeout(searchTimer)
-    for (const controller of controllers) controller.abort()
-    controllers.clear()
   }
 
   return {

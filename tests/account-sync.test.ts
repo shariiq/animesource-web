@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { importAniListPublicList } from '../app/data/anilist/import'
-import { closeDb } from '../app/lib/persistence/indexedDb'
+import { closeDb, indexedDbStore } from '../app/lib/persistence/indexedDb'
 import { browserSearchHistory } from '../app/lib/persistence/searchHistory'
 import { mergeViewerSnapshots } from '../app/lib/persistence/snapshot'
+import { matchDoc } from '../app/lib/persistence/schema'
 import { browserViewerData, type ViewerExport } from '../app/lib/persistence/viewer'
 import { createViewerSync, getViewerSyncStatus } from '../app/lib/sync/viewerSync'
 
@@ -49,6 +50,38 @@ describe('viewer account data', () => {
     })
 
     expect(mergeViewerSnapshots(local, remote).favorites).toEqual([])
+  })
+
+  it('persists source-match timestamps so newer imports win', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(100)
+    try {
+      await browserViewerData.saveMatch(42, { sourceId: 'old-source', animeId: 'old', title: 'Old' })
+      clock.mockReturnValue(200)
+      await browserViewerData.saveMatch(42, { sourceId: 'new-source', animeId: 'new', title: 'New' })
+
+      await expect(browserViewerData.exportViewerData()).resolves.toMatchObject({
+        matches: [{ anilistId: 42, match: { animeId: 'new' }, updatedAt: 200 }],
+      })
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  it('keeps reading legacy v1 source matches with a zero timestamp', async () => {
+    await indexedDbStore.write('match:42', 1, { sourceId: 'legacy-source', animeId: 'legacy', title: 'Legacy' }, matchDoc)
+
+    await expect(browserViewerData.getSavedMatch(42)).resolves.toMatchObject({ animeId: 'legacy' })
+    await expect(browserViewerData.exportViewerData()).resolves.toMatchObject({
+      matches: [{ anilistId: 42, match: { animeId: 'legacy' }, updatedAt: 0 }],
+    })
+  })
+
+  it('validates a replacement before changing the current viewer snapshot', async () => {
+    await browserViewerData.setViewerProfile({ displayName: 'Kept' })
+    const invalid = { ...snapshot(), favorites: [{ id: 'not-a-number' }] }
+
+    await expect(browserViewerData.importViewerData(invalid, 'replace')).rejects.toThrow()
+    await expect(browserViewerData.getViewerProfile()).resolves.toMatchObject({ displayName: 'Kept' })
   })
 })
 

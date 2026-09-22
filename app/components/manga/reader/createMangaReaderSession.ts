@@ -375,6 +375,25 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     }, 450)
   }
 
+  function persistReaderSettings(): void {
+    const chapter = selectedChapter()
+    const stored = savedRecord()
+    const record = chapter
+      ? recordBase(chapter, currentPage(), stored?.chapterId === chapter.id ? stored.completed : false)
+      : stored
+        ? {
+            ...stored,
+            layout: layout(),
+            direction: direction(),
+            fit: fit(),
+            background: background(),
+            gap: gap(),
+            updatedAt: Date.now(),
+          }
+        : null
+    void persistRecord(record)
+  }
+
   function resolveRouteChapterId(record: MangaReaderRecord | null): string | null {
     const routeNumber = options.routeChapterNumber()
     if (routeNumber === CONTINUE_CHAPTER_TOKEN && record) return record.chapterId
@@ -640,27 +659,27 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
 
   function setLayoutPreference(nextLayout: MangaReaderLayout): void {
     setLayout(nextLayout)
-    scheduleProgressSave()
+    persistReaderSettings()
   }
 
   function setDirectionPreference(nextDirection: MangaReaderDirection): void {
     setDirection(nextDirection)
-    scheduleProgressSave()
+    persistReaderSettings()
   }
 
   function setFitPreference(nextFit: MangaReaderFit): void {
     setFit(nextFit)
-    scheduleProgressSave()
+    persistReaderSettings()
   }
 
   function setBackgroundPreference(nextBackground: MangaReaderBackground): void {
     setBackground(nextBackground)
-    scheduleProgressSave()
+    persistReaderSettings()
   }
 
   function setGapPreference(nextGap: MangaReaderGap): void {
     setGap(nextGap)
-    scheduleProgressSave()
+    persistReaderSettings()
   }
 
   async function markComplete(): Promise<void> {

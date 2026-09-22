@@ -5,6 +5,7 @@ import { formatCompactNumber, formatEnum, formatScore, titleOf } from '../../lib
 import { catalogCopy, catalogCountLabel, catalogFormat, catalogStatus, type CatalogMode } from '../../lib/catalog'
 import { SectionHeading } from '../ui/SectionHeading'
 import { CatalogLink } from './CatalogLink'
+import { makeBrowseSearch } from '../../lib/browse'
 
 const SLIDE_INTERVAL_MS = 7000
 const MAX_SLIDES = 6
@@ -160,7 +161,10 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
                 </Show>
                 <Show when={active()} keyed>
                   {(media) => (
-                    <Show when={mode() === 'ANIME'}>
+                    <Show
+                      when={mode() === 'ANIME'}
+                      fallback={<Link to="/explore" search={makeBrowseSearch({ sort: 'TRENDING_DESC' })} class="paper-control inline-flex min-h-[48px] w-full items-center justify-center rounded-[10px] border-white/28 bg-white/10 px-5 text-[11px] font-bold normal-case tracking-normal text-white backdrop-blur-[12px] transition-[background,border-color,transform] duration-200 hover:-translate-y-[2px] hover:border-white/50 hover:bg-white/20 sm:w-auto">{copy().heroSecondary}</Link>}
+                    >
                       <CatalogLink media={media} mode={mode()} class="paper-control inline-flex min-h-[48px] w-full items-center justify-center rounded-[10px] border-white/28 bg-white/10 px-5 text-[11px] font-bold normal-case tracking-normal text-white backdrop-blur-[12px] transition-[background,border-color,transform] duration-200 hover:-translate-y-[2px] hover:border-white/50 hover:bg-white/20 sm:w-auto">{copy().heroSecondary}</CatalogLink>
                     </Show>
                   )}

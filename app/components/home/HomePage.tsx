@@ -31,7 +31,7 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
   const nextSeason = nextSeasonOf()
   const [collectionFilter, setCollectionFilter] = createSignal<CollectionFilter>('all')
   const collectionItems = createMemo<AniListMedia[]>(() => {
-    const data = home.data
+    const data = home.isSuccess && !home.isFetching ? home.data : undefined
     if (!data) return []
     if (collectionFilter() === 'airing') return data.season.media.filter((anime) => anime.status === 'RELEASING')
     if (collectionFilter() === 'rated') return data.topRated.media
@@ -40,9 +40,18 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
 
   return (
     <PageShell>
-      <Show when={!home.isPending} fallback={<HomeLoading mode={mode()} />}>
-        <Show when={!home.isError} fallback={<State title="Couldn't reach AniList" copy="Discovery is temporarily unavailable." action={() => void home.refetch()} />}>
-          <Show when={home.data} fallback={<State title={copy().unavailable} />} keyed>
+      <Show
+        when={home.isSuccess && !home.isFetching ? home.data : undefined}
+        fallback={
+          <Show
+            when={!home.isError}
+            fallback={<State title="Couldn't reach AniList" copy="Discovery is temporarily unavailable." action={() => void home.refetch()} />}
+          >
+            <HomeLoading mode={mode()} />
+          </Show>
+        }
+        keyed
+      >
             {(data) => <>
               <HeroCarousel items={data.trending.media} mode={mode()} />
               <Rail
@@ -65,29 +74,39 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
                   <div class="grid grid-cols-1 divide-y divide-line md:grid-cols-2 md:[&>*:nth-child(odd)]:border-r md:[&>*:nth-child(odd)]:border-line">
                     <For each={collectionItems().slice(0, 12)}>{(anime, index) => <AnimeCard anime={anime} mode={mode()} rank={index() + 1} />}</For>
                   </div>
-                  <Show when={mode() === 'ANIME'}>
-                    <div class="border-t border-line px-6 py-4 text-right font-mono text-[9px] uppercase tracking-[.1em]">
-                      <Link to="/explore" search={makeBrowseSearch({ sort: collectionFilter() === 'rated' ? 'SCORE_DESC' : collectionFilter() === 'airing' ? 'POPULARITY_DESC' : 'TRENDING_DESC', season: collectionFilter() === 'airing' ? season.season : undefined, year: collectionFilter() === 'airing' ? season.year : undefined })}>View all anime →</Link>
-                    </div>
-                  </Show>
+                  <div class="border-t border-line px-6 py-4 text-right font-mono text-[9px] uppercase tracking-[.1em]">
+                    <Link
+                      to="/explore"
+                      search={makeBrowseSearch(
+                        mode() === 'MANGA'
+                          ? {
+                              sort: collectionFilter() === 'rated' ? 'SCORE_DESC' : collectionFilter() === 'airing' ? 'UPDATED_AT_DESC' : 'TRENDING_DESC',
+                              status: collectionFilter() === 'airing' ? 'RELEASING' : undefined,
+                            }
+                          : {
+                              sort: collectionFilter() === 'rated' ? 'SCORE_DESC' : collectionFilter() === 'airing' ? 'POPULARITY_DESC' : 'TRENDING_DESC',
+                              season: collectionFilter() === 'airing' ? season.season : undefined,
+                              year: collectionFilter() === 'airing' ? season.year : undefined,
+                            },
+                      )}
+                    >View all {copy().plural} →</Link>
+                  </div>
                 </div>
               </section>
               <section class="home-deferred-section section" aria-labelledby="season-heading">
                 <SectionHeading id="season-heading" title={copy().seasonalTitle} description={copy().seasonalDescription} />
                 <div class="grid gap-5 lg:grid-cols-3">
-                  <AnimeColumn mode={mode()} title={copy().columnTrending} items={data.trending.media} search={mode() === 'ANIME' ? makeBrowseSearch({ sort: 'TRENDING_DESC' }) : undefined} />
-                  <AnimeColumn mode={mode()} title={copy().columnSecond} items={data.season.media} search={mode() === 'ANIME' ? makeBrowseSearch({ sort: 'POPULARITY_DESC', season: season.season, year: season.year }) : undefined} />
-                  <AnimeColumn mode={mode()} title={copy().columnThird} items={data.allTime.media} search={mode() === 'ANIME' ? makeBrowseSearch({ sort: 'POPULARITY_DESC' }) : undefined} />
+                  <AnimeColumn mode={mode()} title={copy().columnTrending} items={data.trending.media} search={makeBrowseSearch({ sort: 'TRENDING_DESC' })} />
+                  <AnimeColumn mode={mode()} title={copy().columnSecond} items={data.season.media} search={makeBrowseSearch(mode() === 'ANIME' ? { sort: 'POPULARITY_DESC', season: season.season, year: season.year } : { sort: 'UPDATED_AT_DESC' })} />
+                  <AnimeColumn mode={mode()} title={copy().columnThird} items={data.allTime.media} search={makeBrowseSearch({ sort: 'POPULARITY_DESC' })} />
                 </div>
-                <div class="mt-5"><AnimeColumn mode={mode()} title={copy().columnFourth} items={data.upcoming.media} search={mode() === 'ANIME' ? makeBrowseSearch({ sort: 'POPULARITY_DESC', status: 'NOT_YET_RELEASED', season: nextSeason.season, year: nextSeason.year }) : undefined} /></div>
+                <div class="mt-5"><AnimeColumn mode={mode()} title={copy().columnFourth} items={data.upcoming.media} search={makeBrowseSearch(mode() === 'ANIME' ? { sort: 'POPULARITY_DESC', status: 'NOT_YET_RELEASED', season: nextSeason.season, year: nextSeason.year } : { sort: 'START_DATE_DESC', status: 'NOT_YET_RELEASED' })} /></div>
               </section>
               <section class="home-deferred-section section" aria-labelledby="genre-heading">
                 <SectionHeading id="genre-heading" title={copy().genreLabel} description={copy().genreDescription} />
                 <GenreNav mode={mode()} />
               </section>
             </>}
-          </Show>
-        </Show>
       </Show>
     </PageShell>
   )

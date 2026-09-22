@@ -36,7 +36,7 @@ export const catalogCopy = {
     singular: 'manga',
     plural: 'manga',
     heroDescription: 'Trending titles and recently updated chapters.',
-    heroPrimary: 'Open manga details',
+    heroPrimary: 'View details',
     heroSecondary: 'Browse manga',
     featuredTitle: 'Featured Manga',
     featuredDescription: 'Trending titles / chapter counts / title details',

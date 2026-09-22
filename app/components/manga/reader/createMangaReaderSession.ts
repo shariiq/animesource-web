@@ -440,9 +440,9 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
         ? validPageIndex(record.pageIndex, normalized.length)
         : 0
       setCurrentPage(resumeIndex)
+      setStage('pages-ready')
       if (replaceRoute) await options.navigateToChapter(String(selectedChapter()!.number), source, true)
       await persistRecord(recordBase(selectedChapter()!, resumeIndex, false))
-      setStage('pages-ready')
       void prefetchNextChapter()
     } catch (caught) {
       if (!isCurrent(request.id, request.signal)) return

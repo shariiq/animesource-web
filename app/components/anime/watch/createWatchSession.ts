@@ -785,8 +785,9 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     }
   }
 
-  const runMatch = async (sourceId: string, saved?: MatchItem) => {
+  const runMatch = async (sourceId: string, saved?: MatchItem, attemptedSources = new Set<string>()) => {
     const operation = begin()
+    attemptedSources.add(sourceId)
     setSelectedSource(sourceId)
 
     try {
@@ -851,6 +852,13 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
       }
 
       const result = matchFlow(titles, [...found.values()])
+      if (result.kind === 'empty') {
+        const nextSource = sources().find((source) => !attemptedSources.has(source.id))
+        if (nextSource) {
+          await runMatch(nextSource.id, undefined, attemptedSources)
+          return
+        }
+      }
       setMatch(result)
       if (result.kind === 'auto') {
         const candidate = result.match.candidate

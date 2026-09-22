@@ -310,7 +310,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       case 'sources-loading': return slow() ? 'Waking manga sources…' : 'Loading manga sources…'
       case 'matching': return slow() ? 'Waking source · finding this manga…' : 'Finding this manga on the selected source…'
       case 'match-picker': return 'Choose the source record that matches this manga.'
-      case 'match-empty': return 'This manga could not be matched on the selected source.'
+      case 'match-empty': return 'No matching manga was found.'
       case 'chapters-loading': return slow() ? 'Waking source · loading chapters…' : 'Loading the complete chapter list…'
       case 'ready': return `${chapters().length} chapters ready · choose a chapter to begin.`
       case 'pages-loading': return slow() ? 'Waking source · loading pages…' : 'Loading chapter pages…'
@@ -487,8 +487,14 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     await loadChapters(record)
   }
 
-  async function searchSource(sourceId: string, queryTitles: readonly string[], record: MangaReaderRecord | null): Promise<void> {
+  async function searchSource(
+    sourceId: string,
+    queryTitles: readonly string[],
+    record: MangaReaderRecord | null,
+    attemptedSources?: Set<string>,
+  ): Promise<void> {
     const request = beginRequest()
+    attemptedSources?.add(sourceId)
     setStage('matching')
     setMatchedManga(null)
     setPickerCandidates([])
@@ -507,8 +513,15 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       if (!isCurrent(request.id, request.signal)) return
       const ranked = matchFlow(queryTitles, [...found.values()])
       if (ranked.kind === 'empty') {
+        const nextSource = attemptedSources
+          ? sources().find((source) => !attemptedSources.has(source.id))
+          : undefined
+        if (nextSource) {
+          await initializeSource(nextSource.id, true, attemptedSources)
+          return
+        }
         setStage('match-empty')
-        setFailure({ kind: 'unavailable', operation: 'match', message: 'No source manga matched this AniList title.', retryable: true })
+        setError(null)
         return
       }
       setPickerCandidates(ranked.ranked)
@@ -519,7 +532,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     }
   }
 
-  async function initializeSource(sourceId: string, forceSearch: boolean): Promise<void> {
+  async function initializeSource(sourceId: string, forceSearch: boolean, attemptedSources = new Set<string>()): Promise<void> {
     const record = savedRecord()
     clearPageCache()
     setSelectedSource(sourceId)
@@ -543,7 +556,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       return
     }
     const variants = titleVariants(options.manga).map((variant) => variant.title)
-    await searchSource(sourceId, variants.length > 0 ? variants : [titleOf(options.manga)], record)
+    await searchSource(sourceId, variants.length > 0 ? variants : [titleOf(options.manga)], record, attemptedSources)
   }
 
   async function initialize(): Promise<void> {

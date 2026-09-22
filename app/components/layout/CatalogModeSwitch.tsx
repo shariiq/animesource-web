@@ -15,6 +15,7 @@ const CatalogModeContext = createContext<CatalogModeState>()
 /** Internal catalog state shared by the shell and the home page. */
 export function CatalogModeProvider(props: { children: JSX.Element }) {
   const [mode, setMode] = createSignal<CatalogMode>('ANIME')
+  let userSelectedMode: CatalogMode | null = null
 
   const writePreference = async (preferences: ViewerPreferences, next: CatalogMode) => {
     await viewerData.setViewerPreferences({
@@ -30,7 +31,9 @@ export function CatalogModeProvider(props: { children: JSX.Element }) {
     const params = new URLSearchParams(window.location.search)
     const legacyMode = params.get('mode')
     void viewerData.getViewerPreferences().then(async (preferences) => {
-      const next = legacyMode === 'MANGA' || legacyMode === 'ANIME' ? legacyMode : preferences.catalogMode
+      const next = legacyMode === 'MANGA' || legacyMode === 'ANIME'
+        ? legacyMode
+        : userSelectedMode ?? preferences.catalogMode
       setMode(next)
       if (legacyMode && legacyMode !== preferences.catalogMode) await writePreference(preferences, next)
       if (legacyMode) {
@@ -49,6 +52,7 @@ export function CatalogModeProvider(props: { children: JSX.Element }) {
 
   const changeMode = async (next: CatalogMode) => {
     if (next === mode()) return
+    userSelectedMode = next
     setMode(next)
     try {
       await writePreference(await viewerData.getViewerPreferences(), next)

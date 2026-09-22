@@ -5,7 +5,6 @@ import { formatCompactNumber, formatEnum, formatScore, titleOf } from '../../lib
 import { catalogCopy, catalogCountLabel, catalogFormat, catalogStatus, type CatalogMode } from '../../lib/catalog'
 import { SectionHeading } from '../ui/SectionHeading'
 import { CatalogLink } from './CatalogLink'
-import { makeBrowseSearch } from '../../lib/browse'
 
 const SLIDE_INTERVAL_MS = 7000
 const MAX_SLIDES = 6
@@ -147,7 +146,7 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
                   {(media) => (
                     <Show
                       when={mode() === 'ANIME'}
-                      fallback={<CatalogLink media={media} mode={mode()} class="inline-flex min-h-[48px] w-full items-center justify-center gap-[10px] rounded-[11px] border border-white/60 bg-white px-[26px] font-mono text-[11px] font-bold normal-case tracking-normal text-ink shadow-[0_14px_34px_rgb(0_0_0_/_0.34),inset_0_1px_rgb(255_255_255_/_0.9)] transition-[background,box-shadow,transform] duration-200 hover:-translate-y-[2px] hover:shadow-[0_22px_44px_rgb(0_0_0_/_0.42),inset_0_1px_white] sm:w-auto">{copy().heroPrimary}</CatalogLink>}
+                      fallback={<Link preload={false} to="/manga/$mangaId/read/$chapterNumber" params={{ mangaId: String(media.id), chapterNumber: 'start' }} class="inline-flex min-h-[48px] w-full items-center justify-center gap-[10px] rounded-[11px] border border-white/60 bg-white px-[26px] font-mono text-[11px] font-bold normal-case tracking-normal text-ink shadow-[0_14px_34px_rgb(0_0_0_/_0.34),inset_0_1px_rgb(255_255_255_/_0.9)] transition-[background,box-shadow,transform] duration-200 hover:-translate-y-[2px] hover:shadow-[0_22px_44px_rgb(0_0_0_/_0.42),inset_0_1px_white] sm:w-auto">{copy().heroPrimary}</Link>}
                     >
                       <Link
                         class="inline-flex min-h-[48px] w-full items-center justify-center gap-[10px] rounded-[11px] border border-white/60 bg-white px-[26px] font-mono text-[11px] font-bold normal-case tracking-normal text-ink shadow-[0_14px_34px_rgb(0_0_0_/_0.34),inset_0_1px_rgb(255_255_255_/_0.9)] transition-[background,box-shadow,transform] duration-200 hover:-translate-y-[2px] hover:shadow-[0_22px_44px_rgb(0_0_0_/_0.42),inset_0_1px_white] sm:w-auto"
@@ -163,7 +162,7 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
                   {(media) => (
                     <Show
                       when={mode() === 'ANIME'}
-                      fallback={<Link to="/explore" search={makeBrowseSearch({ sort: 'TRENDING_DESC' })} class="paper-control inline-flex min-h-[48px] w-full items-center justify-center rounded-[10px] border-white/28 bg-white/10 px-5 text-[11px] font-bold normal-case tracking-normal text-white backdrop-blur-[12px] transition-[background,border-color,transform] duration-200 hover:-translate-y-[2px] hover:border-white/50 hover:bg-white/20 sm:w-auto">{copy().heroSecondary}</Link>}
+                      fallback={<CatalogLink media={media} mode={mode()} class="paper-control inline-flex min-h-[48px] w-full items-center justify-center rounded-[10px] border-white/28 bg-white/10 px-5 text-[11px] font-bold normal-case tracking-normal text-white backdrop-blur-[12px] transition-[background,border-color,transform] duration-200 hover:-translate-y-[2px] hover:border-white/50 hover:bg-white/20 sm:w-auto">{copy().heroSecondary}</CatalogLink>}
                     >
                       <CatalogLink media={media} mode={mode()} class="paper-control inline-flex min-h-[48px] w-full items-center justify-center rounded-[10px] border-white/28 bg-white/10 px-5 text-[11px] font-bold normal-case tracking-normal text-white backdrop-blur-[12px] transition-[background,border-color,transform] duration-200 hover:-translate-y-[2px] hover:border-white/50 hover:bg-white/20 sm:w-auto">{copy().heroSecondary}</CatalogLink>
                     </Show>

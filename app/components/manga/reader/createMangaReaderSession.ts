@@ -239,6 +239,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   let controller: AbortController | null = null
   let prefetchController: AbortController | null = null
   let saveTimer: ReturnType<typeof setTimeout> | null = null
+  let persistenceWrite: Promise<void> = Promise.resolve()
   let lastFailedOperation: MangaReaderError['operation'] | null = null
   /** Chapter pages already fetched (or prefetched) this session, keyed by chapter id. */
   const pageCache = new Map<string, ChapterPage[]>()
@@ -356,13 +357,17 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
 
   async function persistRecord(record: MangaReaderRecord | null): Promise<void> {
     if (!record) return
-    try {
-      await persistence.save(record)
-      setSavedRecord(record)
-      setPersistenceError(null)
-    } catch {
-      setPersistenceError('Reading progress could not be saved on this device.')
-    }
+    const write = persistenceWrite.then(async () => {
+      try {
+        await persistence.save(record)
+        setSavedRecord(record)
+        setPersistenceError(null)
+      } catch {
+        setPersistenceError('Reading progress could not be saved on this device.')
+      }
+    })
+    persistenceWrite = write
+    await write
   }
 
   function scheduleProgressSave(): void {

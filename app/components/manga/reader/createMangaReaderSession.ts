@@ -239,6 +239,8 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   let controller: AbortController | null = null
   let prefetchController: AbortController | null = null
   let saveTimer: ReturnType<typeof setTimeout> | null = null
+  let persistenceWrite: Promise<void> = Promise.resolve()
+  let settingsSaveRevision = 0
   let lastFailedOperation: MangaReaderError['operation'] | null = null
   /** Chapter pages already fetched (or prefetched) this session, keyed by chapter id. */
   const pageCache = new Map<string, ChapterPage[]>()
@@ -308,7 +310,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       case 'sources-loading': return slow() ? 'Waking manga sources…' : 'Loading manga sources…'
       case 'matching': return slow() ? 'Waking source · finding this manga…' : 'Finding this manga on the selected source…'
       case 'match-picker': return 'Choose the source record that matches this manga.'
-      case 'match-empty': return 'This manga could not be matched on the selected source.'
+      case 'match-empty': return 'No matching manga was found.'
       case 'chapters-loading': return slow() ? 'Waking source · loading chapters…' : 'Loading the complete chapter list…'
       case 'ready': return `${chapters().length} chapters ready · choose a chapter to begin.`
       case 'pages-loading': return slow() ? 'Waking source · loading pages…' : 'Loading chapter pages…'
@@ -356,13 +358,17 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
 
   async function persistRecord(record: MangaReaderRecord | null): Promise<void> {
     if (!record) return
-    try {
-      await persistence.save(record)
-      setSavedRecord(record)
-      setPersistenceError(null)
-    } catch {
-      setPersistenceError('Reading progress could not be saved on this device.')
-    }
+    const write = persistenceWrite.then(async () => {
+      try {
+        await persistence.save(record)
+        setSavedRecord(record)
+        setPersistenceError(null)
+      } catch {
+        setPersistenceError('Reading progress could not be saved on this device.')
+      }
+    })
+    persistenceWrite = write
+    await write
   }
 
   function scheduleProgressSave(): void {
@@ -373,6 +379,33 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       saveTimer = null
       void persistRecord(recordBase(chapter, currentPage(), false))
     }, 450)
+  }
+
+  function persistReaderSettings(): void {
+    const chapter = selectedChapter()
+    const stored = savedRecord()
+    const record = chapter
+      ? recordBase(chapter, currentPage(), stored?.chapterId === chapter.id ? stored.completed : false)
+      : stored
+        ? {
+            ...stored,
+            layout: layout(),
+            direction: direction(),
+            fit: fit(),
+            background: background(),
+            gap: gap(),
+            updatedAt: Date.now(),
+        }
+        : null
+    if (!record) return
+    const revision = ++settingsSaveRevision
+    void persistence.save(record).then(() => {
+      if (revision !== settingsSaveRevision) return
+      setSavedRecord(record)
+      setPersistenceError(null)
+    }).catch(() => {
+      if (revision === settingsSaveRevision) setPersistenceError('Reading progress could not be saved on this device.')
+    })
   }
 
   function resolveRouteChapterId(record: MangaReaderRecord | null): string | null {
@@ -454,8 +487,14 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     await loadChapters(record)
   }
 
-  async function searchSource(sourceId: string, queryTitles: readonly string[], record: MangaReaderRecord | null): Promise<void> {
+  async function searchSource(
+    sourceId: string,
+    queryTitles: readonly string[],
+    record: MangaReaderRecord | null,
+    attemptedSources?: Set<string>,
+  ): Promise<void> {
     const request = beginRequest()
+    attemptedSources?.add(sourceId)
     setStage('matching')
     setMatchedManga(null)
     setPickerCandidates([])
@@ -474,8 +513,15 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       if (!isCurrent(request.id, request.signal)) return
       const ranked = matchFlow(queryTitles, [...found.values()])
       if (ranked.kind === 'empty') {
+        const nextSource = attemptedSources
+          ? sources().find((source) => !attemptedSources.has(source.id))
+          : undefined
+        if (nextSource) {
+          await initializeSource(nextSource.id, true, attemptedSources)
+          return
+        }
         setStage('match-empty')
-        setFailure({ kind: 'unavailable', operation: 'match', message: 'No source manga matched this AniList title.', retryable: true })
+        setError(null)
         return
       }
       setPickerCandidates(ranked.ranked)
@@ -486,7 +532,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     }
   }
 
-  async function initializeSource(sourceId: string, forceSearch: boolean): Promise<void> {
+  async function initializeSource(sourceId: string, forceSearch: boolean, attemptedSources = new Set<string>()): Promise<void> {
     const record = savedRecord()
     clearPageCache()
     setSelectedSource(sourceId)
@@ -510,7 +556,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       return
     }
     const variants = titleVariants(options.manga).map((variant) => variant.title)
-    await searchSource(sourceId, variants.length > 0 ? variants : [titleOf(options.manga)], record)
+    await searchSource(sourceId, variants.length > 0 ? variants : [titleOf(options.manga)], record, attemptedSources)
   }
 
   async function initialize(): Promise<void> {
@@ -640,27 +686,27 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
 
   function setLayoutPreference(nextLayout: MangaReaderLayout): void {
     setLayout(nextLayout)
-    scheduleProgressSave()
+    persistReaderSettings()
   }
 
   function setDirectionPreference(nextDirection: MangaReaderDirection): void {
     setDirection(nextDirection)
-    scheduleProgressSave()
+    persistReaderSettings()
   }
 
   function setFitPreference(nextFit: MangaReaderFit): void {
     setFit(nextFit)
-    scheduleProgressSave()
+    persistReaderSettings()
   }
 
   function setBackgroundPreference(nextBackground: MangaReaderBackground): void {
     setBackground(nextBackground)
-    scheduleProgressSave()
+    persistReaderSettings()
   }
 
   function setGapPreference(nextGap: MangaReaderGap): void {
     setGap(nextGap)
-    scheduleProgressSave()
+    persistReaderSettings()
   }
 
   async function markComplete(): Promise<void> {

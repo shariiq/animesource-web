@@ -33,6 +33,32 @@ test("explore cards keep the detail-only destination", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Watch now" })).not.toBeVisible();
 });
 
+test("manga home keeps a loading surface during a mobile catalog switch", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("http://127.0.0.1:3101/anilist", async (route) => {
+    if ((route.request().postData() ?? "").includes("type:MANGA")) {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    }
+    await route.continue();
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "ANIME", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "MANGA", exact: true }).click();
+  await expect(page.getByText("Loading manga discovery…", { exact: true })).toBeVisible({ timeout: 500 });
+  await expect(page.getByRole("heading", { name: "Trending Manga" })).toBeVisible();
+});
+
+test("anime and manga home states keep matching discovery actions", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "View all anime →", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View all →", exact: true })).toHaveCount(4);
+
+  await page.getByRole("button", { name: "MANGA", exact: true }).click();
+  await expect(page.getByRole("link", { name: "View all manga →", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View all →", exact: true })).toHaveCount(4);
+});
+
 test("manga detail uses its publication layout and shelf controls", async ({ page }) => {
   await page.goto("/manga/1");
   await expect(page.getByRole("heading", { name: "Manga Details" })).toBeVisible();
@@ -93,6 +119,27 @@ test("continuous reader keeps both progress controls aligned with scrolling", as
   await expect(scrubber).toHaveValue("1");
   await expect(page.locator(".manga-reader-page-label")).toHaveText("Page 2 / 2");
   await expect(page.locator(".manga-reader-hairline i")).toHaveAttribute("style", /width: 100%/);
+});
+
+test("manga reader restores settings after an immediate reload", async ({ page }) => {
+  await page.goto("/manga/1/read/1?source=test");
+  await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Reader settings" });
+  await settings.getByRole("button", { name: "Paged", exact: true }).click();
+  await settings.getByRole("button", { name: "Left to right", exact: true }).click();
+  await settings.getByRole("button", { name: "Original", exact: true }).click();
+  await settings.getByRole("button", { name: "Paper", exact: true }).click();
+  await settings.getByRole("button", { name: "Roomy", exact: true }).click();
+
+  await page.reload();
+  await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
+  await page.getByRole("button", { name: "Settings" }).click();
+  const restored = page.getByRole("dialog", { name: "Reader settings" });
+  for (const label of ["Paged", "Left to right", "Original", "Paper", "Roomy"]) {
+    await expect(restored.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
+  }
 });
 
 test("Explore stays active for filtered Explore routes", async ({ page }) => {

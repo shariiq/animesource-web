@@ -242,20 +242,52 @@ describe('Watch session', () => {
     expect(persistence.saveMatch).not.toHaveBeenCalled()
   })
 
-  it('opens the manual match picker when automatic searches return no candidates', async () => {
+  it('tries the next source when every title variant is empty', async () => {
+    const search = vi.fn(async (sourceId: string) => ({
+      items: sourceId === 'source-b' ? [candidate()] : [],
+      page: 1,
+      has_next: false,
+      total_returned: sourceId === 'source-b' ? 1 : 0,
+    }))
     const { session } = sessionParts({
       api: {
-        search: vi.fn(async () => ({
-          items: [],
-          page: 1,
-          has_next: false,
-          total_returned: 0,
+        sources: vi.fn(async () => ({
+          sources: [
+            { id: 'source-a', name: 'Source A', base_url: '' },
+            { id: 'source-b', name: 'Source B', base_url: '' },
+          ],
+          count: 2,
         })),
+        search,
       },
     })
 
     await session.initialize()
 
+    expect(search).toHaveBeenCalledWith('source-a', 'Signal', 1, expect.any(Function))
+    expect(search).toHaveBeenCalledWith('source-b', 'Signal', 1, expect.any(Function))
+    expect(session.selectedSource()).toBe('source-b')
+    expect(session.matchedAnime()?.id).toBe('signal-42')
+  })
+
+  it('opens the manual match picker only after every source is empty', async () => {
+    const { session, api } = sessionParts({
+      api: {
+        sources: vi.fn(async () => ({
+          sources: [
+            { id: 'source-a', name: 'Source A', base_url: '' },
+            { id: 'source-b', name: 'Source B', base_url: '' },
+          ],
+          count: 2,
+        })),
+        search: vi.fn(async () => ({ items: [], page: 1, has_next: false, total_returned: 0 })),
+      },
+    })
+
+    await session.initialize()
+
+    expect(api.search).toHaveBeenCalledTimes(4)
+    expect(session.selectedSource()).toBe('source-b')
     expect(session.match()).toEqual({ kind: 'empty', ranked: [] })
     expect(session.error()).toBeNull()
     expect(session.pickerCandidates()).toEqual([])

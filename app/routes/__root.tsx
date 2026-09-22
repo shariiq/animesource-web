@@ -47,7 +47,7 @@ function RootLayout() {
           <Header />
           <main id="main" class="flex-1">
             <ErrorBoundary>
-              <Suspense>
+              <Suspense fallback={<section class="editorial-page grid min-h-[60vh] place-items-center" aria-busy="true"><p class="mono-signal">Loading discovery…</p></section>}>
                 <Outlet />
               </Suspense>
             </ErrorBoundary>

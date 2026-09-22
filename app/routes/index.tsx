@@ -1,5 +1,7 @@
 import { createFileRoute } from '@tanstack/solid-router'
+import { Show } from 'solid-js'
 import { HomePage } from '../components/home/HomePage'
+import { useCatalogMode } from '../components/layout/CatalogModeSwitch'
 import { genresQuery, homeQuery } from '../data/options'
 
 export const Route = createFileRoute('/')({
@@ -39,5 +41,6 @@ export const Route = createFileRoute('/')({
 })
 
 function HomeRoute() {
-  return <HomePage />
+  const catalogMode = useCatalogMode()
+  return <Show when={catalogMode.mode()} keyed>{(mode) => <HomePage mode={mode} />}</Show>
 }

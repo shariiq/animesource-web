@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { chapterIdForNumber, chapterIdForRoute, chapterNeighbors, normalizeChapters, normalizePages, resolveStartChapterId } from '../app/components/manga/reader/createMangaReaderSession'
-import type { ChapterPage, MangaChapter } from '../app/data/anisource/schema'
+import { chapterIdForNumber, chapterIdForRoute, chapterNeighbors, createMangaReaderSession, normalizeChapters, normalizePages, resolveStartChapterId } from '../app/components/manga/reader/createMangaReaderSession'
+import { detailShape } from '../app/data/anilist/schema'
+import type { AniSourceManga, ChapterPage, MangaChapter } from '../app/data/anisource/schema'
 import type { MangaReaderRecord } from '../app/lib/persistence/mangaReader'
 
 const chapter = (id: string, number: number): MangaChapter => ({
@@ -13,6 +14,56 @@ const chapter = (id: string, number: number): MangaChapter => ({
   language: 'en',
   released_at: null,
 })
+
+const manga = detailShape.parse({
+  id: 42,
+  siteUrl: null,
+  title: { english: 'Signal', romaji: 'Signal', native: null },
+  coverImage: { extraLarge: null, large: '', medium: null, color: null },
+  bannerImage: null,
+  averageScore: null,
+  meanScore: null,
+  popularity: null,
+  favourites: null,
+  trending: null,
+  format: 'MANGA',
+  status: 'RELEASING',
+  episodes: null,
+  season: null,
+  seasonYear: null,
+  genres: [],
+  countryOfOrigin: 'JP',
+  isAdult: false,
+  nextAiringEpisode: null,
+  description: null,
+  duration: null,
+  startDate: null,
+  endDate: null,
+  source: null,
+  synonyms: [],
+  studios: null,
+  trailer: null,
+  externalLinks: null,
+  rankings: null,
+  tags: null,
+  staff: null,
+  characters: null,
+  relations: null,
+  recommendations: null,
+})
+
+const mangaCandidate: AniSourceManga = {
+  id: 'signal-manga',
+  title: 'Signal',
+  url: '',
+  thumbnail: '',
+  description: '',
+  genres: [],
+  authors: [],
+  artists: [],
+  alternative_titles: [],
+  status: 'unknown',
+}
 
 describe('manga reader ordering', () => {
   it('sorts chapters by chapter number while preserving ties', () => {
@@ -78,5 +129,60 @@ describe('manga reader ordering', () => {
     const chapters = [chapter('c1', 1), chapter('c2', 2), chapter('c3', 3)]
     expect(chapterNeighbors(chapters, 'c2')).toMatchObject({ previous: { id: 'c1' }, next: { id: 'c3' } })
     expect(chapterNeighbors(chapters, 'missing')).toEqual({ previous: null, next: null })
+  })
+})
+
+describe('manga reader source matching', () => {
+  function sessionWithResults(results: (sourceId: string) => AniSourceManga[]) {
+    const searches: string[] = []
+    const session = createMangaReaderSession({
+      manga,
+      routeChapterNumber: () => 'start',
+      sourceSearchParam: () => undefined,
+      navigateToChapter: async () => undefined,
+      persistence: {
+        get: async () => null,
+        save: async () => undefined,
+        remove: async () => undefined,
+      },
+      api: {
+        mangaSources: async () => ({
+          sources: [
+            { id: 'source-a', name: 'Source A', base_url: '' },
+            { id: 'source-b', name: 'Source B', base_url: '' },
+          ],
+          count: 2,
+        }),
+        mangaSearch: async (sourceId) => {
+          searches.push(sourceId)
+          const items = results(sourceId)
+          return { items, page: 1, has_next: false, total_returned: items.length }
+        },
+        mangaChapters: async () => [chapter('chapter-1', 1)],
+        mangaPages: async () => [{ index: 0, url: 'page-1', page_url: '' }],
+      },
+    })
+    return { searches, session }
+  }
+
+  it('tries the next source before opening the picker', async () => {
+    const { searches, session } = sessionWithResults((sourceId) => sourceId === 'source-b' ? [mangaCandidate] : [])
+
+    await session.initialize()
+
+    expect(searches).toEqual(['source-a', 'source-b'])
+    expect(session.selectedSource()).toBe('source-b')
+    expect(session.matchedManga()?.id).toBe('signal-manga')
+  })
+
+  it('opens the empty picker only after every source is exhausted', async () => {
+    const { searches, session } = sessionWithResults(() => [])
+
+    await session.initialize()
+
+    expect(searches).toEqual(['source-a', 'source-b'])
+    expect(session.selectedSource()).toBe('source-b')
+    expect(session.stage()).toBe('match-empty')
+    expect(session.error()).toBeNull()
   })
 })

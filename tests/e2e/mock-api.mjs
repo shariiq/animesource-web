@@ -53,7 +53,14 @@ const detail = (type = "ANIME") => ({
   trailer: null,
   externalLinks: [],
   characters: { edges: [] },
-  relations: { edges: [] },
+  relations: {
+    edges: type === "ANIME"
+      ? [{
+          relationType: "SOURCE",
+          node: media(2, "Test Manga", "MANGA"),
+        }]
+      : [],
+  },
   recommendations: { nodes: [] },
 });
 

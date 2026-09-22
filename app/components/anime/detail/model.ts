@@ -193,6 +193,11 @@ export function getOrderedRelations(detail: AniListDetail): DetailRelation[] {
     .map(({ priority: _priority, index: _index, ...relation }) => relation)
 }
 
+export function getSingleMangaSourceRelation(detail: AniListDetail): number | null {
+  const matches = (detail.relations?.edges ?? []).filter((edge) => edge?.relationType === 'SOURCE' && edge.node?.type === 'MANGA')
+  return matches.length === 1 ? matches[0]!.node!.id : null
+}
+
 export interface DetailCharacter {
   id: number
   name: string

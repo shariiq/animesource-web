@@ -80,6 +80,16 @@ test("manga detail uses its publication layout and shelf controls", async ({ pag
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test("anime detail switches to its unique manga source relation", async ({ page }) => {
+  await page.goto("/anime/1");
+  await expect(page.getByRole("heading", { name: "Test Anime" })).toBeVisible();
+
+  await page.getByRole("button", { name: "MANGA", exact: true }).click();
+
+  await expect(page).toHaveURL(/\/manga\/2(?:\?|$)/);
+  await expect(page.getByRole("heading", { name: "Manga Details" })).toBeVisible();
+});
+
 test("manga detail opens the reader through the full chapter flow", async ({ page }) => {
   await page.goto("/manga/1");
   await page.getByRole("link", { name: "Open reader →" }).click();

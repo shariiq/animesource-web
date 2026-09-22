@@ -1,7 +1,7 @@
 /* eslint-disable solid/no-innerhtml -- renderDescription sanitizes and escapes AniList text before this component renders it. */
-import { createMemo, createSignal, For, onMount, Show } from 'solid-js'
+import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js'
 import type { JSX } from 'solid-js'
-import { Link } from '@tanstack/solid-router'
+import { Link, useNavigate } from '@tanstack/solid-router'
 import type { AniListDetail } from '../../data/anilist/types'
 import { formatAniDate, formatCompactNumber, formatEnum, formatRank, formatScore, formatSeason, formatStatus, renderDescription, titleOf } from '../../lib/format'
 import { BROWSE_SEASONS, makeBrowseSearch, type BrowseSeason } from '../../lib/browse'
@@ -9,12 +9,13 @@ import { FAVORITE_STATUSES } from '../../lib/library'
 import type { FavoriteStatus } from '../../lib/persistence/schema'
 import { viewerData } from '../../lib/persistence/active'
 import { CharacterRail } from './detail/CharacterRail'
-import { getDetailLinks, getDetailTags, getDetailTitles, getOrderedRelations, getStaffMembers, getStudios, isSafeExternalUrl } from './detail/model'
+import { getDetailLinks, getDetailTags, getDetailTitles, getOrderedRelations, getSingleMangaSourceRelation, getStaffMembers, getStudios, isSafeExternalUrl } from './detail/model'
 import { MediaRail, toRailItem } from './detail/MediaRail'
 import { StaffRail } from './detail/StaffRail'
 import { Trailer } from './detail/Trailer'
 import { PageShell } from '../ui/PageShell'
 import { SectionHeading } from '../ui/SectionHeading'
+import { useOptionalCatalogMode } from '../layout/CatalogModeSwitch'
 
 function MetadataPill(props: { children: JSX.Element; accent?: boolean }) {
   return <span class={props.accent ? 'rounded-lg bg-emerald/12 px-3 py-2 text-emerald' : 'rounded-lg border border-black/12 bg-white/60 px-3 py-2'}>{props.children}</span>
@@ -36,6 +37,8 @@ function TagGroup(props: { heading: string; tags: ReturnType<typeof getDetailTag
 }
 
 export function AnimeDetailPage(props: { anime: AniListDetail }) {
+  const navigate = useNavigate()
+  const catalogMode = useOptionalCatalogMode()
   const [expanded, setExpanded] = createSignal(false)
   const [favorite, setFavorite] = createSignal<boolean | undefined>(undefined)
   const [favoriteStatus, setFavoriteStatus] = createSignal<FavoriteStatus | undefined>(undefined)
@@ -103,6 +106,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
   const detailLinks = createMemo(() => getDetailLinks(props.anime))
   const rankings = createMemo(() => (props.anime.rankings ?? []).slice(0, 3))
   const relations = createMemo(() => getOrderedRelations(props.anime))
+  const mangaSourceRelation = createMemo(() => getSingleMangaSourceRelation(props.anime))
   const recommendations = createMemo(() => (props.anime.recommendations?.nodes ?? [])
     .map((node) => toRailItem(node?.mediaRecommendation, 'Recommended'))
     .filter((item): item is NonNullable<typeof item> => item !== null))
@@ -119,6 +123,15 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
     { label: 'Favorites', value: props.anime.favourites != null ? formatCompactNumber(props.anime.favourites) : null },
     { label: 'Trending', value: props.anime.trending != null ? formatCompactNumber(props.anime.trending) : null },
   ].filter((fact): fact is { label: string; value: string } => Boolean(fact.value)))
+
+  let switchingToManga = false
+  createEffect(() => {
+    if (switchingToManga || catalogMode?.mode() !== 'MANGA') return
+    const mangaId = mangaSourceRelation()
+    if (mangaId === null) return
+    switchingToManga = true
+    void navigate({ to: '/manga/$mangaId', params: { mangaId: String(mangaId) } })
+  })
 
   const relationItems = createMemo(() => relations().map((relation) => ({
     id: relation.id,

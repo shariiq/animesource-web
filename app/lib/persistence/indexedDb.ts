@@ -6,8 +6,10 @@ const DB_VERSION = 1
 const STORE = 'kv'
 
 let dbPromise: Promise<IDBDatabase> | null = null
+let dbConnection: IDBDatabase | null = null
 
 function openDb(): Promise<IDBDatabase> {
+  if (dbConnection) return Promise.resolve(dbConnection)
   if (dbPromise) return dbPromise
   dbPromise = new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
@@ -19,7 +21,10 @@ function openDb(): Promise<IDBDatabase> {
       const db = request.result
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE)
     }
-    request.onsuccess = () => resolve(request.result)
+    request.onsuccess = () => {
+      dbConnection = request.result
+      resolve(request.result)
+    }
     request.onerror = () => reject(request.error ?? new Error('Failed to open IndexedDB.'))
   })
   return dbPromise
@@ -28,6 +33,7 @@ function openDb(): Promise<IDBDatabase> {
 export async function closeDb(): Promise<void> {
   const promise = dbPromise
   dbPromise = null
+  dbConnection = null
   if (promise) (await promise).close()
 }
 
@@ -44,6 +50,13 @@ function transactionToPromise(tx: IDBTransaction): Promise<void> {
     tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed.'))
     tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted.'))
   })
+}
+
+function writeTransaction<T>(db: IDBDatabase, key: string, value: Versioned<T>): Promise<void> {
+  const tx = db.transaction(STORE, 'readwrite')
+  const completion = transactionToPromise(tx)
+  tx.objectStore(STORE).put(value, key)
+  return completion
 }
 
 export interface KeyValueStore {
@@ -73,19 +86,16 @@ export const indexedDbStore: KeyValueStore = {
     const parsed = schema.safeParse(raw)
     return parsed.success ? parsed.data.data : null
   },
-  async write<T>(
+  write<T>(
     key: string,
     version: number,
     value: T,
     schema: z.ZodType<Versioned<T>>,
   ) {
     const parsed = schema.safeParse({ v: version, data: value })
-    if (!parsed.success) throw new Error('Cannot persist an invalid viewer record.')
-    const db = await openDb()
-    const tx = db.transaction(STORE, 'readwrite')
-    const completion = transactionToPromise(tx)
-    tx.objectStore(STORE).put(parsed.data, key)
-    await completion
+    if (!parsed.success) return Promise.reject(new Error('Cannot persist an invalid viewer record.'))
+    if (dbConnection) return writeTransaction(dbConnection, key, parsed.data)
+    return openDb().then((db) => writeTransaction(db, key, parsed.data))
   },
   async update<T>(
     key: string,

@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { chapterIdForNumber, chapterIdForRoute, chapterNeighbors, createMangaReaderSession, normalizeChapters, normalizePages, resolveStartChapterId } from '../app/components/manga/reader/createMangaReaderSession'
 import { detailShape } from '../app/data/anilist/schema'
 import type { AniSourceManga, ChapterPage, MangaChapter } from '../app/data/anisource/schema'
-import type { MangaReaderRecord } from '../app/lib/persistence/mangaReader'
+import { DEFAULT_MANGA_READER_SETTINGS, mangaReaderData, type MangaReaderRecord, type MangaReaderSettings } from '../app/lib/persistence/mangaReader'
+import { closeDb } from '../app/lib/persistence/indexedDb'
 
 const chapter = (id: string, number: number): MangaChapter => ({
   id,
@@ -133,7 +134,7 @@ describe('manga reader ordering', () => {
 })
 
 describe('manga reader source matching', () => {
-  function sessionWithResults(results: (sourceId: string) => AniSourceManga[]) {
+  function sessionWithResults(results: (sourceId: string) => AniSourceManga[], defaults: MangaReaderSettings = DEFAULT_MANGA_READER_SETTINGS) {
     const searches: string[] = []
     const session = createMangaReaderSession({
       manga,
@@ -142,7 +143,10 @@ describe('manga reader source matching', () => {
       navigateToChapter: async () => undefined,
       persistence: {
         get: async () => null,
+        getDefaults: async () => defaults,
+        list: async () => [],
         save: async () => undefined,
+        saveDefaults: async () => undefined,
         remove: async () => undefined,
       },
       api: {
@@ -184,5 +188,58 @@ describe('manga reader source matching', () => {
     expect(session.selectedSource()).toBe('source-b')
     expect(session.stage()).toBe('match-empty')
     expect(session.error()).toBeNull()
+  })
+
+  it('applies global reader defaults when a manga has no saved settings', async () => {
+    const { session } = sessionWithResults(() => [mangaCandidate], {
+      layout: 'paged',
+      direction: 'ltr',
+      fit: 'fit-screen',
+      background: 'paper',
+      gap: 'large',
+    })
+
+    await session.initialize()
+
+    expect(session.layout()).toBe('paged')
+    expect(session.direction()).toBe('ltr')
+    expect(session.fit()).toBe('fit-screen')
+    expect(session.background()).toBe('paper')
+    expect(session.gap()).toBe('large')
+  })
+})
+
+describe('manga reader persistence', () => {
+  beforeEach(async () => {
+    await closeDb()
+    // eslint-disable-next-line no-global-assign -- intentional per-test isolation of the jsdom IndexedDB global
+    indexedDB = new IDBFactory()
+  })
+
+  it('stores global defaults separately and lists reading records by recency', async () => {
+    const settings: MangaReaderSettings = { ...DEFAULT_MANGA_READER_SETTINGS, layout: 'paged' }
+    const record: MangaReaderRecord = {
+      anilistId: 42,
+      title: 'Signal',
+      cover: '',
+      sourceId: 'source',
+      sourceName: 'Source',
+      mangaId: 'signal-manga',
+      mangaUrl: '',
+      chapterId: 'chapter-1',
+      chapterNumber: 1,
+      chapterTitle: 'Chapter 1',
+      pageIndex: 0,
+      pageCount: 10,
+      completed: false,
+      ...settings,
+      updatedAt: 10,
+    }
+
+    await mangaReaderData.saveDefaults(settings)
+    await mangaReaderData.save(record)
+
+    await expect(mangaReaderData.getDefaults()).resolves.toEqual(settings)
+    await expect(mangaReaderData.list()).resolves.toEqual([record])
   })
 })

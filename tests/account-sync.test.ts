@@ -73,10 +73,15 @@ describe('AniList public-list import', () => {
   it('maps public list statuses and chooses a useful title and cover', async () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({
       data: {
-        MediaListCollection: {
+        anime: {
           lists: [{ entries: [
             { status: 'CURRENT', media: { id: 1, title: { romaji: 'Romaji', english: 'English', native: 'Native' }, coverImage: { large: 'large', medium: 'medium' }, format: 'TV', averageScore: 88 } },
             { status: 'DROPPED', media: { id: 2, title: { romaji: 'Dropped', english: null, native: null }, coverImage: { large: null, medium: 'medium-2' }, format: null, averageScore: null } },
+          ] }],
+        },
+        manga: {
+          lists: [{ entries: [
+            { status: 'CURRENT', media: { id: 1, title: { romaji: 'Manga Romaji', english: null, native: null }, coverImage: { large: 'manga-large', medium: null }, format: 'MANGA', averageScore: 77 } },
           ] }],
         },
       },
@@ -84,8 +89,9 @@ describe('AniList public-list import', () => {
     vi.stubGlobal('fetch', fetch)
 
     await expect(importAniListPublicList('viewer')).resolves.toEqual([
-      { id: 1, title: 'English', cover: 'large', format: 'TV', averageScore: 88, status: 'WATCHING' },
-      { id: 2, title: 'Dropped', cover: 'medium-2', format: null, averageScore: null, status: 'DROPPED' },
+      { catalogMode: 'ANIME', id: 1, title: 'English', cover: 'large', format: 'TV', averageScore: 88, status: 'WATCHING' },
+      { catalogMode: 'ANIME', id: 2, title: 'Dropped', cover: 'medium-2', format: null, averageScore: null, status: 'DROPPED' },
+      { catalogMode: 'MANGA', id: 1, title: 'Manga Romaji', cover: 'manga-large', format: 'MANGA', averageScore: 77, status: 'WATCHING' },
     ])
     expect(fetch).toHaveBeenCalledOnce()
   })

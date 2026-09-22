@@ -2,6 +2,21 @@ import { Link } from '@tanstack/solid-router'
 import { createSignal, For, onMount, Show } from 'solid-js'
 import { importAniListPublicList } from '../../data/anilist/import'
 import { viewerData } from '../../lib/persistence/active'
+import {
+  DEFAULT_MANGA_READER_SETTINGS,
+  mangaReaderBackgroundSchema,
+  mangaReaderData,
+  mangaReaderDirectionSchema,
+  mangaReaderFitSchema,
+  mangaReaderGapSchema,
+  mangaReaderLayoutSchema,
+  type MangaReaderBackground,
+  type MangaReaderDirection,
+  type MangaReaderFit,
+  type MangaReaderGap,
+  type MangaReaderLayout,
+  type MangaReaderSettings,
+} from '../../lib/persistence/mangaReader'
 import { favoriteStorageKey } from '../../lib/persistence/schema'
 import type { ViewerPreferences } from '../../lib/persistence/viewer'
 import { getViewerSyncStatus } from '../../lib/sync/viewerSync'
@@ -38,6 +53,32 @@ const DEFAULT_PREFERENCES: ViewerPreferences = {
   updatedAt: 0,
 }
 
+const READER_LAYOUT_OPTIONS: readonly [MangaReaderLayout, string][] = [
+  ['continuous', 'Continuous'],
+  ['paged', 'Paged'],
+  ['double', 'Spread'],
+]
+const READER_DIRECTION_OPTIONS: readonly [MangaReaderDirection, string][] = [
+  ['rtl', 'Right to left'],
+  ['ltr', 'Left to right'],
+]
+const READER_FIT_OPTIONS: readonly [MangaReaderFit, string][] = [
+  ['fit-width', 'Fit width'],
+  ['fit-screen', 'Fit screen'],
+  ['original', 'Original'],
+]
+const READER_BACKGROUND_OPTIONS: readonly [MangaReaderBackground, string][] = [
+  ['ink', 'Ink'],
+  ['black', 'Black'],
+  ['sepia', 'Sepia'],
+  ['paper', 'Paper'],
+]
+const READER_GAP_OPTIONS: readonly [MangaReaderGap, string][] = [
+  ['none', 'None'],
+  ['small', 'Tight'],
+  ['large', 'Roomy'],
+]
+
 export function SettingsPage() {
   const [preferences, setPreferences] = createSignal<ViewerPreferences>(DEFAULT_PREFERENCES)
   const [syncStatus, setSyncStatus] = createSignal<ViewerSyncStatus | null>(null)
@@ -45,6 +86,7 @@ export function SettingsPage() {
   const [message, setMessage] = createSignal<string | null>(null)
   const [error, setError] = createSignal<string | null>(null)
   const [aniListUsername, setAniListUsername] = createSignal('')
+  const [readerDefaults, setReaderDefaults] = createSignal<MangaReaderSettings>(DEFAULT_MANGA_READER_SETTINGS)
   const [loaded, setLoaded] = createSignal(false)
 
   const connectionLabel = () => {
@@ -67,6 +109,7 @@ export function SettingsPage() {
   onMount(() => {
     void Promise.all([
       viewerData.getViewerPreferences().then(setPreferences),
+      mangaReaderData.getDefaults().then(setReaderDefaults),
       getViewerSyncStatus().then(setSyncStatus),
     ]).then(() => setLoaded(true)).catch((cause) => {
       console.error('Failed to load viewer settings.', cause)
@@ -87,6 +130,7 @@ export function SettingsPage() {
         timezone: current.timezone,
         notifications: current.notifications,
       })
+      await mangaReaderData.saveDefaults(readerDefaults())
       setMessage('Preferences saved on this device.')
     } catch (cause) {
       console.error('Failed to save viewer preferences.', cause)
@@ -147,7 +191,7 @@ export function SettingsPage() {
       const importedKeys = new Set<string>()
       const now = Date.now()
       for (const item of imported) {
-        const importedFavorite = { ...item, catalogMode: 'ANIME' as const, ts: now }
+        const importedFavorite = { ...item, ts: now }
         importedKeys.add(favoriteStorageKey(importedFavorite.id, importedFavorite.catalogMode))
         favorites.set(favoriteStorageKey(importedFavorite.id, importedFavorite.catalogMode), importedFavorite)
       }
@@ -174,6 +218,7 @@ export function SettingsPage() {
     try {
       await viewerData.clearViewerData()
       setPreferences(DEFAULT_PREFERENCES)
+      setReaderDefaults(DEFAULT_MANGA_READER_SETTINGS)
       setMessage('All local viewer data was deleted.')
     } catch (cause) {
       console.error('Failed to delete local viewer data.', cause)
@@ -197,7 +242,7 @@ export function SettingsPage() {
               </div>
             </div>
             <h1 class="mt-7 max-w-4xl font-display text-5xl leading-[.88] tracking-[-.04em] sm:text-7xl">Viewer settings.</h1>
-            <p class="mt-5 max-w-2xl text-sm leading-6 text-text-secondary">Set catalog, language, timezone, and notification defaults. Preferences are saved in this browser.</p>
+            <p class="mt-5 max-w-2xl text-sm leading-6 text-text-secondary">Set catalog, language, timezone, notification, and manga reader defaults. Preferences are saved in this browser.</p>
             <Link class="paper-control mt-6 inline-flex px-4 py-3 text-xs" to="/profile">View profile</Link>
           </div>
 
@@ -224,37 +269,75 @@ export function SettingsPage() {
             </div>
             <span class="grid size-10 shrink-0 place-items-center rounded-full border border-black/10 bg-white/65 font-mono text-xs text-text-muted" aria-hidden="true">01</span>
           </div>
-          <p class="mt-4 max-w-xl text-sm leading-6 text-text-secondary">Set the catalog, language, timezone, and notification defaults used by this browser.</p>
+          <p class="mt-4 max-w-xl text-sm leading-6 text-text-secondary">Set the catalog, language, timezone, notification, and manga reader defaults used by this browser.</p>
           <div class="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             <label class="editorial-field-group text-sm">
               <span class="editorial-label">Default catalog</span>
-              <select class="editorial-field px-3" value={preferences().catalogMode} onChange={(event) => setPreferences((current) => ({ ...current, catalogMode: event.currentTarget.value === 'MANGA' ? 'MANGA' : 'ANIME' }))}>
+              <select class="editorial-field px-3" disabled={!loaded() || busy()} value={preferences().catalogMode} onChange={(event) => setPreferences((current) => ({ ...current, catalogMode: event.currentTarget.value === 'MANGA' ? 'MANGA' : 'ANIME' }))}>
                 <option value="ANIME">Anime</option>
                 <option value="MANGA">Manga</option>
               </select>
             </label>
             <label class="editorial-field-group text-sm">
               <span class="editorial-label">Language</span>
-              <select class="editorial-field px-3" value={preferences().language} onChange={(event) => setPreferences((current) => ({ ...current, language: event.currentTarget.value }))}>
+              <select class="editorial-field px-3" disabled={!loaded() || busy()} value={preferences().language} onChange={(event) => setPreferences((current) => ({ ...current, language: event.currentTarget.value }))}>
                 <For each={LANGUAGE_OPTIONS}>{(option) => <option value={option[0]}>{option[1]}</option>}</For>
               </select>
             </label>
             <label class="editorial-field-group text-sm">
               <span class="editorial-label">Timezone</span>
-              <select class="editorial-field px-3" value={preferences().timezone} onChange={(event) => setPreferences((current) => ({ ...current, timezone: event.currentTarget.value }))}>
+              <select class="editorial-field px-3" disabled={!loaded() || busy()} value={preferences().timezone} onChange={(event) => setPreferences((current) => ({ ...current, timezone: event.currentTarget.value }))}>
                 <For each={TIMEZONE_OPTIONS}>{(timezone) => <option value={timezone}>{timezone}</option>}</For>
               </select>
             </label>
           </div>
           <div class="mt-6 grid gap-3">
             <label class="flex items-start gap-3 rounded-[14px] border border-line bg-white/45 p-4 text-sm leading-6 transition-colors has-[:focus-visible]:border-ink has-[:hover]:bg-white/65">
-              <input class="mt-1 size-4 shrink-0 accent-black" type="checkbox" checked={preferences().adultContent} onChange={(event) => setPreferences((current) => ({ ...current, adultContent: event.currentTarget.checked }))} />
+              <input class="mt-1 size-4 shrink-0 accent-black" disabled={!loaded() || busy()} type="checkbox" checked={preferences().adultContent} onChange={(event) => setPreferences((current) => ({ ...current, adultContent: event.currentTarget.checked }))} />
               <span><strong class="font-semibold text-text-primary">Allow adult-content results</strong><br /><span class="text-text-secondary">Off by default. This preference is explicit and will be account-scoped later.</span></span>
             </label>
             <label class="flex items-start gap-3 rounded-[14px] border border-line bg-white/45 p-4 text-sm leading-6 transition-colors has-[:focus-visible]:border-ink has-[:hover]:bg-white/65">
-              <input class="mt-1 size-4 shrink-0 accent-black" type="checkbox" checked={preferences().notifications} onChange={(event) => setPreferences((current) => ({ ...current, notifications: event.currentTarget.checked }))} />
+              <input class="mt-1 size-4 shrink-0 accent-black" disabled={!loaded() || busy()} type="checkbox" checked={preferences().notifications} onChange={(event) => setPreferences((current) => ({ ...current, notifications: event.currentTarget.checked }))} />
               <span><strong class="font-semibold text-text-primary">Release notifications</strong><br /><span class="text-text-secondary">Keep the preference now; delivery remains disabled until account identity exists.</span></span>
             </label>
+          </div>
+          <div class="mt-7 border-t border-line pt-6">
+            <div>
+              <p class="mono-signal">Manga reader defaults</p>
+              <p class="mt-2 max-w-xl text-sm leading-6 text-text-secondary">These settings apply when a manga has no saved reader preferences. A manga-specific choice always takes precedence.</p>
+            </div>
+            <div class="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              <label class="editorial-field-group text-sm">
+                <span class="editorial-label">Layout</span>
+                <select class="editorial-field px-3" disabled={!loaded() || busy()} value={readerDefaults().layout} onChange={(event) => { const value = mangaReaderLayoutSchema.safeParse(event.currentTarget.value); if (value.success) setReaderDefaults((current) => ({ ...current, layout: value.data })) }}>
+                  <For each={READER_LAYOUT_OPTIONS}>{(option) => <option value={option[0]}>{option[1]}</option>}</For>
+                </select>
+              </label>
+              <label class="editorial-field-group text-sm">
+                <span class="editorial-label">Direction</span>
+                <select class="editorial-field px-3" disabled={!loaded() || busy()} value={readerDefaults().direction} onChange={(event) => { const value = mangaReaderDirectionSchema.safeParse(event.currentTarget.value); if (value.success) setReaderDefaults((current) => ({ ...current, direction: value.data })) }}>
+                  <For each={READER_DIRECTION_OPTIONS}>{(option) => <option value={option[0]}>{option[1]}</option>}</For>
+                </select>
+              </label>
+              <label class="editorial-field-group text-sm">
+                <span class="editorial-label">Page fit</span>
+                <select class="editorial-field px-3" disabled={!loaded() || busy()} value={readerDefaults().fit} onChange={(event) => { const value = mangaReaderFitSchema.safeParse(event.currentTarget.value); if (value.success) setReaderDefaults((current) => ({ ...current, fit: value.data })) }}>
+                  <For each={READER_FIT_OPTIONS}>{(option) => <option value={option[0]}>{option[1]}</option>}</For>
+                </select>
+              </label>
+              <label class="editorial-field-group text-sm">
+                <span class="editorial-label">Background</span>
+                <select class="editorial-field px-3" disabled={!loaded() || busy()} value={readerDefaults().background} onChange={(event) => { const value = mangaReaderBackgroundSchema.safeParse(event.currentTarget.value); if (value.success) setReaderDefaults((current) => ({ ...current, background: value.data })) }}>
+                  <For each={READER_BACKGROUND_OPTIONS}>{(option) => <option value={option[0]}>{option[1]}</option>}</For>
+                </select>
+              </label>
+              <label class="editorial-field-group text-sm">
+                <span class="editorial-label">Page gap</span>
+                <select class="editorial-field px-3" disabled={!loaded() || busy()} value={readerDefaults().gap} onChange={(event) => { const value = mangaReaderGapSchema.safeParse(event.currentTarget.value); if (value.success) setReaderDefaults((current) => ({ ...current, gap: value.data })) }}>
+                  <For each={READER_GAP_OPTIONS}>{(option) => <option value={option[0]}>{option[1]}</option>}</For>
+                </select>
+              </label>
+            </div>
           </div>
           <div class="mt-6 flex flex-wrap items-center gap-4 border-t border-line pt-5">
             <button class="ink-control px-5" classList={{ 'cursor-wait opacity-65': busy() || !loaded() }} type="button" disabled={busy() || !loaded()} onClick={() => { void savePreferences() }}>{busy() ? 'Saving…' : 'Save preferences'}</button>
@@ -296,14 +379,14 @@ export function SettingsPage() {
 
         <section class="material-panel p-6 sm:p-8" aria-labelledby="anilist-import-title">
           <p class="mono-signal">04 / Provider import</p>
-          <h2 id="anilist-import-title" class="mt-2 font-display text-4xl tracking-[-.03em] sm:text-5xl">Import an AniList list.</h2>
-          <p class="mt-4 max-w-xl text-sm leading-6 text-text-secondary">Import a public AniList anime list by username. Existing entries are preserved and matching IDs are updated with the provider status.</p>
+          <h2 id="anilist-import-title" class="mt-2 font-display text-4xl tracking-[-.03em] sm:text-5xl">Import AniList lists.</h2>
+          <p class="mt-4 max-w-xl text-sm leading-6 text-text-secondary">Import public AniList anime and manga lists by username. Existing entries are preserved and matching IDs are updated with the provider status.</p>
           <div class="mt-7 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <label class="editorial-field-group text-sm">
               <span class="editorial-label">AniList username</span>
               <input class="editorial-field px-3" value={aniListUsername()} placeholder="Your public username" aria-label="AniList username" onInput={(event) => setAniListUsername(event.currentTarget.value)} />
             </label>
-            <button class="paper-control px-5" type="button" disabled={busy() || !aniListUsername().trim()} onClick={() => { void importAniList() }}>Import list</button>
+            <button class="paper-control px-5" type="button" disabled={busy() || !aniListUsername().trim()} onClick={() => { void importAniList() }}>Import lists</button>
           </div>
           <p class="mt-5 border-t border-line pt-4 text-xs leading-5 text-text-muted">Only public AniList lists can be imported. Your account credentials never enter this app.</p>
         </section>

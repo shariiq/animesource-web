@@ -11,6 +11,7 @@ import { matchFlow, titleVariants, type RankedCandidate } from '../../../data/ma
 import type { AniListDetail } from '../../../data/anilist/types'
 import { titleOf } from '../../../lib/format'
 import {
+  DEFAULT_MANGA_READER_SETTINGS,
   mangaReaderData,
   type MangaReaderBackground,
   type MangaReaderDirection,
@@ -111,11 +112,6 @@ export interface MangaReaderSession {
   dispose: () => void
 }
 
-const INITIAL_LAYOUT: MangaReaderLayout = 'continuous'
-const INITIAL_DIRECTION: MangaReaderDirection = 'rtl'
-const INITIAL_FIT: MangaReaderFit = 'fit-width'
-const INITIAL_BACKGROUND: MangaReaderBackground = 'ink'
-const INITIAL_GAP: MangaReaderGap = 'small'
 /** Bounded so long reading sessions never accumulate unbounded page metadata. */
 const PAGE_CACHE_LIMIT = 3
 const START_CHAPTER_TOKEN = 'start'
@@ -227,11 +223,11 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   const [selectedChapterId, setSelectedChapterId] = createSignal<string | null>(null)
   const [pages, setPages] = createSignal<ChapterPage[]>([])
   const [currentPage, setCurrentPage] = createSignal(0)
-  const [layout, setLayout] = createSignal<MangaReaderLayout>(INITIAL_LAYOUT)
-  const [direction, setDirection] = createSignal<MangaReaderDirection>(INITIAL_DIRECTION)
-  const [fit, setFit] = createSignal<MangaReaderFit>(INITIAL_FIT)
-  const [background, setBackground] = createSignal<MangaReaderBackground>(INITIAL_BACKGROUND)
-  const [gap, setGap] = createSignal<MangaReaderGap>(INITIAL_GAP)
+  const [layout, setLayout] = createSignal<MangaReaderLayout>(DEFAULT_MANGA_READER_SETTINGS.layout)
+  const [direction, setDirection] = createSignal<MangaReaderDirection>(DEFAULT_MANGA_READER_SETTINGS.direction)
+  const [fit, setFit] = createSignal<MangaReaderFit>(DEFAULT_MANGA_READER_SETTINGS.fit)
+  const [background, setBackground] = createSignal<MangaReaderBackground>(DEFAULT_MANGA_READER_SETTINGS.background)
+  const [gap, setGap] = createSignal<MangaReaderGap>(DEFAULT_MANGA_READER_SETTINGS.gap)
   const [savedRecord, setSavedRecord] = createSignal<MangaReaderRecord | null>(null)
 
   let disposed = false
@@ -565,16 +561,18 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     setError(null)
     setPersistenceError(null)
     try {
-      const stored = await persistence.get(options.manga.id)
+      const [stored, defaults] = await Promise.all([
+        persistence.get(options.manga.id),
+        persistence.getDefaults(),
+      ])
       if (disposed) return
       setSavedRecord(stored)
-      if (stored) {
-        setLayout(stored.layout)
-        setDirection(stored.direction)
-        setFit(stored.fit)
-        setBackground(stored.background)
-        setGap(stored.gap)
-      }
+      const settings = stored ?? defaults
+      setLayout(settings.layout)
+      setDirection(settings.direction)
+      setFit(settings.fit)
+      setBackground(settings.background)
+      setGap(settings.gap)
       const request = beginRequest()
       const result = await options.api.mangaSources(() => setSlow(true), request.signal)
       if (!isCurrent(request.id, request.signal)) return

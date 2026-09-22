@@ -5,6 +5,7 @@ import { useOptionalCatalogMode } from '../layout/CatalogModeSwitch'
 import { catalogCopy, type CatalogMode } from '../../lib/catalog'
 import { viewerData } from '../../lib/persistence/active'
 import type { ContinueItem, FavoriteItem, FavoriteStatus } from '../../lib/persistence/schema'
+import { mangaReaderData, type MangaReaderRecord } from '../../lib/persistence/mangaReader'
 import {
   filterAndSortLibrary,
   libraryFormats,
@@ -18,8 +19,9 @@ import { formatEnum } from '../../lib/format'
 import { PageShell } from '../ui/PageShell'
 import { LibraryCard } from './LibraryCard'
 import { ContinueHistory } from './ContinueHistory'
+import { ContinueReading } from './ContinueReading'
 
-type StoredViewerData = { favorites: FavoriteItem[]; history: ContinueItem[] }
+type StoredViewerData = { favorites: FavoriteItem[]; history: ContinueItem[]; reading: MangaReaderRecord[] }
 
 const TAB_LABELS: Record<LibraryTab, string> = {
   all: 'All Saved',
@@ -40,6 +42,7 @@ const SORT_LABELS: Record<LibrarySort, string> = {
 
 function tabLabel(tab: LibraryTab, mode: CatalogMode): string {
   if (tab === 'watching' && mode === 'MANGA') return 'Reading'
+  if (tab === 'history' && mode === 'MANGA') return 'Continue Reading'
   return TAB_LABELS[tab]
 }
 
@@ -66,11 +69,12 @@ export function LibraryPage() {
     setLoading(true)
     setLoadError(false)
     try {
-      const [favorites, history] = await Promise.all([
+      const [favorites, history, reading] = await Promise.all([
         viewerData.getFavorites(),
         viewerData.getContinue(),
+        mangaReaderData.list(),
       ])
-      setStored({ favorites, history })
+      setStored({ favorites, history, reading })
     } catch (cause) {
       console.error('Failed to open the local viewer library.', cause)
       setLoadError(true)
@@ -90,20 +94,27 @@ export function LibraryPage() {
 
   const activeFavorites = createMemo(() => (stored()?.favorites ?? []).filter((item) => (item.catalogMode ?? 'ANIME') === mode()))
   const activeHistory = createMemo(() => mode() === 'ANIME' ? (stored()?.history ?? []) : [])
+  const activeReading = createMemo(() => mode() === 'MANGA' ? (stored()?.reading ?? []) : [])
+  const activeProgressCount = createMemo(() => mode() === 'ANIME'
+    ? activeHistory().filter((item) => !item.completed).length
+    : activeReading().filter((item) => !item.completed).length)
   const allIds = createMemo(() => [...new Set([
     ...activeFavorites().map((item) => item.id),
     ...activeHistory().map((item) => item.id),
+    ...activeReading().map((item) => item.anilistId),
   ])])
   const metadata = createQuery(() => byIdsQuery(allIds(), mode()))
   const mediaById = createMemo(() => new Map((metadata.data ?? []).map((media) => [media.id, media])))
   const entries = createMemo<LibraryEntry[]>(() => {
-    const historyById = new Map(activeHistory().map((item) => [item.id, item]))
+    const progressById = mode() === 'ANIME'
+      ? new Map(activeHistory().map((item) => [item.id, item.ts]))
+      : new Map(activeReading().map((item) => [item.anilistId, item.updatedAt]))
     return activeFavorites().map((favorite) => {
       const media = mediaById().get(favorite.id)
       return {
         favorite,
         media,
-        lastWatchedAt: historyById.get(favorite.id)?.ts,
+        lastWatchedAt: progressById.get(favorite.id),
         unavailable: metadata.isSuccess && !media,
       }
     })
@@ -121,7 +132,7 @@ export function LibraryPage() {
     planning: entries().filter((entry) => (entry.favorite.status ?? 'PLANNING') === 'PLANNING').length,
     paused: entries().filter((entry) => entry.favorite.status === 'PAUSED').length,
     dropped: entries().filter((entry) => entry.favorite.status === 'DROPPED').length,
-    history: activeHistory().length,
+    history: mode() === 'ANIME' ? activeHistory().length : activeReading().length,
   }))
 
   let mutationQueue = Promise.resolve()
@@ -164,21 +175,24 @@ export function LibraryPage() {
   )
   const removeHistory = (id: number) => runItemMutation(
     id,
-    () => viewerData.removeContinue(id),
-    (data) => ({ ...data, history: data.history.filter((item) => item.id !== id) }),
+    () => mode() === 'ANIME' ? viewerData.removeContinue(id) : mangaReaderData.remove(id),
+    (data) => mode() === 'ANIME'
+      ? { ...data, history: data.history.filter((item) => item.id !== id) }
+      : { ...data, reading: data.reading.filter((item) => item.anilistId !== id) },
   )
   const clearHistory = () => enqueueMutation(async () => {
     const current = untrack(stored)
     if (!current) return
     setConfirmClear(false)
     setFailure(null)
-    setStored({ ...current, history: [] })
+    setStored(mode() === 'ANIME' ? { ...current, history: [] } : { ...current, reading: [] })
     try {
-      await viewerData.clearContinue()
+      if (mode() === 'ANIME') await viewerData.clearContinue()
+      else await Promise.all(current.reading.map((item) => mangaReaderData.remove(item.anilistId)))
     } catch (cause) {
-      console.error('Failed to clear continue-watching history.', cause)
+      console.error(`Failed to clear ${mode() === 'ANIME' ? 'continue-watching history' : 'reading history'}.`, cause)
       setStored(current)
-      setFailure('Continue Watching could not be cleared. Your previous history has been restored.')
+      setFailure(`${mode() === 'ANIME' ? 'Continue Watching' : 'Continue Reading'} could not be cleared. Your previous history has been restored.`)
     }
   })
 
@@ -188,12 +202,12 @@ export function LibraryPage() {
         <div>
           <p class="mono-signal">Personal archive / {copy().singular} saved on this device</p>
           <h1 class="mt-3 max-w-4xl font-display text-6xl leading-[.88] tracking-[-.04em] sm:text-8xl">Your {copy().singular} library.</h1>
-          <p class="mt-5 max-w-2xl text-sm leading-6 text-text-secondary">{mode() === 'ANIME' ? 'Review saved anime, track watch progress, and return to the episode you left.' : 'Review saved manga and update reading status.'}</p>
+          <p class="mt-5 max-w-2xl text-sm leading-6 text-text-secondary">{mode() === 'ANIME' ? 'Review saved anime, track watch progress, and return to the episode you left.' : 'Review saved manga, track reading progress, and return to the chapter you left.'}</p>
         </div>
         <dl class="grid grid-cols-3 gap-2 text-center sm:gap-3 sm:text-right">
           <LibraryStat label="Saved" value={counts().all} />
           <LibraryStat label={mode() === 'MANGA' ? 'Reading' : 'Watching'} value={counts().watching} />
-          <LibraryStat label={mode() === 'ANIME' ? 'In progress' : 'To read'} value={activeHistory().filter((item) => !item.completed).length || (mode() === 'MANGA' ? counts().all : 0)} />
+          <LibraryStat label={mode() === 'ANIME' ? 'In progress' : 'To read'} value={activeProgressCount()} />
         </dl>
       </header>
 
@@ -225,7 +239,7 @@ export function LibraryPage() {
                 </Show>
               </div>
               <div class="library-tabs mt-4 flex gap-2 overflow-x-auto" role="tablist" aria-label={`${copy().singular} library categories`}>
-                <For each={LIBRARY_TABS.filter((value) => mode() === 'ANIME' || value !== 'history')}>{(value) => (
+                <For each={LIBRARY_TABS}>{(value) => (
                   <button
                     id={`library-tab-${value}`}
                     class="paper-control shrink-0 px-3"
@@ -252,6 +266,16 @@ export function LibraryPage() {
                     </Show>
                   </div>
                   <ContinueHistory items={activeHistory()} mediaById={mediaById()} busyIds={busyIds()} onRemove={(id) => { void removeHistory(id) }} />
+                </div>
+              </Match>
+              <Match when={tab() === 'history' && mode() === 'MANGA'}>
+                <div id="library-history-panel" class="p-4 sm:p-6" role="tabpanel" aria-labelledby="library-tab-history">
+                  <div class="mb-4 flex flex-wrap items-center justify-end gap-2">
+                    <Show when={!confirmClear()} fallback={<><span class="text-xs text-text-secondary">Clear all Continue Reading history?</span><button class="ink-control px-3" type="button" onClick={() => { void clearHistory() }}>Confirm clear</button><button class="paper-control px-3" type="button" onClick={() => setConfirmClear(false)}>Cancel</button></>}>
+                      <button class="paper-control px-3" type="button" disabled={activeReading().length === 0} onClick={() => setConfirmClear(true)}>Clear history</button>
+                    </Show>
+                  </div>
+                  <ContinueReading items={activeReading()} mediaById={mediaById()} busyIds={busyIds()} onRemove={(id) => { void removeHistory(id) }} />
                 </div>
               </Match>
               <Match when={true}>

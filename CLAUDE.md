@@ -1,51 +1,109 @@
-# Engineering Standard
+# AGENTS.md
 
-Ship the logically **best** complete, high quality, working, maintainable, readable code and features. For UI, composition, behavior, responsive layout, and accessibility are one implementation: establish hierarchy, typography, density, surfaces, and states early with real loader data; render during development and inspect the actual route at desktop and ~390px before declaring done. Compare approved references side by side; disclose missing rendering capability before starting a fidelity task. Efficiency comes from scope, never reduced correctness.
+AnimeSource: a SolidJS + TanStack Start app combining AniList discovery/metadata with on-demand AniSource anime streaming and manga reading.
+
+**Read this first, every session:** you do not get credit for believing your work is correct. You get credit for the command output that proves it. If a rule below has a command next to it, run the command before you say you're done — don't infer the result from reading your own diff.
+
+## Stack & commands
+
+Package manager is **Bun** (not npm/pnpm/yarn) — Node 22.12+, Bun 1.4+. Copied verbatim from `package.json`; if it ever diverges, `package.json` wins and this file is stale.
+
+| Task | Command |
+|---|---|
+| Install | `bun install --frozen-lockfile` |
+| Dev server (:3000) | `bun run dev` |
+| **Full local merge gate** (lint, typecheck, build, unit, mocked e2e) | `bun run verify` |
+| Live service smoke (real AniList/AniSource — operational only, never blocks merges) | `bun run test:live` |
+| Unit tests only | `bun run test` |
+| Build | `bun run build` |
+
+`bun run verify` is not a suggestion — it's the literal command CI runs as the merge gate. If you haven't run it and seen it exit 0, you don't know the work is done, you're guessing.
+
+## The one loop to run for every change
+
+This is the actual mechanism for "high quality" — not a value to aspire to, a sequence to follow:
+
+1. **Read the real file before editing it.** Never write a diff from memory of what you think is there.
+2. **Make the smallest diff that satisfies the request — then run the second pass below before deciding you're done.** No drive-by refactors, no unrelated cleanup, no renaming things you weren't asked to rename. "Smallest diff that satisfies the request" isn't the same as "only what the sentence literally said" — the request assumes engineering judgment you still have to supply.
+3. **Read your own diff once, fully, before running anything.** This catches leftover `console.log`/debug code, an unused import, a `TODO` you forgot to resolve, or a type you loosened just to make an error disappear — and it catches them for free, before spending a test run on them.
+4. **Run the narrowest command that would catch a regression in what you just touched** (one test file, `bun run typecheck`, lint on the changed file) — not the full gate, while you're still iterating.
+5. **Only repeat a step if the last run gave you new information.** If nothing changed your understanding of the failure, you're not iterating — see below.
+6. **Run the full gate once, at the end**, as the actual done-check — not as a way to find out what to fix next.
+
+## A second pass: lenses, not a checklist
+
+A task description names the feature, not the standing engineering concerns around it — that doesn't make those concerns optional, it means the task assumed you'd already think of them. A memorized checklist won't cover the case nobody wrote down, so instead of a list of items, use a short list of *lenses*: standing questions you answer fresh, in your own words, for the specific diff in front of you.
+
+After the diff is written and before you run the gate, take exactly one pass through these six questions about what you just changed:
+
+1. **Who else touches this?** — other callers, routes, or components that import what you changed.
+2. **What happens on empty, wrong, or slow input?** — not just the input the task's example described.
+3. **Who's using this besides a mouse on a desktop screen?** — mobile, keyboard, screen reader, the ~390px viewport.
+4. **What did the existing code already solve here that this diff might duplicate or break?**
+5. **What fails silently instead of loudly if this is wrong?** — an unvalidated boundary, a loosened type, a swallowed error.
+6. **What happens the second time this runs, not the first?** — SSR reuse, caching, re-render, stale state.
+
+Most diffs will only surface a real answer for one or two of these — that's expected, not a sign you did it wrong. The point isn't to tick off six boxes, it's to generate the specific concern this diff actually has, in the language of this diff, rather than pattern-matching to a list of concerns from other diffs.
+
+This pass is bounded: once, per diff, not repeated and not a substitute for the actual commands. Self-review catches what you can see by rereading; it doesn't reliably catch what a type checker or linter is built to catch — run those regardless of what this pass turns up.
+
+## Don't get stuck testing
+
+A rerun is only useful if something changed since the last one — your diagnosis, the code, or the command. Rerunning the same command hoping for a different result is thrashing, not progress, and it's the most expensive way to burn a session.
+
+- **Cap it at 3.** Three reruns of the same failing command with no new hypothesis means stop, read the actual error or stack trace in full, and state in plain terms what you now believe is wrong before touching code again. This is the same rule as the Stopping rules in `docs/agents/engineering-standards.md` — it applies to test/verify commands specifically, not just generic failures.
+- **Don't run `bun run verify` as your iteration loop.** It's the full gate, meant to run once at the end. While you're actually debugging, use the narrowest command that isolates the thing you're checking.
+- **A test failing on a change that couldn't plausibly have caused it is a signal to check for flakiness, not a signal to start "fixing" code.** Rerun once to see if it's consistent. If it's inconsistent, say so — don't patch around a flake by adding retries, sleeps, or defensive checks to code that was never broken.
+- **Never edit a test to make it pass instead of fixing the underlying code** — that's not a fix, it's hiding a real regression from the next person who reads this file.
+
+## Before you say a task is done
+
+1. Run `bun run verify` (or the tier-appropriate subset from the table below) and get a real, non-truncated pass.
+2. Paste or summarize the actual command output, not a description of what you expect it would say.
+3. If it fails, fix it or say explicitly what's still broken — never report success alongside a failing or unrun check.
+4. If any step above didn't happen, say "not verified" instead of "done."
 
 ## Tier once, out loud
 
-Tier by impact; shared tokens, multiple consumers, or an explicit fidelity target are at least Medium. When unsure, tier up; escalate on new evidence without repeating completed work.
+Tier by impact; shared tokens, multiple consumers, or an explicit fidelity target are at least Medium. **If a task looks High tier, stop and confirm scope before starting rather than guessing at the architecture** — High-tier judgment calls (auth, concurrency, large refactors) are where a smaller model diverges from what was actually wanted. Small and Medium tasks don't need this pause.
 
-| Tier | Scope and investigation | Verification | Before push |
+| Tier | Scope | Verification (run it, don't estimate it) | Before push |
 |---|---|---|---|
-| Small | Docs/config/copy, isolated styling, narrow behavior-preserving refactor; read target + direct imports | Review diff; run if under a minute; no full suite | Format + lint changed files |
-| Medium | Features, API clients, routing, shared utilities/tokens; trace boundary, callers, consumers, tests | Exercise behavior; UI: desktop + ~390px, reference comparison, keyboard pass | Small + typecheck; build if plausibly affected |
-| High | Auth, playback, deployment, caching/concurrency, security, large refactors/shared models; trace architecture and edge/race/failure paths | Medium + risky-path tests (failure, race, cancellation, retry) | Small + typecheck, build, test suite |
+| Small | Docs/config/copy, isolated styling, narrow behavior-preserving refactor | `bun run lint` on changed files | Same |
+| Medium | Features, API clients, routing, shared utilities/tokens | `bun run typecheck`; `bun run build` if plausibly affected; exercise the behavior at desktop + ~390px | Small + above |
+| High | Auth, playback, deployment, caching/concurrency, security, large refactors | `bun run verify` (full gate) + manually exercise failure/race/cancellation paths | Full `bun run verify` green |
 
-## Locked decisions
+## Locked decisions (exact shapes — implement these literally, don't paraphrase)
 
 - SolidJS (not React), TanStack Start/Router, Solid Query, strict TypeScript, Tailwind.
 - AniList GraphQL for discovery/metadata, server loaders for SEO/first paint. AniSource REST is client-only for Watch and Manga Reader interactions; never SSR or page load.
-- Watch: deep-linkable, code-split `/anime/$animeId/watch/$episodeId` with `?source=`, not embedded in detail.
-- Manga Reader: deep-linkable, client-only `/manga/$mangaId/read/$chapterId` with `?source=`, not embedded in detail; load the complete chapter list from `/chapters`, never the update endpoint.
-- Persistence: typed, versioned, Zod-validated IndexedDB through Solid Query resources/hooks, not raw localStorage.
-- Current approved `docs/adr/` governs visuals. References supply visual direction, not production content or copied markup.
+- Watch route: `/anime/$animeId/watch/$episodeId?source=` — deep-linkable, code-split, not embedded in the detail route.
+- Manga Reader route: `/manga/$mangaId/read/$chapterId?source=` — deep-linkable, client-only, not embedded in detail; chapter list comes from `/chapters`, never the update endpoint.
+- Persistence: typed, versioned, Zod-validated IndexedDB through Solid Query resources/hooks. `localStorage` calls are a violation, not a style preference — there is no case where it's the right layer here.
+- `docs/adr/` governs visuals. `comick.dev`/MangaDex/nothing.tech are direction references, not markup or copy sources — do not port their DOM structure or class names.
 
-## Guardrails
+## Hard rules — each paired with what actually catches a violation
 
-- Prefer the repository's existing sound patterns over introducing new ones unnecessarily unless they are better. Changes should maintain or improve the existing level of architectural and code quality; do not regress it, always do an improvement on the codebase.
-- Fix root causes not just the sideeffects; never hide errors with catch/defaults/optional chaining, `as any`, or `@ts-ignore`. No stubs, fake production data, dead controls, or silently unsupported states. Report incomplete work as incomplete.
-- Validate AniList, AniSource, and IndexedDB data with Zod at boundaries. Handle AniList HTTP-200 `errors[]`, rate limits, and network failures distinctly; batch related queries with aliases. Surface AniSource cold-start delays.
-- No cache/queue singleton shared across SSR requests. IndexedDB-dependent UI must hydrate safely under Solid resources/Suspense.
-- Use semantic elements, keyboard navigation, visible focus, labels, reduced motion. Use design tokens; add exact approved reference values as tokens rather than approximating them.
-- Build the requested feature, not unrelated coverage improvements. Batch tests at milestone end; the milestone requires its test pass, and every real bug fix requires regression coverage. Batch reruns at natural stopping points.
-- Stopping rules constrain side quests, not completeness. After three failed attempts at one failure, stop and report attempts/evidence; seek another approach or direction. Defer unrelated work after ~15 minutes via GitHub Issues. Read failure rules below before blaming infrastructure or modifying a failing test.
-- No secrets or unrelated changes in commits. Branch + PR; no direct pushes to main. Commit/push only when asked.
-- Use 0 subagents
-- Prefer directly writing working code over writing ANY tests. NEVER write redundant tests by default, tests are written only when critically needed or when testing TRUE Core Logical Flow of the website.
+- **Never hide errors** with catch/defaults/optional chaining, `as any`, or `@ts-ignore`. Check: `bun run typecheck` should fail loudly on a real type problem — if you're reaching for `as any` to make it pass, the type is telling you something real. Fix the modeled type, don't silence the checker.
+- **No stubs, fake production data, dead controls, or silently unsupported states.** If a state isn't handled, say so in your summary — don't ship a control that does nothing.
+- **Validate AniList, AniSource, and IndexedDB data with Zod at every boundary.** Handle AniList's HTTP-200 `errors[]`, rate limits, and network failures as three distinct branches, not one catch-all. Check: a boundary with no `.parse()`/`.safeParse()` call on external data is a bug, not a style choice.
+- **No cache/queue singleton shared across SSR requests.** This is the specific bug shape that leaks one viewer's data into another viewer's response — treat any module-level mutable cache touched during SSR as a stop-and-ask case, not a judgment call.
+- **IndexedDB-dependent UI must hydrate safely under Solid resources/Suspense.** Check: the component should render a defined loading state, not throw, when IndexedDB isn't ready yet.
+- **Match the nearest existing file's pattern by default.** Don't introduce a new pattern because it seems better — that's a judgment call you're not positioned to make reliably. If you genuinely think an existing pattern is wrong, say so and ask, rather than silently replacing it.
+- **Accessibility:** semantic elements, keyboard navigation, visible focus, labels, `prefers-reduced-motion` respected. Use tokens from `app/styles/theme.css`; if a design reference gives you an exact value, add it as a token — don't eyeball a close approximation.
+- **Git:** feature branch + PR, never push to `main` directly. Commit/push only when explicitly asked. No secrets, no unrelated changes bundled into one commit.
+- **0 subagents.** Do the exploration and the edit in one continuous thread — don't spawn a child task and summarize its output back to yourself.
+- **Don't write tests by default.** Write one only when it covers true core logic/behavior, or as the required regression test for a real bug fix — that second case is mandatory, not optional. Never render to static markup just to assert props, and never test callback wiring alone.
 
-## Context and skills
+## Deeper reference (load only when the trigger fires)
 
-- Read targeted excerpts; reuse already-loaded, unchanged content. Search a known symbol directly. Delegate broad multi-file exploration to one focused subagent returning conclusions and file:line references, not file dumps; do not duplicate its search or retrieve its transcript.
-- Invoke the most specific applicable installed skill before its work; do not load a whole plugin family. For complex TS (generics, discriminated unions, inference-heavy types, tricky Zod), check for a relevant Matt Pocock/Total TypeScript skill. If none fits, proceed normally. Required and explicitly requested skills still apply.
-- Read only relevant reference sections when their trigger fires; do not preload every linked document:
-  - **Failure/retry/deferral:** `docs/agents/engineering-standards.md` → Stopping rules.
-  - **Milestone testing or bug fix:** same file → Testing.
-  - **Data loading, media, images, or caching changes:** same file → Performance.
-  - **Commit, push, PR, or CI work:** same file → Git and CI.
-  - **Architectural/domain changes:** `docs/agents/domain.md`, root `CONTEXT.md`, and relevant ADRs. Consult current framework docs when needed; check AniList's schema when field definitions need confirmation.
-  - **Issue operations:** `docs/agents/issue-tracker.md`.
+- **A failure, retry loop, or deferred work** → `docs/agents/engineering-standards.md` § Stopping rules
+- **Milestone completion or a bug fix** → same file § Testing
+- **Data loading, media, images, or caching changes** → same file § Performance
+- **Commit, push, PR, or CI work** → same file § Git and CI
+- **Architecture or domain-language questions** → `CONTEXT.md`, `docs/adr/`, `docs/architecture/`
+- For complex TypeScript (generics, discriminated unions, inference-heavy types, tricky Zod), check for an installed Matt Pocock/Total TypeScript skill before hand-rolling it.
 
-## Done
+## Done means
 
-Requested behavior works in real execution at the tier's depth, including rendered UI inspection and milestone/regression tests ONLY when critically required and where applicable. Compilation alone is insufficient; broken requested behavior is not a deferral.
+`bun run verify` (or the tier's subset) actually ran and actually passed — reported with its real output, not inferred. UI changes inspected at desktop + ~390px against the approved reference. Anything incomplete or deferred is stated as such in plain terms, never implied to be finished.

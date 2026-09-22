@@ -240,6 +240,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   let prefetchController: AbortController | null = null
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   let persistenceWrite: Promise<void> = Promise.resolve()
+  let settingsSaveRevision = 0
   let lastFailedOperation: MangaReaderError['operation'] | null = null
   /** Chapter pages already fetched (or prefetched) this session, keyed by chapter id. */
   const pageCache = new Map<string, ChapterPage[]>()
@@ -394,9 +395,17 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
             background: background(),
             gap: gap(),
             updatedAt: Date.now(),
-          }
+        }
         : null
-    void persistRecord(record)
+    if (!record) return
+    const revision = ++settingsSaveRevision
+    void persistence.save(record).then(() => {
+      if (revision !== settingsSaveRevision) return
+      setSavedRecord(record)
+      setPersistenceError(null)
+    }).catch(() => {
+      if (revision === settingsSaveRevision) setPersistenceError('Reading progress could not be saved on this device.')
+    })
   }
 
   function resolveRouteChapterId(record: MangaReaderRecord | null): string | null {
@@ -431,9 +440,9 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
         ? validPageIndex(record.pageIndex, normalized.length)
         : 0
       setCurrentPage(resumeIndex)
-      setStage('pages-ready')
       if (replaceRoute) await options.navigateToChapter(String(selectedChapter()!.number), source, true)
       await persistRecord(recordBase(selectedChapter()!, resumeIndex, false))
+      setStage('pages-ready')
       void prefetchNextChapter()
     } catch (caught) {
       if (!isCurrent(request.id, request.signal)) return

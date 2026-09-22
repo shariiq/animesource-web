@@ -80,7 +80,7 @@ test("manga detail uses its publication layout and shelf controls", async ({ pag
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test("anime detail switches to its unique manga source relation", async ({ page }) => {
+test("detail pages preserve the exact source and adaptation pair across mode changes", async ({ page }) => {
   await page.goto("/anime/1");
   await expect(page.getByRole("heading", { name: "Test Anime" })).toBeVisible();
 
@@ -88,6 +88,22 @@ test("anime detail switches to its unique manga source relation", async ({ page 
 
   await expect(page).toHaveURL(/\/manga\/2(?:\?|$)/);
   await expect(page.getByRole("heading", { name: "Manga Details" })).toBeVisible();
+
+  await page.getByRole("button", { name: "ANIME", exact: true }).click();
+
+  await expect(page).toHaveURL(/\/anime\/1(?:\?|$)/);
+  await expect(page.getByRole("heading", { name: "Anime Details" })).toBeVisible();
+});
+
+test("a direct detail route aligns the catalog mode before following a unique relation", async ({ page }) => {
+  await page.goto("/manga/4");
+  await expect(page.getByRole("button", { name: "MANGA", exact: true })).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "ANIME", exact: true }).click();
+
+  await expect(page).toHaveURL(/\/anime\/1(?:\?|$)/);
+  await expect(page.getByRole("button", { name: "ANIME", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: "Anime Details" })).toBeVisible();
 });
 
 test("manga detail opens the reader through the full chapter flow", async ({ page }) => {

@@ -1,6 +1,6 @@
 /* eslint-disable solid/no-innerhtml -- renderDescription escapes AniList text before rendering it. */
 import { createMemo, createSignal, For, onMount, Show } from 'solid-js'
-import { Link } from '@tanstack/solid-router'
+import { Link, useNavigate } from '@tanstack/solid-router'
 import type { AniListDetail } from '../../data/anilist/types'
 import { catalogLibraryStatus, catalogStatus } from '../../lib/catalog'
 import { makeBrowseSearch } from '../../lib/browse'
@@ -9,11 +9,12 @@ import { FAVORITE_STATUSES } from '../../lib/library'
 import type { FavoriteStatus } from '../../lib/persistence/schema'
 import { viewerData } from '../../lib/persistence/active'
 import { CharacterRail } from '../anime/detail/CharacterRail'
-import { getDetailLinks, getDetailTags, getDetailTitles, getOrderedRelations, getStaffMembers, isSafeExternalUrl } from '../anime/detail/model'
+import { getDetailLinks, getDetailTags, getDetailTitles, getOrderedRelations, getSingleAnimeAdaptationRelation, getStaffMembers, isSafeExternalUrl } from '../anime/detail/model'
 import { MediaRail, toRailItem } from '../anime/detail/MediaRail'
 import { StaffRail } from '../anime/detail/StaffRail'
 import { PageShell } from '../ui/PageShell'
 import { SectionHeading } from '../ui/SectionHeading'
+import { followCatalogModeRelation } from '../layout/followCatalogMode'
 
 function formatUpdatedAt(value: number | null | undefined): string {
   if (!value) return ''
@@ -37,6 +38,7 @@ function MangaTagGroup(props: { heading: string; tags: ReturnType<typeof getDeta
 }
 
 export function MangaDetailPage(props: { manga: AniListDetail }) {
+  const navigate = useNavigate()
   const [expanded, setExpanded] = createSignal(false)
   const [favorite, setFavorite] = createSignal<boolean | undefined>(undefined)
   const [favoriteStatus, setFavoriteStatus] = createSignal<FavoriteStatus | undefined>(undefined)
@@ -113,6 +115,7 @@ export function MangaDetailPage(props: { manga: AniListDetail }) {
     type: relation.type,
     siteUrl: relation.siteUrl,
   })))
+  const animeAdaptationRelation = createMemo(() => getSingleAnimeAdaptationRelation(props.manga))
   const recommendations = createMemo(() => (props.manga.recommendations?.nodes ?? [])
     .map((node) => toRailItem(node?.mediaRecommendation, 'Recommended'))
     .filter((item): item is NonNullable<typeof item> => item !== null))
@@ -126,6 +129,16 @@ export function MangaDetailPage(props: { manga: AniListDetail }) {
     { label: 'Origin', value: props.manga.countryOfOrigin, tone: 'mint' },
     { label: 'Rank', value: props.manga.rankings?.[0]?.rank ? formatRank(props.manga.rankings[0].rank) : null, tone: 'plum' },
   ].filter((fact): fact is { label: string; value: string; tone: string } => Boolean(fact.value)))
+
+  followCatalogModeRelation({
+    currentMode: 'MANGA',
+    currentId: () => props.manga.id,
+    targetMode: 'ANIME',
+    relationId: animeAdaptationRelation,
+    follow: (animeId) => {
+      void navigate({ to: '/anime/$animeId', params: { animeId: String(animeId) } })
+    },
+  })
 
   return (
     <PageShell>

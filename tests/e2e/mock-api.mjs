@@ -41,8 +41,8 @@ const media = (id, title, type = "ANIME") => ({
   nextAiringEpisode: { episode: 1, airingAt: 0, timeUntilAiring: 0 },
 });
 
-const detail = (type = "ANIME") => ({
-  ...media(1, type === "MANGA" ? "Test Manga" : "Test Anime", type),
+const detail = (type = "ANIME", id = 1) => ({
+  ...media(id, type === "MANGA" ? "Test Manga" : "Test Anime", type),
   description: type === "MANGA" ? "A test publication description." : "A test description.",
   duration: type === "MANGA" ? null : 24,
   startDate: null,
@@ -59,7 +59,13 @@ const detail = (type = "ANIME") => ({
           relationType: "SOURCE",
           node: media(2, "Test Manga", "MANGA"),
         }]
-      : [],
+      : [{
+          relationType: "ADAPTATION",
+          node: media(1, "Test Anime", "ANIME"),
+        }, ...(id === 4 ? [] : [{
+          relationType: "ADAPTATION",
+          node: media(3, "Other Anime", "ANIME"),
+        }])],
   },
   recommendations: { nodes: [] },
 });
@@ -92,8 +98,10 @@ createServer(async (request, response) => {
       });
     let body = "";
     for await (const chunk of request) body += chunk;
-    if (body.includes("Media(id:"))
-      return send(response, 200, { data: { Media: detail(body.includes("type:MANGA") ? "MANGA" : "ANIME") } });
+    if (body.includes("Media(id:")) {
+      const variables = JSON.parse(body).variables ?? {};
+      return send(response, 200, { data: { Media: detail(body.includes("type:MANGA") ? "MANGA" : "ANIME", Number(variables.id) || 1) } });
+    }
     if (body.includes("GenreCollection"))
       return send(response, 200, {
         data: { GenreCollection: ["Action", "Comedy"] },

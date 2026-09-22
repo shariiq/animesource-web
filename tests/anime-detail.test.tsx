@@ -5,6 +5,7 @@ import {
   getDetailTitles,
   getDetailTags,
   getOrderedRelations,
+  getSingleAnimeAdaptationRelation,
   getSingleMangaSourceRelation,
   getStaffMembers,
   getStudios,
@@ -107,5 +108,12 @@ describe('anime detail model', () => {
     expect(getSingleMangaSourceRelation({ ...detail, relations: { edges: [mangaSource] } })).toBe(52)
     expect(getSingleMangaSourceRelation({ ...detail, relations: { edges: [mangaSource, { ...mangaSource, node: { ...mangaSource.node, id: 53 } }] } })).toBeNull()
     expect(getSingleMangaSourceRelation({ ...detail, relations: { edges: [{ ...mangaSource, relationType: 'SEQUEL' }] } })).toBeNull()
+  })
+
+  it('returns an anime adaptation relation only when it is unique', () => {
+    const animeAdaptation = { relationType: 'ADAPTATION', node: { id: 51, type: 'ANIME', title: { romaji: 'Signal Anime' }, coverImage: null, averageScore: 80 } }
+    expect(getSingleAnimeAdaptationRelation({ ...detail, relations: { edges: [animeAdaptation] } })).toBe(51)
+    expect(getSingleAnimeAdaptationRelation({ ...detail, relations: { edges: [animeAdaptation, { ...animeAdaptation, node: { ...animeAdaptation.node, id: 52 } }] } })).toBeNull()
+    expect(getSingleAnimeAdaptationRelation({ ...detail, relations: { edges: [{ ...animeAdaptation, relationType: 'SOURCE' }] } })).toBeNull()
   })
 })

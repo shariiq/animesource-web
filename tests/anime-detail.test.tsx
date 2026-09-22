@@ -5,6 +5,8 @@ import {
   getDetailTitles,
   getDetailTags,
   getOrderedRelations,
+  getSingleAnimeAdaptationRelation,
+  getSingleMangaSourceRelation,
   getStaffMembers,
   getStudios,
   isSafeExternalUrl,
@@ -99,5 +101,19 @@ describe('anime detail model', () => {
     expect(isSafeExternalUrl('https://anilist.co/anime/42')).toBe(true)
     expect(isSafeExternalUrl('javascript:alert(1)')).toBe(false)
     expect(isSafeExternalUrl('//example.com/path')).toBe(false)
+  })
+
+  it('returns a manga source relation only when it is unique', () => {
+    const mangaSource = { relationType: 'SOURCE', node: { id: 52, type: 'MANGA', title: { romaji: 'Signal Manga' }, coverImage: null, averageScore: 80 } }
+    expect(getSingleMangaSourceRelation({ ...detail, relations: { edges: [mangaSource] } })).toBe(52)
+    expect(getSingleMangaSourceRelation({ ...detail, relations: { edges: [mangaSource, { ...mangaSource, node: { ...mangaSource.node, id: 53 } }] } })).toBeNull()
+    expect(getSingleMangaSourceRelation({ ...detail, relations: { edges: [{ ...mangaSource, relationType: 'SEQUEL' }] } })).toBeNull()
+  })
+
+  it('returns an anime adaptation relation only when it is unique', () => {
+    const animeAdaptation = { relationType: 'ADAPTATION', node: { id: 51, type: 'ANIME', title: { romaji: 'Signal Anime' }, coverImage: null, averageScore: 80 } }
+    expect(getSingleAnimeAdaptationRelation({ ...detail, relations: { edges: [animeAdaptation] } })).toBe(51)
+    expect(getSingleAnimeAdaptationRelation({ ...detail, relations: { edges: [animeAdaptation, { ...animeAdaptation, node: { ...animeAdaptation.node, id: 52 } }] } })).toBeNull()
+    expect(getSingleAnimeAdaptationRelation({ ...detail, relations: { edges: [{ ...animeAdaptation, relationType: 'SOURCE' }] } })).toBeNull()
   })
 })

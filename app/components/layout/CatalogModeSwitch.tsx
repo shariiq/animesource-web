@@ -8,6 +8,10 @@ const MODES: CatalogMode[] = ['ANIME', 'MANGA']
 interface CatalogModeState {
   mode: Accessor<CatalogMode>
   changeMode: (next: CatalogMode) => Promise<void>
+  alignMode: (next: CatalogMode) => Promise<void>
+  modeChange: Accessor<{ sequence: number; mode: CatalogMode } | null>
+  relationPair: Accessor<{ animeId: number; mangaId: number } | null>
+  rememberRelationPair: (pair: { animeId: number; mangaId: number }) => void
 }
 
 const CatalogModeContext = createContext<CatalogModeState>()
@@ -15,7 +19,10 @@ const CatalogModeContext = createContext<CatalogModeState>()
 /** Internal catalog state shared by the shell and the home page. */
 export function CatalogModeProvider(props: { children: JSX.Element }) {
   const [mode, setMode] = createSignal<CatalogMode>('ANIME')
-  let userSelectedMode: CatalogMode | null = null
+  const [modeChange, setModeChange] = createSignal<{ sequence: number; mode: CatalogMode } | null>(null)
+  const [relationPair, setRelationPair] = createSignal<{ animeId: number; mangaId: number } | null>(null)
+  let selectedMode: CatalogMode | null = null
+  let modeChangeSequence = 0
 
   const writePreference = async (preferences: ViewerPreferences, next: CatalogMode) => {
     await viewerData.setViewerPreferences({
@@ -33,7 +40,7 @@ export function CatalogModeProvider(props: { children: JSX.Element }) {
     void viewerData.getViewerPreferences().then(async (preferences) => {
       const next = legacyMode === 'MANGA' || legacyMode === 'ANIME'
         ? legacyMode
-        : userSelectedMode ?? preferences.catalogMode
+        : selectedMode ?? preferences.catalogMode
       setMode(next)
       if (legacyMode && legacyMode !== preferences.catalogMode) await writePreference(preferences, next)
       if (legacyMode) {
@@ -52,8 +59,9 @@ export function CatalogModeProvider(props: { children: JSX.Element }) {
 
   const changeMode = async (next: CatalogMode) => {
     if (next === mode()) return
-    userSelectedMode = next
+    selectedMode = next
     setMode(next)
+    setModeChange({ sequence: ++modeChangeSequence, mode: next })
     try {
       await writePreference(await viewerData.getViewerPreferences(), next)
     } catch (cause) {
@@ -61,7 +69,18 @@ export function CatalogModeProvider(props: { children: JSX.Element }) {
     }
   }
 
-  return <CatalogModeContext.Provider value={{ mode, changeMode }}>{props.children}</CatalogModeContext.Provider>
+  const alignMode = async (next: CatalogMode) => {
+    selectedMode = next
+    setMode(next)
+    try {
+      const preferences = await viewerData.getViewerPreferences()
+      if (preferences.catalogMode !== next) await writePreference(preferences, next)
+    } catch (cause) {
+      console.error('Failed to align the catalog preference with the detail page.', cause)
+    }
+  }
+
+  return <CatalogModeContext.Provider value={{ mode, changeMode, alignMode, modeChange, relationPair, rememberRelationPair: setRelationPair }}>{props.children}</CatalogModeContext.Provider>
 }
 
 export function useCatalogMode(): CatalogModeState {

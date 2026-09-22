@@ -193,6 +193,19 @@ export function getOrderedRelations(detail: AniListDetail): DetailRelation[] {
     .map(({ priority: _priority, index: _index, ...relation }) => relation)
 }
 
+function getSingleRelationId(detail: AniListDetail, relationType: 'SOURCE' | 'ADAPTATION', nodeType: 'ANIME' | 'MANGA'): number | null {
+  const matches = (detail.relations?.edges ?? []).filter((edge) => edge?.relationType === relationType && edge.node?.type === nodeType)
+  return matches.length === 1 ? matches[0]!.node!.id : null
+}
+
+export function getSingleMangaSourceRelation(detail: AniListDetail): number | null {
+  return getSingleRelationId(detail, 'SOURCE', 'MANGA')
+}
+
+export function getSingleAnimeAdaptationRelation(detail: AniListDetail): number | null {
+  return getSingleRelationId(detail, 'ADAPTATION', 'ANIME')
+}
+
 export interface DetailCharacter {
   id: number
   name: string

@@ -63,7 +63,7 @@ export function LazyPlayer(props: {
   onPreferencesChange?: (preferences: PlaybackPreferenceValues) => Promise<void> | void
   onProgress?: (identity: PlaybackIdentity, position: number, duration: number) => Promise<void> | void
   onEnded?: (identity: PlaybackIdentity) => Promise<void> | void
-  onMediaError?: (identity: PlaybackIdentity, message: string, expired?: boolean) => void
+  onMediaError?: (identity: PlaybackIdentity, message: string, expired?: boolean) => boolean | void
 }) {
   const [video, setVideo] = createSignal<HTMLVideoElement>()
   const [activeIndex, setActiveIndex] = createSignal(0)
@@ -433,8 +433,13 @@ export function LazyPlayer(props: {
         if (generation !== loadGeneration) return
         if (isExpiredStreamFailure(data)) {
           const message = 'This stream link has expired. Refresh this server to request a new stream.'
-          showFailure(message)
-          if (props.identity) props.onMediaError?.(props.identity, message, true)
+          const handled = props.identity ? props.onMediaError?.(props.identity, message, true) : false
+          if (handled) {
+            setFailure(null)
+            setStatus('error')
+          } else {
+            showFailure(message)
+          }
           return
         }
         if (!data.fatal) return

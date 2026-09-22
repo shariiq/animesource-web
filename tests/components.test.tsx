@@ -476,9 +476,9 @@ describe("LazyPlayer", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("reports an expired HLS stream instead of hiding it as a generic media failure", async () => {
+  it("leaves an expired HLS stream to the watch session when it handles recovery", async () => {
     const identity = { key: "source:episode:server", sourceId: "source", episodeId: "episode", serverId: "server" };
-    const onMediaError = vi.fn();
+    const onMediaError = vi.fn(() => true);
     render(() => <LazyPlayer streams={[hlsStream]} identity={identity} onMediaError={onMediaError} />);
     await waitFor(() => expect(hls.instances).toHaveLength(1));
 
@@ -490,7 +490,7 @@ describe("LazyPlayer", () => {
     });
 
     expect(onMediaError).toHaveBeenCalledWith(identity, expect.stringContaining("expired"), true);
-    expect(screen.getByRole("alert")).toHaveTextContent("This stream link has expired");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("destroys the previous hls.js instance when the quality variant changes", async () => {

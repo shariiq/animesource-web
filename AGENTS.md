@@ -84,7 +84,7 @@ Tier by impact; shared tokens, multiple consumers, or an explicit fidelity targe
 
 ## Hard rules — each paired with what actually catches a violation
 
-- **Never hide errors** with catch/defaults/optional chaining, `as any`, or `@ts-ignore`. Check: `bun run typecheck` should fail loudly on a real type problem — if you're reaching for `as any` to make it pass, the type is telling you something real. Fix the modeled type, don't silence the checker.
+- **Fix Root-Cause; Not just the Side Effects. Never hide errors** with catch/defaults/optional chaining, `as any`, or `@ts-ignore`. Check: `bun run typecheck` should fail loudly on a real type problem — if you're reaching for `as any` to make it pass, the type is telling you something real. Fix the modeled type, don't silence the checker.
 - **No stubs, fake production data, dead controls, or silently unsupported states.** If a state isn't handled, say so in your summary — don't ship a control that does nothing.
 - **Validate AniList, AniSource, and IndexedDB data with Zod at every boundary.** Handle AniList's HTTP-200 `errors[]`, rate limits, and network failures as three distinct branches, not one catch-all. Check: a boundary with no `.parse()`/`.safeParse()` call on external data is a bug, not a style choice.
 - **No cache/queue singleton shared across SSR requests.** This is the specific bug shape that leaks one viewer's data into another viewer's response — treat any module-level mutable cache touched during SSR as a stop-and-ask case, not a judgment call.

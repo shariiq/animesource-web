@@ -1,9 +1,10 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { URL } from 'node:url'
+import apiUrls from '../config/api-urls.json' with { type: 'json' }
 
 const staticRoot = resolve('.vercel/output/static')
-const forbiddenHosts = new Set(['anisource-api.vercel.app'])
+const forbiddenHosts = new Set([new URL(apiUrls.anisource).host.toLowerCase()])
 const configuredBase = process.env.ANISOURCE_BASE
 
 if (configuredBase) {

@@ -1,3 +1,4 @@
 {
-  "anilist": "https://graphql.anilist.co"
+  "anilist": "https://graphql.anilist.co",
+  "anisource": "https://anisource-api.vercel.app"
 }

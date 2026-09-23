@@ -19,7 +19,7 @@ Configure these values on the web application server. They are runtime server va
 
 | Web variable | Requirement |
 | --- | --- |
-| `ANISOURCE_BASE` | Optional; defaults to `https://anisource-api.vercel.app`. Production must use HTTPS. |
+| `ANISOURCE_BASE` | Optional; defaults to the AniSource value in `config/api-urls.json`. Production must use HTTPS. |
 | `ANISOURCE_SERVICE_TOKEN` | Required; must exactly match the API's `MEDIA_API_SERVICE_TOKEN` and contain at least 32 bytes. |
 | `ANISOURCE_SESSION_SECRET` | Required; unique random value of at least 32 bytes, used to sign sessions and asset tickets. |
 | `UPSTASH_REDIS_REST_URL` | Required in production. |

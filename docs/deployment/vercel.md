@@ -15,7 +15,7 @@ For local production inspection after a build, run `bun start` and open the prin
 
 ## Environment
 
-Copy `.env.example` to `.env` for local development only when overrides are needed. `config/api-urls.json` contains the public AniList default. AniSource settings are server-only; configure the required production values described in [AniSource access control](anisource-access-control.md) in Vercel's server environment settings. Do not add them to `VITE_` variables or build arguments.
+Copy `.env.example` to `.env` for local development only when overrides are needed. `config/api-urls.json` is the single source for the AniList default and server-only AniSource default. The browser config exposes only AniList; the gateway reads AniSource's default on the server. Configure the required production values described in [AniSource access control](anisource-access-control.md) in Vercel's server environment settings. Do not add them to `VITE_` variables or build arguments.
 
 Playwright configures AniList's test URL and the server-only AniSource base to `tests/e2e/mock-api.mjs`. CI must never call either live external service during the merge gate.
 

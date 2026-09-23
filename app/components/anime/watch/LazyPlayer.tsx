@@ -33,7 +33,9 @@ function isExpiredStreamFailure(data: unknown): boolean {
   if (!data || typeof data !== 'object') return false
   const details = data as HlsErrorDetails
   const status = details.response?.code
-  return status === 401 || status === 403 || status === 410 || /(?:401|403|410)/.test(details.details ?? '')
+  // 410 is the current expired-capability status; 404 covers API versions
+  // that reported dead media tokens as missing.
+  return status === 401 || status === 403 || status === 404 || status === 410 || /(?:401|403|404|410)/.test(details.details ?? '')
 }
 
 function formatTime(seconds: number): string {
@@ -64,6 +66,8 @@ export function LazyPlayer(props: {
   onProgress?: (identity: PlaybackIdentity, position: number, duration: number) => Promise<void> | void
   onEnded?: (identity: PlaybackIdentity) => Promise<void> | void
   onMediaError?: (identity: PlaybackIdentity, message: string, expired?: boolean) => boolean | void
+  /** Re-resolves the current server with fresh session-bound tickets. */
+  onRetry?: () => Promise<void> | void
 }) {
   const [video, setVideo] = createSignal<HTMLVideoElement>()
   const [activeIndex, setActiveIndex] = createSignal(0)
@@ -436,7 +440,9 @@ export function LazyPlayer(props: {
           const handled = props.identity ? props.onMediaError?.(props.identity, message, true) : false
           if (handled) {
             setFailure(null)
-            setStatus('error')
+            // The session is re-resolving the server in the background; keep
+            // the spinner visible instead of idling on a bare error status.
+            setStatus('reconnecting')
           } else {
             showFailure(message)
           }
@@ -894,19 +900,26 @@ export function LazyPlayer(props: {
             <div class="border-t border-red-400/30 bg-red-950/40 p-4 text-sm text-red-100" role="alert">
               <p>{message()}</p>
               <div class="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  class="border border-red-100/50 px-3 py-2 font-mono text-[9px] uppercase tracking-[.08em] transition hover:bg-white hover:text-black"
-                  onClick={() => {
-                    const stream = activeStream()
-                    if (stream) window.open(streamUrl(stream), '_blank', 'noopener')
-                  }}
-                >
-                  Open stream in a new tab
-                </button>
+                <Show when={props.onRetry}>
+                  <button
+                    type="button"
+                    class="border border-red-100/50 px-3 py-2 font-mono text-[9px] uppercase tracking-[.08em] transition hover:bg-white hover:text-black disabled:opacity-50"
+                    disabled={busy()}
+                    onClick={() => {
+                      setFailure(null)
+                      setStatus('reconnecting')
+                      void Promise.resolve(props.onRetry?.()).catch((cause) => {
+                        console.error('Retrying the stream failed.', cause)
+                        showFailure('Retrying the stream failed. Try another server, or open the stream directly.')
+                      })
+                    }}
+                  >
+                    Retry stream
+                  </button>
+                </Show>
                 <Show when={clipboardAvailable()}>
                   <button type="button" class="border border-red-100/50 px-3 py-2 font-mono text-[9px] uppercase tracking-[.08em] transition hover:bg-white hover:text-black" onClick={() => { void copyActiveStream() }}>
-                    {copyState() === 'copied' ? 'Link copied' : 'Copy link for VLC / mpv'}
+                    {copyState() === 'copied' ? 'Link copied' : 'Copy stream link'}
                   </button>
                 </Show>
               </div>

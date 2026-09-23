@@ -1,7 +1,7 @@
 import { AniSourceError } from '../../data/anisource/client'
 
 /** Catalog-level failure classification shared by the watch and reader sessions. */
-export type SourceFailureKind = 'network' | 'timeout' | 'invalid' | 'unavailable' | 'expired' | 'cancelled'
+export type SourceFailureKind = 'network' | 'timeout' | 'invalid' | 'unavailable' | 'expired' | 'cancelled' | 'rate-limited' | 'misconfigured'
 
 export interface SourceFailure {
   readonly kind: SourceFailureKind
@@ -30,6 +30,20 @@ export function describeSourceFailure(cause: unknown, operation: string): Source
         kind: 'network',
         retryable: true,
         message: `Network error while ${operation}. Check your connection and retry.`,
+      }
+    }
+    if (cause.kind === 'rate-limited') {
+      return {
+        kind: 'rate-limited',
+        retryable: true,
+        message: `Too many AniSource requests while ${operation}. Wait a few seconds and retry.`,
+      }
+    }
+    if (cause.kind === 'misconfigured') {
+      return {
+        kind: 'misconfigured',
+        retryable: true,
+        message: cause.message || `The streaming service is misconfigured (while ${operation}). Playback cannot succeed until the server credentials are fixed.`,
       }
     }
     if (cause.kind === 'http' && cause.status !== undefined && [502, 503, 504].includes(cause.status)) {
@@ -67,6 +81,20 @@ export function describeSourceFailure(cause: unknown, operation: string): Source
         kind: 'invalid',
         retryable: false,
         message: `The source returned an unexpected response while ${operation}.`,
+      }
+    }
+    if (
+      cause.kind === 'http' &&
+      cause.status !== undefined &&
+      [401, 403, 404, 405].includes(cause.status) &&
+      !(operation === 'streams' && [401, 403, 410].includes(cause.status))
+    ) {
+      // Rejected or unknown gateway routes are not transient: retrying the same
+      // request cannot succeed, so report them as invalid instead of network.
+      return {
+        kind: 'invalid',
+        retryable: false,
+        message: `The streaming request was rejected while ${operation} (${cause.status}).`,
       }
     }
     return { kind: 'network', retryable: true, message: `The source request failed while ${operation}.` }

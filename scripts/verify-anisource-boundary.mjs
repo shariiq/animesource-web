@@ -5,6 +5,9 @@ import apiUrls from '../config/api-urls.json' with { type: 'json' }
 
 const staticRoot = resolve('.vercel/output/static')
 const forbiddenHosts = new Set([new URL(apiUrls.anisource).host.toLowerCase()])
+if (apiUrls.anisourceFallback) {
+  forbiddenHosts.add(new URL(apiUrls.anisourceFallback).host.toLowerCase())
+}
 const configuredBase = process.env.ANISOURCE_BASE
 
 if (configuredBase) {

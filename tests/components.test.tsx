@@ -433,15 +433,15 @@ describe("LazyPlayer", () => {
     canPlayType.mockRestore();
   });
 
-  it("offers the out-of-browser fallback when neither hls.js nor native HLS can play", async () => {
+  it("explains the limitation without a dead out-of-browser button when neither hls.js nor native HLS can play", async () => {
     hls.state.supported = false;
     render(() => <LazyPlayer streams={[hlsStream]} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "This browser cannot play HLS streams",
     );
     expect(
-      screen.getByRole("button", { name: /Open stream in a new tab/ }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: /Open stream in a new tab/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("retries a fatal network error once before surfacing a failure", async () => {
@@ -461,6 +461,25 @@ describe("LazyPlayer", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "This stream could not be played",
     );
+  });
+
+  it("re-resolves the current server when the in-player retry is used", async () => {
+    const onRetry = vi.fn(async () => undefined);
+    render(() => <LazyPlayer streams={[hlsStream]} onRetry={onRetry} />);
+    await waitFor(() => expect(hls.instances).toHaveLength(1));
+    const instance = hls.instances[0]!;
+
+    instance.emit("hlsError", { fatal: true, type: "networkError" });
+    instance.emit("hlsError", { fatal: true, type: "networkError" });
+    const retry = await screen.findByRole("button", { name: "Retry stream" });
+
+    fireEvent.click(retry);
+
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Reconnecting to the stream…",
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("recovers a fatal media error once and ignores non-fatal errors", async () => {
@@ -487,6 +506,23 @@ describe("LazyPlayer", () => {
       type: "networkError",
       details: "manifestLoadError",
       response: { code: 403 },
+    });
+
+    expect(onMediaError).toHaveBeenCalledWith(identity, expect.stringContaining("expired"), true);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("treats a 404 segment as an expired link for older API versions", async () => {
+    const identity = { key: "source:episode:server", sourceId: "source", episodeId: "episode", serverId: "server" };
+    const onMediaError = vi.fn(() => true);
+    render(() => <LazyPlayer streams={[hlsStream]} identity={identity} onMediaError={onMediaError} />);
+    await waitFor(() => expect(hls.instances).toHaveLength(1));
+
+    hls.instances[0]!.emit("hlsError", {
+      fatal: true,
+      type: "networkError",
+      details: "fragLoadError",
+      response: { code: 404 },
     });
 
     expect(onMediaError).toHaveBeenCalledWith(identity, expect.stringContaining("expired"), true);

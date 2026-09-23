@@ -16,7 +16,12 @@ import {
 } from './schema'
 
 const API_PREFIX = '/api/anisource'
+const FALLBACK_PREFIX = '/fallback'
 const SESSION_LIFETIME_SECONDS = 12 * 60 * 60
+// Ticket lifetime sits just under the API media capability TTL (60 min) so a
+// gateway expiry always fires first and its refresh pulls fresh API URLs too.
+// API HLS key resources may expire sooner (10 min); those surface as upstream
+// 401/403/410 on the media fetch and ride the same expired-link refresh path.
 const ASSET_TICKET_LIFETIME_SECONDS = 55 * 60
 const MAX_PROXY_BODY_BYTES = 8 * 1024 * 1024
 const textEncoder = new TextEncoder()
@@ -44,6 +49,7 @@ const ticketSchema = z.object({
   sid: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   exp: z.number().int(),
   scope: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  f: z.boolean().optional(),
 })
 
 type Session = z.infer<typeof sessionSchema>
@@ -160,7 +166,9 @@ function getLimiters(): { session: Limiter; ip: Limiter } | null {
   } catch {
     return null
   }
-  const redis = new Redis({ url, token })
+  // Fail fast: the limiter sits on the request hot path, so client-side
+  // retries would only stack latency before the fail-closed 503 below.
+  const redis = new Redis({ url, token, retry: false })
   return {
     session: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(240, '10 s'), prefix: 'anisource:session:v1' }),
     ip: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(1200, '10 s'), prefix: 'anisource:ip:v1' }),
@@ -171,11 +179,11 @@ async function checkRateLimits(request: Request, session: Session, key: CryptoKe
   const limiters = getLimiters()
   if (!limiters) {
     return process.env.NODE_ENV === 'production'
-      ? jsonError(503, 'Rate limiting is not configured.')
+      ? jsonError(503, 'Rate limiting is not configured.', {}, 'misconfigured')
       : null
   }
   const ip = requestClientIp(request)
-  if (!ip) return jsonError(503, 'Client rate limiting is unavailable.')
+  if (!ip) return jsonError(503, 'Client rate limiting is unavailable.', {}, 'misconfigured')
   try {
     const [bySession, byIp] = await Promise.all([
       limiters.session.limit(await sign(session.sid, 'limit-session-v1', key)),
@@ -185,22 +193,39 @@ async function checkRateLimits(request: Request, session: Session, key: CryptoKe
     const reset = Math.min(...[bySession, byIp].filter((result) => !result.success).map((result) => result.reset))
     return jsonError(429, 'Too many AniSource requests. Try again shortly.', {
       'Retry-After': String(Math.max(1, Math.ceil((reset - Date.now()) / 1000))),
-    })
+    }, 'rate-limited')
   } catch {
     return jsonError(503, 'AniSource request protection is temporarily unavailable.')
   }
 }
 
-function jsonError(status: number, detail: string, headers: HeadersInit = {}): Response {
+function jsonError(status: number, detail: string, headers: HeadersInit = {}, kind?: string): Response {
   return new Response(JSON.stringify({ detail }), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...Object.fromEntries(new Headers(headers)), },
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      ...Object.fromEntries(new Headers(headers)),
+      ...(kind ? { 'X-AniSource-Error-Kind': kind } : {}),
+    },
   })
 }
 
 function apiBase(): URL | null {
+  return upstreamBase(process.env.ANISOURCE_BASE, apiUrls.anisource)
+}
+
+function fallbackBase(): URL | null {
+  // An explicit empty value disables the fallback; otherwise the shared
+  // default keeps local/dev working without per-machine env, like primary.
+  const env = process.env.ANISOURCE_FALLBACK_BASE
+  const configured = env === undefined ? apiUrls.anisourceFallback : env || null
+  return configured ? upstreamBase(configured, configured) : null
+}
+
+function upstreamBase(value: string | undefined, fallback: string): URL | null {
   try {
-    const base = new URL(process.env.ANISOURCE_BASE || apiUrls.anisource)
+    const base = new URL(value || fallback)
     if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.hash) return null
     if (process.env.NODE_ENV === 'production' && base.protocol !== 'https:') return null
     base.pathname = `${base.pathname.replace(/\/+$/, '')}/`
@@ -257,7 +282,7 @@ function isMediaPath(path: string): boolean {
     || /^\/api\/v1\/manga\/page\/[^/]+$/.test(path)
 }
 
-async function issueTicket(path: string, query: string, scope: string, session: Session, key: CryptoKey): Promise<string> {
+async function issueTicket(path: string, query: string, scope: string, session: Session, key: CryptoKey, viaFallback = false): Promise<string> {
   const ticket: AssetTicket = {
     v: 1,
     p: path,
@@ -265,6 +290,7 @@ async function issueTicket(path: string, query: string, scope: string, session: 
     sid: session.sid,
     exp: Math.min(session.exp, Math.floor(Date.now() / 1000) + ASSET_TICKET_LIFETIME_SECONDS),
     scope,
+    ...(viaFallback ? { f: true as const } : {}),
   }
   const encoded = encodeBase64Url(textEncoder.encode(JSON.stringify(ticket)))
   return `${encoded}.${await sign(encoded, 'asset-v1', key)}`
@@ -283,7 +309,7 @@ async function verifyTicket(value: string, session: Session, key: CryptoKey): Pr
   }
 }
 
-async function rewriteApiUrl(value: string, base: URL, session: Session, key: CryptoKey, scope: string): Promise<string> {
+async function rewriteApiUrl(value: string, base: URL, session: Session, key: CryptoKey, scope: string, viaFallback = false): Promise<string> {
   const absoluteUrl = /^(?:https?:)?\/\//i.test(value)
   if (!absoluteUrl && !/^\/?api\/v1(?:\/|$)/i.test(value)) return value
   let url: URL
@@ -297,7 +323,7 @@ async function rewriteApiUrl(value: string, base: URL, session: Session, key: Cr
   const basePath = base.pathname.replace(/\/$/, '')
   const path = basePath && url.pathname.startsWith(`${basePath}/`) ? url.pathname.slice(basePath.length) : url.pathname
   if (isMediaPath(path)) {
-    const ticket = await issueTicket(path, url.search, scope, session, key)
+    const ticket = await issueTicket(path, url.search, scope, session, key, viaFallback)
     return `${API_PREFIX}/asset/${ticket}`
   }
   if (isAllowedUpstreamPath(path, url.search)) return `${API_PREFIX}${path}${url.search}${url.hash}`
@@ -305,20 +331,20 @@ async function rewriteApiUrl(value: string, base: URL, session: Session, key: Cr
   return `${path}${url.search}${url.hash}`
 }
 
-async function rewriteJson(value: unknown, base: URL, session: Session, key: CryptoKey, scope: string): Promise<unknown> {
-  if (typeof value === 'string') return rewriteApiUrl(value, base, session, key, scope)
-  if (Array.isArray(value)) return Promise.all(value.map((item) => rewriteJson(item, base, session, key, scope)))
+async function rewriteJson(value: unknown, base: URL, session: Session, key: CryptoKey, scope: string, viaFallback = false): Promise<unknown> {
+  if (typeof value === 'string') return rewriteApiUrl(value, base, session, key, scope, viaFallback)
+  if (Array.isArray(value)) return Promise.all(value.map((item) => rewriteJson(item, base, session, key, scope, viaFallback)))
   if (value && typeof value === 'object') {
     return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([name, item]) => [
       name,
-      await rewriteJson(item, base, session, key, scope),
+      await rewriteJson(item, base, session, key, scope, viaFallback),
     ])))
   }
   return value
 }
 
-async function rewriteManifest(content: string, base: URL, session: Session, key: CryptoKey, scope: string): Promise<string> {
-  const rewrite = (value: string) => rewriteApiUrl(value, base, session, key, scope)
+async function rewriteManifest(content: string, base: URL, session: Session, key: CryptoKey, scope: string, viaFallback = false): Promise<string> {
+  const rewrite = (value: string) => rewriteApiUrl(value, base, session, key, scope, viaFallback)
   const attributes = await Promise.all([...content.matchAll(/URI=(['"])([^'"]+)\1/g)].map(async (match) => ({
     value: match[0],
     result: `URI=${match[1]}${await rewrite(match[2]!)}${match[1]}`,
@@ -382,21 +408,35 @@ function appendSessionCookie(response: Response, cookie: string | undefined): Re
 
 /** The single server-side AniSource seam for catalog JSON and signed media assets. */
 export async function handleAniSourceRequest(request: Request): Promise<Response> {
-  if (!isSameOriginRequest(request)) return jsonError(403, 'Same-origin request required.')
-  if (!['GET', 'HEAD'].includes(request.method)) return jsonError(405, 'Method not allowed.', { Allow: 'GET, HEAD' })
+  if (!isSameOriginRequest(request)) return jsonError(403, 'Same-origin request required.', {}, 'forbidden')
+  if (!['GET', 'HEAD'].includes(request.method)) return jsonError(405, 'Method not allowed.', { Allow: 'GET, HEAD' }, 'invalid')
 
   const signingSecret = secret()
-  const base = apiBase()
   const url = new URL(request.url)
-  const rawPath = url.pathname.startsWith(`${API_PREFIX}/`) ? url.pathname.slice(API_PREFIX.length) : ''
-  if (!signingSecret || !base) return jsonError(503, 'AniSource server access is not configured.')
-  if (!rawPath || rawPath.length > 4096 || url.search.length > 2048) return jsonError(400, 'Invalid AniSource request.')
+  let rawPath = url.pathname.startsWith(`${API_PREFIX}/`) ? url.pathname.slice(API_PREFIX.length) : ''
+  let viaFallback = false
+  if (rawPath === FALLBACK_PREFIX || rawPath.startsWith(`${FALLBACK_PREFIX}/`)) {
+    viaFallback = true
+    rawPath = rawPath.slice(FALLBACK_PREFIX.length)
+  }
+  const requestBase = viaFallback ? fallbackBase() : apiBase()
+  if (!signingSecret || !requestBase) {
+    return jsonError(
+      503,
+      viaFallback && signingSecret
+        ? 'AniSource fallback access is not configured.'
+        : 'AniSource server access is not configured.',
+      {},
+      'misconfigured',
+    )
+  }
+  if (!rawPath || rawPath.length > 4096 || url.search.length > 2048) return jsonError(400, 'Invalid AniSource request.', {}, 'invalid')
   const signingKey = await hmacKey(signingSecret)
 
   const assetMatch = /^\/asset\/([^/]+)$/.exec(rawPath)
-  if (!assetMatch && !isAllowedUpstreamPath(rawPath, url.search)) return jsonError(404, 'AniSource route not found.')
+  if (!assetMatch && !isAllowedUpstreamPath(rawPath, url.search)) return jsonError(404, 'AniSource route not found.', {}, 'invalid')
   let session = await readSession(request, signingKey)
-  if (assetMatch && !session) return jsonError(403, 'Expired or invalid media ticket.')
+  if (assetMatch && !session) return jsonError(403, 'Expired or invalid media ticket.', {}, 'invalid')
 
   let newCookie: string | undefined
   if (!session) {
@@ -411,7 +451,7 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
   let ticket: AssetTicket | null = null
   if (assetMatch) {
     ticket = await verifyTicket(assetMatch[1]!, session, signingKey)
-    if (!ticket) return withSession(jsonError(403, 'Expired or invalid media ticket.'))
+    if (!ticket) return withSession(jsonError(403, 'Expired or invalid media ticket.', {}, 'invalid'))
     path = ticket.p
     search = ticket.q
   } else {
@@ -419,26 +459,42 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
     search = url.search
   }
 
-  const limited = await checkRateLimits(request, session, signingKey)
+  // Media tickets are unguessable session-bound capabilities and the API applies
+  // its own proxy rate limit, so only catalog JSON pays the Upstash round trips.
+  // Charging every HLS segment and manga image against the limiter added two
+  // Redis requests of latency to each media fetch and throttled seeking.
+  const limited = ticket ? null : await checkRateLimits(request, session, signingKey)
   if (limited) return withSession(limited)
 
-  const basePath = base.pathname.replace(/\/$/, '')
+  // Media tickets are bound to the origin that issued them: a fallback ticket
+  // must resolve against the fallback deployment, whose capability tokens the
+  // primary origin cannot redeem.
+  const activeBase = ticket?.f === true ? (fallbackBase() ?? null) : requestBase
+  if (!activeBase) {
+    return withSession(jsonError(503, 'AniSource fallback access is not configured.', {}, 'misconfigured'))
+  }
+  // Tickets carry their origin, so asset requests follow the ticket; catalog
+  // JSON follows the request prefix.
+  const rewriteViaFallback = ticket ? ticket.f === true : viaFallback
+
+  const basePath = activeBase.pathname.replace(/\/$/, '')
   const upstreamPath = basePath && path.startsWith(`${basePath}/`) ? path : `${basePath}${path}`
-  const upstreamUrl = new URL(upstreamPath, base.origin)
+  const upstreamUrl = new URL(upstreamPath, activeBase.origin)
   upstreamUrl.search = search
   const normalizedPath = basePath && upstreamUrl.pathname.startsWith(`${basePath}/`)
     ? upstreamUrl.pathname.slice(basePath.length)
     : upstreamUrl.pathname
   if (ticket ? !isMediaPath(normalizedPath) : !isAllowedUpstreamPath(normalizedPath, search)) {
-    return withSession(jsonError(404, 'AniSource route not found.'))
+    return withSession(jsonError(404, 'AniSource route not found.', {}, 'invalid'))
   }
   const upstreamSchema = ticket ? null : responseSchema(normalizedPath, search)
   const scope = ticket?.scope ?? await sign(`${path}${search}`, 'asset-scope-v1', signingKey)
   const serviceToken = process.env.ANISOURCE_SERVICE_TOKEN
   if ((process.env.NODE_ENV === 'production' && !serviceToken)
     || (serviceToken && new TextEncoder().encode(serviceToken).byteLength < 32)) {
-    return withSession(jsonError(503, 'AniSource server access is not configured.'))
+    return withSession(jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured'))
   }
+  const sentServiceAuth = Boolean(serviceToken && !isMediaPath(normalizedPath))
 
   const headers = new Headers({ Accept: request.headers.get('accept') ?? 'application/json, */*;q=0.8' })
   if (request.method === 'GET') {
@@ -446,8 +502,17 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
       const value = request.headers.get(name)
       if (value) headers.set(name, value)
     }
+    // Conditional headers let the API answer 304 for cached segments instead of
+    // resending bytes on every seek. They stay off catalog JSON, whose branch
+    // always rewrites the body and could not honor a bodyless 304.
+    if (ticket) {
+      for (const name of ['if-none-match', 'if-modified-since']) {
+        const value = request.headers.get(name)
+        if (value) headers.set(name, value)
+      }
+    }
   }
-  if (serviceToken && !isMediaPath(normalizedPath)) headers.set('Authorization', `Bearer ${serviceToken}`)
+  if (sentServiceAuth) headers.set('Authorization', `Bearer ${serviceToken}`)
 
   let upstream: Response
   try {
@@ -465,8 +530,22 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
     }))
   }
 
+  if (upstream.status === 401 && sentServiceAuth) {
+    // The gateway attached the service token and was still rejected: the two
+    // deployments disagree on the shared secret. Surfacing the 401 would make
+    // sessions report "expired stream links" and burn refresh budgets on an
+    // outage no retry can heal, so translate it to a misconfigured outage.
+    await upstream.body?.cancel()
+    return withSession(jsonError(
+      503,
+      'The streaming service rejected the server credentials. Check that ANISOURCE_SERVICE_TOKEN matches the API service token.',
+      {},
+      'misconfigured',
+    ))
+  }
+
   if (upstream.status >= 300 && upstream.status < 400) {
-    return withSession(jsonError(502, 'The streaming backend returned an unsupported redirect.'))
+    return withSession(jsonError(502, 'The streaming backend returned an unsupported redirect.', {}, 'invalid'))
   }
 
   const contentType = upstream.headers.get('content-type')?.toLowerCase() ?? ''
@@ -496,7 +575,7 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
         { 'X-AniSource-Error-Kind': cancelled ? 'cancelled' : 'network' },
       ))
     }
-    if (!bytes) return withSession(jsonError(502, 'AniSource returned an oversized response.'))
+    if (!bytes) return withSession(jsonError(502, 'AniSource returned an oversized response.', {}, 'invalid'))
     let body = new TextDecoder().decode(bytes)
     let transformed = false
     if (isJson) {
@@ -527,7 +606,7 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
         }
       }
       try {
-        const serialized = JSON.stringify(await rewriteJson(parsed, base, session, signingKey, scope))
+        const serialized = JSON.stringify(await rewriteJson(parsed, activeBase, session, signingKey, scope, rewriteViaFallback))
         if (serialized === undefined) throw new Error('AniSource response could not be serialized.')
         body = serialized
         transformed = true
@@ -538,7 +617,7 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
       }
     } else {
       try {
-        body = await rewriteManifest(body, base, session, signingKey, scope)
+        body = await rewriteManifest(body, activeBase, session, signingKey, scope, rewriteViaFallback)
         transformed = true
       } catch {
         return withSession(jsonError(502, 'AniSource returned an unsupported playlist URL.', {
@@ -546,7 +625,7 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
         }))
       }
     }
-    if (containsUpstreamHost(body, base)) {
+    if (containsUpstreamHost(body, activeBase)) {
       return withSession(jsonError(502, 'AniSource response contained an unrewritten upstream URL.', {
         'X-AniSource-Error-Kind': 'invalid',
       }))

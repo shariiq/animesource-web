@@ -45,7 +45,7 @@ export type MangaReaderStage =
   | 'empty'
   | 'error'
 
-export type MangaReaderErrorKind = 'network' | 'timeout' | 'invalid' | 'unavailable' | 'empty' | 'persistence' | 'cancelled'
+export type MangaReaderErrorKind = 'network' | 'timeout' | 'invalid' | 'unavailable' | 'empty' | 'persistence' | 'cancelled' | 'rate-limited' | 'misconfigured'
 
 export interface MangaReaderError {
   kind: MangaReaderErrorKind
@@ -188,6 +188,9 @@ function isLegacyZeroStartRoute(chapters: readonly MangaChapter[], value: string
 
 function describeError(error: unknown, operation: MangaReaderError['operation']): MangaReaderError {
   const failure = describeSourceFailure(error, operation)
+  // 'expired' is a playback concept; in the reader it means the source cannot
+  // serve this chapter. Rate-limit and misconfiguration failures pass through
+  // with their own retryable messaging.
   const kind: MangaReaderErrorKind = failure.kind === 'expired' ? 'unavailable' : failure.kind
   return {
     kind,

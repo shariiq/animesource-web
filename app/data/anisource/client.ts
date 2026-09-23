@@ -34,7 +34,7 @@ export const AS_MAX_RETRIES = 0 // AniSource failures are surfaced, not silently
 export class AniSourceError extends Error {
   constructor(
     message: string,
-    readonly kind: 'network' | 'http' | 'timeout' | 'invalid' | 'cancelled',
+    readonly kind: 'network' | 'http' | 'timeout' | 'invalid' | 'cancelled' | 'rate-limited' | 'misconfigured',
     readonly status?: number,
   ) {
     super(message)
@@ -52,11 +52,28 @@ export interface AniSourceTransport {
   clearTimeout(timeout: ReturnType<typeof setTimeout>): void
 }
 
+/** Every error kind the gateway may report in `x-anisource-error-kind`. */
+const GATEWAY_ERROR_KINDS: ReadonlySet<string> = new Set([
+  'network',
+  'http',
+  'timeout',
+  'invalid',
+  'cancelled',
+  'rate-limited',
+  'misconfigured',
+])
+
+function gatewayErrorKind(value: string | null): AniSourceError['kind'] | null {
+  // The header is gateway-controlled, so a set-membership check is the whole
+  // validation: unknown kinds fall through to the status-based handling below.
+  return value && GATEWAY_ERROR_KINDS.has(value) ? value as AniSourceError['kind'] : null
+}
+
 const defaultTransport: AniSourceTransport = {
   fetch: async (input, init) => {
     const response = await fetch(input, init)
-    const kind = response.headers.get('x-anisource-error-kind')
-    if (kind === 'network' || kind === 'timeout' || kind === 'cancelled' || kind === 'invalid') {
+    const kind = gatewayErrorKind(response.headers.get('x-anisource-error-kind'))
+    if (kind && kind !== 'http') {
       let detail = 'The AniSource request could not be completed.'
       try {
         const payload = z.object({ detail: z.string() }).safeParse(await response.clone().json())

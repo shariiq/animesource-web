@@ -52,4 +52,23 @@ describe('source session primitives', () => {
       retryable: true,
     })
   })
+
+  it('keeps throttling and misconfiguration distinct from network failures', () => {
+    expect(describeSourceFailure(new AniSourceError('Too many requests.', 'rate-limited', 429), 'streams')).toMatchObject({
+      kind: 'rate-limited',
+      retryable: true,
+    })
+    expect(describeSourceFailure(new AniSourceError('Credentials rejected.', 'misconfigured', 503), 'pages')).toMatchObject({
+      kind: 'misconfigured',
+      retryable: true,
+    })
+    expect(describeSourceFailure(new AniSourceError('Rejected.', 'http', 403), 'servers')).toMatchObject({
+      kind: 'invalid',
+      retryable: false,
+    })
+    expect(describeSourceFailure(new AniSourceError('Missing.', 'http', 404), 'match')).toMatchObject({
+      kind: 'invalid',
+      retryable: false,
+    })
+  })
 })

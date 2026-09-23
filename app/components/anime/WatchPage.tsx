@@ -7,7 +7,7 @@ import {
   Switch,
 } from 'solid-js'
 import { Link, useLocation, useNavigate, useParams } from '@tanstack/solid-router'
-import { anisourceClient } from '../../data/anisource/client'
+import { anisourceClient, createAniSourceClient } from '../../data/anisource/client'
 import type { AniListDetail } from '../../data/anilist/types'
 import { titleVariants } from '../../data/matching'
 import { viewerData } from '../../lib/persistence/active'
@@ -24,6 +24,12 @@ import { MatchPicker } from './watch/MatchPicker'
 
 const watchApi: WatchSourceClient = anisourceClient
 const watchPersistence: WatchPersistence = viewerData
+/**
+ * Last-resort origin, resolved through the same gateway under `/fallback`.
+ * The session warms it after the first expired link and only serves streams
+ * from it once the primary recovery budget is exhausted.
+ */
+const fallbackApi: WatchSourceClient = createAniSourceClient({ baseUrl: '/api/anisource/fallback' })
 
 /**
  * Client-only streaming flow. AniList detail data is passed from the route
@@ -49,6 +55,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
     fromSchedule,
     api: watchApi,
     persistence: watchPersistence,
+    fallbackApi,
     navigateToEpisode: async (episodeId, sourceId) => {
       await navigate({
         to: '/anime/$animeId/watch/$episodeId',
@@ -240,6 +247,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
                 onProgress={session.updatePlaybackProgress}
                 onEnded={session.markPlaybackComplete}
                 onMediaError={session.reportMediaFailure}
+                onRetry={() => { void session.retryCurrentServer() }}
               />
             </Match>
             <Match when={session.playerStage() === 'streams-loading'}>

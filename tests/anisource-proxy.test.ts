@@ -110,6 +110,25 @@ describe('AniSource server boundary', () => {
     expect(upstreamFetch).toHaveBeenCalledTimes(2)
   })
 
+  it('rewrites protocol-relative HLS URLs to session-bound same-origin tickets', async () => {
+    const protocolRelativeUrl = `//${new URL(API_ORIGIN).host}/api/v1/proxy/hls/master-token`
+    const upstreamFetch = vi.fn(async () => new Response(JSON.stringify([{
+      url: protocolRelativeUrl,
+      quality: 'Auto',
+      is_hls: true,
+      is_audio: false,
+    }]), { headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', upstreamFetch)
+
+    const response = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/test/streams/episode?server_id=1'))
+    const body = await response.clone().json()
+    const url = await ticketUrl(response)
+
+    expect(response.status).toBe(200)
+    expect(url).toMatch(/^\/api\/anisource\/asset\//)
+    expect(JSON.stringify(body)).not.toContain(API_ORIGIN)
+  })
+
   it('forwards byte ranges through HLS media tickets and preserves partial responses', async () => {
     const byteRange = 'bytes=10-19'
     const ifRange = '"segment-v1"'

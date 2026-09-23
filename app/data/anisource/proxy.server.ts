@@ -284,8 +284,8 @@ async function verifyTicket(value: string, session: Session, key: CryptoKey): Pr
 }
 
 async function rewriteApiUrl(value: string, base: URL, session: Session, key: CryptoKey, scope: string): Promise<string> {
-  const absoluteUrl = /^https?:\/\//i.test(value)
-  if (!absoluteUrl && !/^\/?api\/v1\//i.test(value)) return value
+  const absoluteUrl = /^(?:https?:)?\/\//i.test(value)
+  if (!absoluteUrl && !/^\/?api\/v1(?:\/|$)/i.test(value)) return value
   let url: URL
   try {
     url = new URL(value, base)

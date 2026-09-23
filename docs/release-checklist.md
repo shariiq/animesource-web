@@ -37,6 +37,7 @@ Run this checklist against the commit being released. Do not mark a release read
 ## Vercel operations
 
 - [ ] Preview output is generated under `.vercel/output/` by the Nitro Vercel preset, and `bun start` serves the built routes over HTTP.
-- [ ] Preview environment values are public endpoint overrides only; no secret is exposed through `VITE_`.
+- [ ] AniSource server token, session secret, and Upstash credentials are set in Preview/Production server environments; none use `VITE_` or appear in browser assets.
+- [ ] API requires the matching service token; unauthenticated catalog requests return 401 while signed-media routes remain functional.
 - [ ] Production promotion has a named release owner.
 - [ ] The previous known-good deployment is identified so the release owner can roll back if needed.

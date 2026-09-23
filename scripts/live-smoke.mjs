@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import apiUrls from '../config/api-urls.json' with { type: 'json' }
 
 const ANILIST_URL = process.env.LIVE_ANILIST_URL || process.env.VITE_ANILIST_API_URL || apiUrls.anilist
-const configuredAniSourceBase = process.env.LIVE_ANISOURCE_BASE || process.env.VITE_ANISOURCE_BASE || apiUrls.anisource
+const configuredAniSourceBase = process.env.LIVE_ANISOURCE_BASE || process.env.ANISOURCE_BASE || 'https://anisource-api.vercel.app'
 const ANISOURCE_BASE = configuredAniSourceBase.trim().replace(/\/+$/, '')
 const STEP_SUMMARY_FILE = process.env.GITHUB_STEP_SUMMARY
 
@@ -75,39 +75,6 @@ export const healthResponseSchema = z.object({
   memory_usage_mb: z.number(),
   active_sources: z.number().int(),
   cache_stats: z.record(z.string(), z.unknown()),
-})
-
-export const sourceInfoSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  base_url: z.string(),
-})
-
-export const sourceListResponseSchema = z.object({
-  sources: z.array(sourceInfoSchema),
-  count: z.number(),
-})
-
-export const anisourceAnimeSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  url: z.string(),
-  thumbnail: z.string().default(''),
-  description: z.string().default(''),
-  genres: z.array(z.string()).default([]),
-  studios: z.array(z.string()).default([]),
-  producers: z.array(z.string()).default([]),
-  alternative_titles: z.array(z.string()).default([]),
-  status: z.string().default('unknown'),
-  score: z.number().nullable().optional(),
-  tags: z.array(z.string()).default([]),
-})
-
-export const searchResponseSchema = z.object({
-  items: z.array(anisourceAnimeSchema),
-  page: z.number(),
-  has_next: z.boolean(),
-  total_returned: z.number(),
 })
 
 // ---- Helpers ----
@@ -459,7 +426,6 @@ async function runAniSourceChecks() {
   }
 
   // Check 2: Sources list
-  let firstSourceId = null
   const t1 = performance.now()
   try {
     const request = await fetchWithRetry(`${ANISOURCE_BASE}/api/v1/anime/sources`, {
@@ -479,45 +445,30 @@ async function runAniSourceChecks() {
     } else {
       const res = request.response
       if (!res) throw new Error('Retry helper returned neither a response nor an error')
-      if (!res.ok) {
+      if (res.status === 401) {
         recordResult({
           service: 'AniSource',
-          target: '/api/v1/anime/sources',
+          target: '/api/v1/anime/sources access control',
+          ok: true,
+          durationMs: Math.round(performance.now() - t1),
+          details: 'Unauthenticated catalog access was denied (HTTP 401). This public smoke does not send service credentials.',
+        })
+      } else if (res.ok) {
+        recordResult({
+          service: 'AniSource',
+          target: '/api/v1/anime/sources access control',
           ok: false,
           durationMs: Math.round(performance.now() - t1),
-          error: `HTTP ${res.status} (${res.statusText}) on attempt ${request.attempt}/${SERVICE_ATTEMPTS}`,
+          error: 'The protected catalog endpoint accepted an unauthenticated request.',
         })
       } else {
-        const json = await res.json()
-        const durationMs = Math.round(performance.now() - t1)
-        const parsed = sourceListResponseSchema.safeParse(json)
-        if (!parsed.success) {
-          recordResult({
-            service: 'AniSource',
-            target: '/api/v1/anime/sources',
-            ok: false,
-            durationMs,
-            error: 'Payload failed Zod sources schema',
-          })
-        } else if (parsed.data.sources.length === 0) {
-          recordResult({
-            service: 'AniSource',
-            target: '/api/v1/anime/sources',
-            ok: false,
-            durationMs,
-            error: 'Zero sources returned',
-          })
-        } else {
-          firstSourceId = parsed.data.sources[0].id
-          const names = parsed.data.sources.map((s) => s.id).join(', ')
-          recordResult({
-            service: 'AniSource',
-            target: '/api/v1/anime/sources',
-            ok: true,
-            durationMs,
-            details: `${parsed.data.sources.length} sources active [${names}]`,
-          })
-        }
+        recordResult({
+          service: 'AniSource',
+          target: '/api/v1/anime/sources access control',
+          ok: false,
+          durationMs: Math.round(performance.now() - t1),
+          error: `Expected an unauthenticated 401, got HTTP ${res.status} (${res.statusText}) on attempt ${request.attempt}/${SERVICE_ATTEMPTS}`,
+        })
       }
     }
   } catch (err) {
@@ -527,80 +478,6 @@ async function runAniSourceChecks() {
       ok: false,
       durationMs: Math.round(performance.now() - t1),
       error: errorMessage(err),
-    })
-  }
-
-  // Check 3: Search test using the first source
-  if (firstSourceId) {
-    const t2 = performance.now()
-    const query = 'Cowboy Bebop'
-    try {
-      const searchUrl = `${ANISOURCE_BASE}/api/v1/anime/${encodeURIComponent(firstSourceId)}/search?q=${encodeURIComponent(query)}&page=1`
-      const request = await fetchWithRetry(searchUrl, {
-        attempts: SERVICE_ATTEMPTS,
-        timeoutMs: 20_000,
-        headers: { Accept: 'application/json' },
-      })
-
-      if (request.error) {
-        recordResult({
-          service: 'AniSource',
-          target: `search (${firstSourceId})`,
-          ok: false,
-          durationMs: Math.round(performance.now() - t2),
-          error: `${errorMessage(request.error)} after ${request.attempt}/${SERVICE_ATTEMPTS} attempts; probable cold start or transient outage`,
-        })
-      } else {
-        const res = request.response
-        if (!res) throw new Error('Retry helper returned neither a response nor an error')
-        if (!res.ok) {
-          recordResult({
-            service: 'AniSource',
-            target: `search (${firstSourceId})`,
-            ok: false,
-            durationMs: Math.round(performance.now() - t2),
-            error: `HTTP ${res.status} (${res.statusText}) on attempt ${request.attempt}/${SERVICE_ATTEMPTS}`,
-          })
-        } else {
-          const json = await res.json()
-          const durationMs = Math.round(performance.now() - t2)
-          const parsed = searchResponseSchema.safeParse(json)
-          if (!parsed.success) {
-            recordResult({
-              service: 'AniSource',
-              target: `search (${firstSourceId})`,
-              ok: false,
-              durationMs,
-              error: 'Payload failed Zod search schema',
-            })
-          } else {
-            recordResult({
-              service: 'AniSource',
-              target: `search (${firstSourceId})`,
-              ok: true,
-              durationMs,
-              details: `Found ${parsed.data.items.length} candidates for "${query}"`,
-            })
-          }
-        }
-      }
-    } catch (err) {
-      recordResult({
-        service: 'AniSource',
-        target: `search (${firstSourceId})`,
-        ok: false,
-        durationMs: Math.round(performance.now() - t2),
-        error: errorMessage(err),
-      })
-    }
-  } else {
-    recordResult({
-      service: 'AniSource',
-      target: 'search',
-      ok: false,
-      blocking: false,
-      durationMs: 0,
-      error: 'Skipped search check because no source was available',
     })
   }
 }

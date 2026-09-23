@@ -15,9 +15,9 @@ For local production inspection after a build, run `bun start` and open the prin
 
 ## Environment
 
-Copy `.env.example` to `.env` for local development only when overrides are needed. `config/api-urls.json` is the checked-in source of truth for public defaults; `VITE_ANILIST_API_URL` and `VITE_ANISOURCE_BASE` are optional build-time overrides, not credentials. Configure overrides in Vercel's Preview and Production environments only when a deployment needs values different from that file.
+Copy `.env.example` to `.env` for local development only when overrides are needed. `config/api-urls.json` contains the public AniList default. AniSource settings are server-only; configure the required production values described in [AniSource access control](anisource-access-control.md) in Vercel's server environment settings. Do not add them to `VITE_` variables or build arguments.
 
-Playwright and CI override both values with `tests/e2e/mock-api.mjs`. CI must never call either live external service.
+Playwright configures AniList's test URL and the server-only AniSource base to `tests/e2e/mock-api.mjs`. CI must never call either live external service during the merge gate.
 
 The merge-gate workflow (`verify.yml`) is deterministic and mock-only. A separate scheduled workflow, `live-smoke.yml`, exercises the real services (`bun run test:live`) twice daily and on manual dispatch. It is operational only: its failures open an issue for the deploy owner and never block a merge, preview, or production promotion. See `docs/ci.md`.
 

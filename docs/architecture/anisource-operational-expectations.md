@@ -2,15 +2,17 @@
 
 ## Dependency contract
 
-AniSource provides source search, episode lists, servers, and stream manifests for Watch, plus source search, chapter lists, and page URLs for the mounted Manga Reader route. It is an interaction-time browser dependency only:
+AniSource provides source search, episode lists, servers, and stream manifests for Watch, plus source search, chapter lists, and page URLs for the mounted Manga Reader route. The browser calls the same-origin `/api/anisource/*` gateway only during user-initiated Watch/Reader work; the gateway talks to AniSource from the server:
 
 - AniList owns discovery, schedule, detail metadata, and all server-rendered loader data.
-- AniSource must **never** run in an AniList loader, SSR request, route prefetch, discovery route, or shared layout.
+- AniSource must **never** run in an AniList loader, SSR request, route prefetch, discovery route, or shared layout. The server gateway must not be treated as a discovery data loader.
 - `createWatchSession` is the sole production caller for anime source → Match → Episode → Server → Stream resolution.
 - `createMangaReaderSession` is the sole production caller for manga source → Match → Chapter → Page resolution. It loads the full chapter list from `/chapters`; `/update` is not a reader data source.
 - Browser IndexedDB stores the viewer's Match, source preference, playback ledger, manga reading position, reader preferences, and profile preferences. AniSource response data is not durable viewer state.
 
 This separation means an AniSource outage cannot prevent browsing, searching, or reading an Anime or Manga detail page.
+
+The gateway uses an HttpOnly signed anonymous session, session-bound tickets for signed HLS/manga assets, same-origin request checks, and shared Upstash limits in production. The AniSource service token remains server-only. The gateway streams signed media but disables shared caching because its tickets are session-bound; this intentionally trades CDN reuse for access control.
 
 ## Timeout, cold start, and retries
 

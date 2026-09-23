@@ -13,12 +13,15 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "test:live": "node --env-file=.env.example --env-file-if-exists=.env scripts/live-smoke.mjs",
-    "verify": "bun run lint && bun run typecheck && bun run build && bun run test && bun run e2e"
+    "verify:boundary": "node scripts/verify-anisource-boundary.mjs",
+    "verify": "bun run lint && bun run typecheck && bun run build && bun run verify:boundary && bun run test && bun run e2e"
   },
   "dependencies": {
     "@tanstack/solid-query": "^5.102.8",
     "@tanstack/solid-router": "^1.170.34",
     "@tanstack/solid-start": "^1.168.52",
+    "@upstash/ratelimit": "^2.1.0",
+    "@upstash/redis": "^1.39.0",
     "autoprefixer": "^10.6.0",
     "hls.js": "^1.7.3",
     "postcss": "^8.5.28",

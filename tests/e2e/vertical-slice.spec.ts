@@ -1,4 +1,16 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+function observeAniSourceBoundary(page: Page) {
+  const browserRequests = { gateway: 0, direct: [] as string[] };
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/anisource/")) browserRequests.gateway += 1;
+    if (url.origin === "http://127.0.0.1:3101" && url.pathname.startsWith("/api/v1/")) {
+      browserRequests.direct.push(request.url());
+    }
+  });
+  return browserRequests;
+}
 
 test("header search stays client-side and renders matching Explore results", async ({ page }) => {
   await page.goto("/");
@@ -8,6 +20,7 @@ test("header search stays client-side and renders matching Explore results", asy
 
   const search = page.getByRole("combobox", { name: "Search anime" });
   await expect(search).toBeVisible();
+  await expect(search).toHaveAttribute("aria-controls", "global-search-suggestions");
   await search.click();
   await search.pressSequentially("Test Anime", { delay: 25 });
   await expect(search).toBeFocused();
@@ -107,6 +120,7 @@ test("a direct detail route aligns the catalog mode before following a unique re
 });
 
 test("manga detail opens the reader through the full chapter flow", async ({ page }) => {
+  const browserRequests = observeAniSourceBoundary(page);
   await page.goto("/manga/1");
   await page.getByRole("link", { name: "Open reader →" }).click();
   await expect(page).toHaveURL(/\/manga\/1\/read\/1(?:\?|$)/);
@@ -120,6 +134,8 @@ test("manga detail opens the reader through the full chapter flow", async ({ pag
   await expect(page).toHaveURL(/\/manga\/1\/read\/2(?:\?|$)/);
   await expect(page.getByText("Second chapter · Test Manga Source", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(browserRequests.gateway).toBeGreaterThan(0);
+  expect(browserRequests.direct).toEqual([]);
 });
 
 test("legacy zero reader routes resolve to the first numbered chapter", async ({ page }) => {
@@ -194,6 +210,7 @@ test("Explore stays active for filtered Explore routes", async ({ page }) => {
 test("home to detail to watch resolves a stream and mounts the player", async ({
   page,
 }) => {
+  const browserRequests = observeAniSourceBoundary(page);
   await page.goto("/");
   await page.getByRole("link", { name: "Test Anime" }).first().click();
   await expect(page.locator("article").getByRole("heading", { name: "Test Anime" })).toBeVisible();
@@ -208,6 +225,8 @@ test("home to detail to watch resolves a stream and mounts the player", async ({
   await expect(page.getByLabel("Quality")).toBeVisible();
   await expect(page.getByLabel("Subtitles")).toBeVisible();
   await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
+  expect(browserRequests.gateway).toBeGreaterThan(0);
+  expect(browserRequests.direct).toEqual([]);
 });
 
 test("search to detail to watch mounts the player", async ({ page }) => {
@@ -343,12 +362,18 @@ test("schedule switches views and stays within desktop and mobile viewports", as
 test("discovery initial load does not call AniSource", async ({ page }) => {
   const anisourceRequests: string[] = [];
   page.on("request", (request) => {
-    const pathname = new URL(request.url()).pathname;
-    if (pathname.startsWith("/api/v1/")) anisourceRequests.push(request.url());
+    const url = new URL(request.url());
+    if (url.origin === "http://127.0.0.1:3101" && url.pathname.startsWith("/api/v1/")) {
+      anisourceRequests.push(request.url());
+    }
   });
 
   await page.goto("/");
   await expect(page.getByRole("banner", { name: "Site header" })).toBeVisible();
+  await expect(page.locator('head meta[http-equiv="content-security-policy"]')).toHaveAttribute(
+    "content",
+    /connect-src 'self'/,
+  );
   expect(anisourceRequests).toEqual([]);
 });
 

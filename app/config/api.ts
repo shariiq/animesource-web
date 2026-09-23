@@ -12,5 +12,4 @@ function configuredUrl(value: unknown, fallback: string): string {
 
 export const API_URLS = {
   anilist: configuredUrl(import.meta.env.VITE_ANILIST_API_URL, defaults.anilist),
-  anisource: configuredUrl(import.meta.env.VITE_ANISOURCE_BASE, defaults.anisource),
 } as const

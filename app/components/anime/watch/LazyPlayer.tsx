@@ -210,7 +210,7 @@ export function LazyPlayer(props: {
       element.appendChild(trackElement)
       trackElements.push(trackElement)
       register(trackElement, subtitle.language)
-      void loadSubtitle(subtitle.url, stream.headers)
+      void loadSubtitle(subtitle.url)
         .then((captionText) => {
           if (generation !== loadGeneration) return
           const objectUrl = URL.createObjectURL(new Blob([captionText], { type: 'text/vtt' }))

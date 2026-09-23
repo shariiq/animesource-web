@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { API_DEFAULTS, API_URLS, normalizeApiUrl } from '../../config/api'
+import { normalizeApiUrl } from '../../config/api'
 import {
   healthResponseSchema,
   chapterPageSchema,
@@ -19,7 +19,7 @@ import {
   type Stream,
 } from './schema'
 
-export const ANISOURCE_DEFAULT_BASE_URL = API_DEFAULTS.anisource
+export const ANISOURCE_PROXY_BASE = '/api/anisource'
 
 /** A slow first response beyond this delay is surfaced as a probable cold start. */
 export const AS_COLD_START_DELAY_MS = 4_500
@@ -53,7 +53,21 @@ export interface AniSourceTransport {
 }
 
 const defaultTransport: AniSourceTransport = {
-  fetch: (input, init) => fetch(input, init),
+  fetch: async (input, init) => {
+    const response = await fetch(input, init)
+    const kind = response.headers.get('x-anisource-error-kind')
+    if (kind === 'network' || kind === 'timeout' || kind === 'cancelled' || kind === 'invalid') {
+      let detail = 'The AniSource request could not be completed.'
+      try {
+        const payload = z.object({ detail: z.string() }).safeParse(await response.clone().json())
+        if (payload.success) detail = payload.data.detail
+      } catch {
+        // Keep the stable generic message when the proxy error body is malformed.
+      }
+      throw new AniSourceError(detail, kind, response.status)
+    }
+    return response
+  },
   setTimeout: (callback, milliseconds) => setTimeout(callback, milliseconds),
   clearTimeout: (timeout) => clearTimeout(timeout),
 }
@@ -68,13 +82,12 @@ export interface AniSourceClientOptions {
 export type AniSourceCatalog = 'anime' | 'manga'
 
 /**
- * Client for the deployed AniSource API. All methods are client-only —
- * they are never called from loaders, SSR, or on initial page load; the
- * watch and reader routes invoke them only after explicit user navigation.
+ * Browser-initiated AniSource client. Requests are sent only to the same-origin
+ * server route and are never called from loaders, SSR, or initial page load.
  */
 export function createAniSourceClient(options: AniSourceClientOptions = {}) {
   const transport: AniSourceTransport = { ...defaultTransport, ...options.transport }
-  const baseUrl = normalizeApiUrl(options.baseUrl ?? API_URLS.anisource)
+  const baseUrl = normalizeApiUrl(options.baseUrl ?? ANISOURCE_PROXY_BASE)
   const timeoutMs = options.fetchTimeoutMs ?? AS_FETCH_TIMEOUT_MS
 
   async function request<T>(
@@ -246,12 +259,17 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
 /** Resolves relative AniSource asset URLs against the given (or configured) base. */
 export function resolveUrl(
   url: string | null | undefined,
-  baseUrl: string = API_URLS.anisource,
+  baseUrl: string = ANISOURCE_PROXY_BASE,
 ): string | null | undefined {
   if (!url) return url
   if (url.startsWith('http://') || url.startsWith('https://')) return url
+  const normalizedBase = normalizeApiUrl(baseUrl)
+  if (!/^https?:\/\//i.test(normalizedBase)) {
+    if (url.startsWith(`${ANISOURCE_PROXY_BASE}/`)) return url
+    return `${normalizedBase}${url.startsWith('/') ? url : `/${url}`}`
+  }
   try {
-    const resolved = new URL(url, `${normalizeApiUrl(baseUrl)}/`)
+    const resolved = new URL(url, `${normalizedBase}/`)
     return resolved.protocol === 'http:' || resolved.protocol === 'https:' ? resolved.toString() : url
   } catch {
     return url
@@ -277,54 +295,16 @@ export function normalizeSubtitleText(raw: string): string {
   return `WEBVTT\n\n${webVttText}`
 }
 
-function relaySubtitleHeaders(headers: Record<string, string>): { referer?: string; origin?: string } {
-  const relayHeaders: { referer?: string; origin?: string } = {}
-  for (const [name, value] of Object.entries(headers)) {
-    const normalized = name.toLowerCase()
-    if (normalized === 'referer') relayHeaders.referer = value
-    if (normalized === 'origin') relayHeaders.origin = value
-  }
-  return relayHeaders
-}
-
 export interface SubtitleTransport {
-  /** Plain client-side fetch of the track body. */
-  fetchDirect(url: string): Promise<string>
-  /** Fetch through the same-origin relay with spoofed referer/origin headers. */
-  fetchViaRelay(url: string, headers: { referer?: string; origin?: string }): Promise<string>
+  fetch(url: string): Promise<string>
 }
 
 /**
- * Builds a subtitle loader over an explicit transport seam. Relay-first when the
- * stream demands referer/origin headers a browser cannot set; direct-first
- * otherwise, with the other path as fallback.
+ * Loads and normalizes a subtitle track returned by AniSource.
  */
 export function createSubtitleLoader(transport: SubtitleTransport) {
-  return async function load(url: string, headers: Record<string, string> = {}): Promise<string> {
-    const relayHeaders = relaySubtitleHeaders(headers)
-    let text: string
-    if (Object.keys(relayHeaders).length > 0 && url.startsWith('http')) {
-      try {
-        text = await transport.fetchViaRelay(url, relayHeaders)
-      } catch (relayError) {
-        try {
-          text = await transport.fetchDirect(url)
-        } catch {
-          throw relayError
-        }
-      }
-    } else {
-      try {
-        text = await transport.fetchDirect(url)
-      } catch (error) {
-        if (!url.startsWith('http')) throw error
-        try {
-          text = await transport.fetchViaRelay(url, relayHeaders)
-        } catch {
-          throw error
-        }
-      }
-    }
+  return async function load(url: string): Promise<string> {
+    const text = await transport.fetch(url)
     if (new Blob([text]).size > MAX_SUBTITLE_BYTES) {
       throw new AniSourceError('The subtitle track is too large to load safely.', 'invalid')
     }
@@ -333,7 +313,7 @@ export function createSubtitleLoader(transport: SubtitleTransport) {
 }
 
 const defaultSubtitleLoader = createSubtitleLoader({
-  fetchDirect: async (url) => {
+  fetch: async (url) => {
     const response = await fetch(url, { headers: { Accept: 'text/vtt, text/plain;q=0.9, */*;q=0.1' } })
     if (!response.ok) throw new AniSourceError(`Subtitle request failed (${response.status}).`, 'http', response.status)
     const length = Number(response.headers.get('content-length') ?? 0)
@@ -342,15 +322,11 @@ const defaultSubtitleLoader = createSubtitleLoader({
     }
     return response.text()
   },
-  fetchViaRelay: async (url, headers) => {
-    const { fetchSubtitleText } = await import('./subtitle-server')
-    return fetchSubtitleText({ data: { url, headers } })
-  },
 })
 
 /** Fetches a subtitle payload and returns browser-ready WebVTT text. */
-export function loadSubtitle(url: string, headers: Record<string, string> = {}): Promise<string> {
-  return defaultSubtitleLoader(resolveUrl(url) ?? url, headers)
+export function loadSubtitle(url: string): Promise<string> {
+  return defaultSubtitleLoader(resolveUrl(url) ?? url)
 }
 
 export const anisourceClient = createAniSourceClient()

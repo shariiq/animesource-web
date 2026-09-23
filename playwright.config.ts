@@ -31,7 +31,7 @@ export default defineConfig({
       timeout: 120_000,
       env: {
         VITE_ANILIST_API_URL: 'http://127.0.0.1:3101/anilist',
-        VITE_ANISOURCE_BASE: 'http://127.0.0.1:3101',
+        ANISOURCE_BASE: 'http://127.0.0.1:3101',
       },
     },
   ],

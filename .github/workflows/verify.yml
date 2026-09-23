@@ -14,7 +14,6 @@ concurrency:
 env:
   CI: true
   VITE_ANILIST_API_URL: http://127.0.0.1:3101/anilist
-  VITE_ANISOURCE_BASE: http://127.0.0.1:3101
 
 jobs:
   static:
@@ -36,6 +35,8 @@ jobs:
         run: bun run typecheck
       - name: Build Vercel output
         run: bun run build
+      - name: Verify AniSource remains server-only
+        run: bun run verify:boundary
 
   test:
     name: Unit and browser tests

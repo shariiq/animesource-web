@@ -98,7 +98,7 @@ export function MangaDetailPage(props: { manga: AniListDetail }) {
   const title = createMemo(() => titleOf(props.manga))
   const description = createMemo(() => renderDescription(props.manga.description))
   const poster = createMemo(() => props.manga.coverImage?.extraLarge || props.manga.coverImage?.large || '')
-  const banner = createMemo(() => props.manga.bannerImage || poster())
+  const banner = createMemo(() => props.manga.bannerImage || '')
   const accent = createMemo(() => props.manga.coverImage?.color || '#7665e8')
   const titles = createMemo(() => getDetailTitles(props.manga))
   const detailTags = createMemo(() => getDetailTags(props.manga))

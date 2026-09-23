@@ -962,6 +962,10 @@
 
   /* ---- responsive ---- */
 
+  /* The fixed shell owns the viewport; stop the catalog page behind it from
+     scrolling or rubber-banding while reading. */
+  body:has(.manga-reader-shell) { overflow: hidden; }
+
   @media (max-width: 900px) {
     .manga-reader-status { display: none; }
   }
@@ -972,13 +976,20 @@
     .manga-reader-actions { flex: 1 1 auto; justify-content: flex-end; }
     .manga-reader-action span,
     .manga-reader-source span { display: none; }
-    .manga-reader-action { width: 38px; padding: 0; }
+    .manga-reader-action { width: 44px; min-width: 44px; min-height: 44px; padding: 0; }
+    .manga-reader-action.is-icon { width: 44px; }
+    .manga-reader-back,
+    .manga-reader-icon-button { width: 44px; min-width: 44px; min-height: 44px; }
     .manga-reader-cover { width: 30px; height: 42px; }
     .manga-reader-bar-bottom { padding-inline: 10px; gap: 6px; }
     .manga-reader-chapter-turn span { display: none; }
-    .manga-reader-chapter-turn { width: 38px; padding: 0; }
+    .manga-reader-chapter-turn { width: 44px; min-width: 44px; min-height: 44px; padding: 0; }
+    .manga-reader-page-turn { width: 44px; min-width: 44px; min-height: 44px; }
     .manga-reader-scrub-meta { display: none; }
-    .manga-reader-stream { padding-top: 108px; }
+    /* The top bar wraps to two rows on phones; clear both rows plus the
+       floating resume pill so the first pages are never covered. */
+    .manga-reader-stream { padding-top: 152px; }
+    .manga-reader-persistence { top: auto; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
     .manga-reader-shell[data-gap='large'] .manga-reader-stream { gap: 22px; }
     .manga-reader-panel,
     .manga-reader-index,

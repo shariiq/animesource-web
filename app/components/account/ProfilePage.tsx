@@ -87,7 +87,7 @@ export function ProfilePage() {
     <PageShell class="account-page">
       <header class="frosted-shell relative overflow-hidden px-6 py-7 sm:px-8 sm:py-9">
         <div class="pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] bg-[radial-gradient(circle_at_80%_18%,rgb(157_228_196_/_55%),transparent_39%),radial-gradient(circle_at_38%_82%,rgb(118_101_232_/_20%),transparent_48%)] lg:block" aria-hidden="true" />
-        <div class="relative grid gap-8 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-end">
+        <div class="relative grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-end">
           <div>
             <div class="flex items-center gap-4">
               <div class="grid size-14 shrink-0 place-items-center rounded-[18px] border border-white/85 bg-ink font-display text-3xl leading-none text-white shadow-[0_16px_32px_-22px_rgb(0_0_0_/_1)]" aria-hidden="true">{profileInitial()}</div>
@@ -96,7 +96,7 @@ export function ProfilePage() {
                 <p class="mt-1 inline-flex items-center gap-2 rounded-full border border-emerald-700/15 bg-emerald-50/70 px-3 py-1 font-mono text-[9px] uppercase tracking-[.1em] text-emerald-950"><span class="size-1.5 rounded-full bg-emerald-600" aria-hidden="true" />Saved on this device</p>
               </div>
             </div>
-            <h1 class="mt-7 max-w-4xl font-display text-5xl leading-[.88] tracking-[-.04em] sm:text-7xl">{profileName()}</h1>
+            <h1 class="mt-7 max-w-4xl break-words font-display text-5xl leading-[.88] tracking-[-.04em] sm:text-7xl">{profileName()}</h1>
             <p class="mt-5 max-w-2xl text-sm leading-6 text-text-secondary">Your profile is stored in this browser. Name it now; account sign-in can connect it across devices later.</p>
             <div class="mt-6 flex flex-wrap gap-3">
               <Link class="paper-control px-4 py-3 text-xs" to="/library">Open library</Link>
@@ -115,7 +115,7 @@ export function ProfilePage() {
         </div>
       </header>
 
-      <div class="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(19rem,.8fr)]">
+      <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(19rem,.8fr)]">
         <section class="material-panel p-6 sm:p-8" aria-labelledby="profile-details-title">
           <div class="flex items-start justify-between gap-5">
             <div>

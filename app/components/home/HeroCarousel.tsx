@@ -91,18 +91,18 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
             <div class="featured-contrast" />
           </div>
 
-          <div class="relative z-10 flex min-h-[54px] items-center justify-between gap-4 border-b border-white/12 bg-black/28 px-6 font-mono text-[9px] uppercase tracking-[.12em] text-white/78 backdrop-blur-[14px] sm:px-8">
+          <div class="relative z-10 flex min-h-[54px] flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-white/12 bg-black/28 px-4 py-2 font-mono text-[9px] uppercase tracking-[.12em] text-white/78 backdrop-blur-[14px] sm:px-8">
             <div class="flex items-center gap-[10px]">
               <i class="size-[6px] rounded-full bg-emerald shadow-[0_0_10px_rgb(0_200_83_/_0.7)]" />
               <span>{copy().collectionPulse}</span>
             </div>
-            <div class="flex items-center gap-[6px]" role="tablist" aria-label={`Featured ${mode().toLowerCase()}`}>
-              <span class="hidden sm:inline">Featured:</span>
+            <div class="flex min-w-0 flex-1 items-center justify-start gap-[6px] overflow-x-auto sm:justify-end" role="tablist" aria-label={`Featured ${mode().toLowerCase()}`}>
+              <span class="hidden shrink-0 sm:inline">Featured:</span>
               <For each={slides()}>
                 {(media, index) => (
                   <button
                     type="button"
-                    class="grid h-[28px] min-w-[32px] place-items-center rounded-[8px] border border-white/18 bg-white/12 px-[8px] font-mono text-[9px] font-semibold text-white/78 backdrop-blur-[10px] transition-[background,border-color,color,transform] duration-200 hover:-translate-y-px hover:bg-white/24 hover:text-white"
+                    class="grid h-[28px] min-w-[30px] shrink-0 place-items-center rounded-[8px] border border-white/18 bg-white/12 px-[6px] font-mono text-[9px] font-semibold text-white/78 backdrop-blur-[10px] transition-[background,border-color,color,transform] duration-200 hover:-translate-y-px hover:bg-white/24 hover:text-white sm:min-w-[32px] sm:px-[8px]"
                     classList={{ 'border-white bg-white text-ink shadow-[0_4px_12px_rgb(0_0_0_/_0.3)] hover:bg-white hover:text-ink': index() === activeIndex() }}
                     role="tab"
                     aria-selected={index() === activeIndex()}
@@ -119,15 +119,16 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
             </div>
           </div>
 
-          <div class="relative z-10 grid min-h-[460px] gap-6 px-5 pb-7 pt-5 sm:min-h-[560px] sm:px-6 sm:pb-9 sm:pt-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,.85fr)] lg:px-8">
+          <div class="relative z-10 grid min-h-[360px] gap-6 px-5 pb-7 pt-5 sm:px-6 sm:pb-9 sm:pt-6 lg:min-h-[560px] lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,.85fr)] lg:px-8">
             <div class="flex min-w-0 flex-col justify-end pb-3 lg:pr-3">
               <p class="mb-3 flex flex-wrap items-center gap-x-[10px] gap-y-[7px] font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-white/82">
                 <span class="rounded-[5px] bg-violet px-[8px] py-[3px] text-white shadow-[0_2px_12px_rgb(106_90_249_/_0.55)]">
                   #{String(activeIndex() + 1).padStart(2, '0')} trending
                 </span>
                 <Show when={metaLine()}><span>{metaLine()}</span></Show>
+                <Show when={formatScore(active()?.averageScore ?? active()?.meanScore)}>{(score) => <span class="lg:hidden">★ {score()}</span>}</Show>
               </p>
-              <h2 class="max-w-[1000px] text-balance font-display text-[clamp(42px,12vw,108px)] leading-[.84] tracking-[-.055em] text-white [text-shadow:0_2px_34px_rgb(0_0_0_/_0.45)] sm:text-[clamp(54px,7vw,108px)]" aria-label={titleOf(active())}>
+              <h2 class="max-w-[1000px] text-balance font-display text-[clamp(36px,10.5vw,108px)] leading-[.88] tracking-[-.055em] text-white [text-shadow:0_2px_34px_rgb(0_0_0_/_0.45)] [overflow-wrap:break-word] sm:text-[clamp(54px,7vw,108px)] sm:leading-[.84]" aria-label={titleOf(active())}>
                 <span>{titleParts().lead}</span>
                 <Show when={titleParts().accent}>
                   <span class="italic text-mint">{titleParts().separator}{titleParts().accent}</span>
@@ -172,7 +173,7 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
             </div>
 
             <aside
-              class="self-end rounded-[22px] border border-white/22 bg-black/40 p-4 shadow-[0_28px_70px_-26px_rgb(0_0_0_/_0.65),inset_0_1.5px_rgb(255_255_255_/_0.18)] backdrop-blur-[34px] backdrop-saturate-[180%] sm:p-6"
+              class="hidden self-end rounded-[22px] border border-white/22 bg-black/40 p-4 shadow-[0_28px_70px_-26px_rgb(0_0_0_/_0.65),inset_0_1.5px_rgb(255_255_255_/_0.18)] backdrop-blur-[34px] backdrop-saturate-[180%] lg:block lg:p-6"
               aria-label={copy().heroFactsLabel}
             >
               <div class="flex items-center justify-between font-mono text-[9.5px] font-semibold uppercase tracking-[.1em] text-white/72">

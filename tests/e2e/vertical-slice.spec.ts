@@ -93,6 +93,96 @@ test("manga detail uses its publication layout and shelf controls", async ({ pag
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test("mobile header keeps search usable beside catalog switching", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const search = page.getByRole("combobox", { name: "Search anime" });
+  await expect(search).toBeVisible();
+  expect((await page.locator(".search-surface-control").boundingBox())?.width).toBeGreaterThan(250);
+  await search.click();
+  await search.pressSequentially("Test Anime", { delay: 25 });
+  await expect(page.getByRole("option", { name: /Test Anime/ })).toBeVisible();
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByRole("heading", { name: "Results for “Test Anime”" })).toBeVisible();
+});
+
+test("phone navigation keeps every destination tappable", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto("/");
+  const navigation = page.getByRole("navigation", { name: "Primary navigation" });
+  const tabs = navigation.getByRole("link");
+  await expect(tabs).toHaveCount(5);
+  for (const tab of await tabs.all()) {
+    expect((await tab.boundingBox())?.width).toBeGreaterThanOrEqual(44);
+  }
+  await navigation.getByRole("link", { name: "Profile" }).click();
+  await expect(page.getByRole("heading", { name: "Your profile.", exact: true })).toBeVisible();
+});
+
+test("mobile header clears discovery headings while scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const heading = page.getByRole("heading", { name: "Featured Anime" });
+  await expect(heading).toBeVisible();
+  await page.evaluate(() => {
+    document.documentElement.style.scrollBehavior = "auto";
+    window.scrollTo(0, 100);
+  });
+  const header = await page.getByRole("banner", { name: "Site header" }).boundingBox();
+  const section = await heading.boundingBox();
+  expect(header && section && header.y + header.height <= section.y).toBe(true);
+});
+
+test("Home stays within the viewport from phone through desktop widths", async ({ page }) => {
+  for (const width of [390, 900, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "Featured Anime" })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+});
+
+test("Watch fits the viewport before a server is chosen on narrow screens", async ({ page }) => {
+  for (const width of [320, 390, 414]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/anime/1/watch/next");
+    await expect(page.getByRole("combobox", { name: "Streaming source" })).toBeVisible();
+    await expect(page.locator(".mobile-tabbar")).toBeHidden();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+});
+
+test("tablet navigation stays in the header instead of covering content", async ({ page }) => {
+  for (const width of [600, 768, 900]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/explore");
+    await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
+    await expect(page.locator(".mobile-tabbar")).toBeHidden();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+});
+
+test("mobile detail pages show the anime or manga identity before the cover", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const { route, title } of [{ route: "/anime/1", title: "Test Anime" }, { route: "/manga/1", title: "Test Manga" }]) {
+    await page.goto(route);
+    const heading = page.getByRole("heading", { name: title, exact: true });
+    await expect(heading).toBeVisible();
+    expect((await heading.boundingBox())?.y).toBeLessThan(844);
+  }
+});
+
+test("detail pages keep a two-column tablet composition", async ({ page }) => {
+  for (const width of [768, 900]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const route of ["/anime/1", "/manga/1"]) {
+      await page.goto(route);
+      const columns = await page.locator(route.startsWith("/anime") ? ".anime-detail-grid" : ".manga-detail-grid").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length);
+      expect(columns).toBe(2);
+    }
+  }
+});
+
 test("detail pages preserve the exact source and adaptation pair across mode changes", async ({ page }) => {
   await page.goto("/anime/1");
   await expect(page.getByRole("heading", { name: "Test Anime" })).toBeVisible();

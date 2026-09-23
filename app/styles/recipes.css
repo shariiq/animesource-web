@@ -124,8 +124,8 @@
 
   .manga-story-column { min-width: 0; padding-top: 9px; }
   .manga-detail-overline { margin: 0; color: color-mix(in srgb, var(--manga-accent, var(--violet)) 74%, var(--ink)); font: 500 10px var(--font-mono); letter-spacing: .15em; text-transform: uppercase; }
-  .manga-detail-title { max-width: 11ch; margin: 15px 0 0; color: var(--ink); font: 400 clamp(54px, 6.3vw, 106px)/.82 var(--font-display); letter-spacing: -.06em; text-wrap: balance; }
-  .manga-native-title { margin: 14px 0 0; color: var(--text-secondary); font-size: 13px; letter-spacing: .02em; }
+  .manga-detail-title { max-width: 11ch; margin: 15px 0 0; color: var(--ink); font: 400 clamp(40px, 5.2vw, 106px)/.86 var(--font-display); letter-spacing: -.06em; text-wrap: balance; overflow-wrap: anywhere; }
+  .manga-native-title { margin: 14px 0 0; overflow-wrap: anywhere; color: var(--text-secondary); font-size: 13px; letter-spacing: .02em; }
 
   .manga-chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
   .manga-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 8px; background: rgb(255 255 255 / .66); padding: 7px 10px; color: var(--text-muted); font: 500 9px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
@@ -159,7 +159,7 @@
   .manga-fact-list { padding: 3px 18px 0; }
   .manga-fact-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 52px; border-bottom: 1px solid var(--line); color: var(--text-muted); font: 500 9px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
   .manga-fact-row > span { display: inline-flex; min-width: 0; align-items: center; gap: 8px; }
-  .manga-fact-row strong { color: var(--ink); font: 600 13px var(--font-body); letter-spacing: -.02em; text-align: right; text-transform: none; }
+  .manga-fact-row strong { min-width: 0; overflow-wrap: anywhere; color: var(--ink); font: 600 13px var(--font-body); letter-spacing: -.02em; text-align: right; text-transform: none; }
   .manga-fact-marker { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 2px; background: var(--violet); box-shadow: 0 0 0 3px rgb(106 90 249 / .09); }
   .manga-fact-violet { background: var(--violet); box-shadow: 0 0 0 3px rgb(106 90 249 / .1); }
   .manga-fact-plum { background: var(--plum); box-shadow: 0 0 0 3px rgb(180 95 149 / .1); }
@@ -178,22 +178,24 @@
     .manga-fact-note { align-self: center; }
   }
 
-  @media (max-width: 780px) {
+  @media (max-width: 640px) {
     .manga-detail-toolbar { align-items: flex-start; flex-direction: column; gap: 7px; min-height: 74px; justify-content: center; padding-inline: 20px; }
     .manga-detail-grid { grid-template-columns: 1fr; gap: 27px; padding: 24px 20px 28px; }
     .manga-cover-column { width: min(100%, 238px); margin-inline: auto; }
-    .manga-story-column { padding-top: 0; }
-    .manga-detail-title { max-width: 12ch; font-size: clamp(54px, 16vw, 88px); }
+    .manga-story-column { order: -1; padding-top: 0; }
+    .manga-detail-title { max-width: 12ch; font-size: clamp(40px, 13vw, 72px); }
     .manga-fact-panel { display: block; grid-column: auto; }
     .manga-fact-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; padding-inline: 14px; }
     .manga-fact-row { min-height: 58px; gap: 8px; }
-    .manga-fact-row strong { font-size: 12px; }
+    .manga-fact-row strong { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
     .manga-fact-note { padding-inline: 14px; }
+    .manga-detail-signal { white-space: normal; text-align: right; }
+    .manga-detail-actions > * { flex: 1 1 auto; }
   }
 
   @media (max-width: 430px) {
     .manga-detail-grid { padding-inline: 15px; }
-    .manga-detail-title { font-size: clamp(49px, 15vw, 72px); }
+    .manga-detail-title { font-size: clamp(36px, 12vw, 60px); }
     .manga-alternate-titles > span:not(.detail-kicker) { grid-template-columns: 56px minmax(0, 1fr); }
     .manga-fact-list { column-gap: 10px; padding-inline: 10px; }
     .manga-fact-row { font-size: 8px; letter-spacing: .03em; }
@@ -416,15 +418,15 @@
     padding-bottom: 0;
   }
 
-  @media (max-width: 780px) {
-    .site-header { top: -4px; }
+  @media (max-width: 960px) {
+    .site-header { position: relative; top: auto; }
   }
 
   /* Cover-colour aura behind the hero: the artwork bleeds into the page so
      the featured shell feels lit by its own key art. */
   .hero-ambient {
     position: absolute;
-    inset: 12% -3% -14%;
+    inset: 12% 0 -14%;
     z-index: -1;
     border-radius: 56px;
     background:
@@ -441,6 +443,13 @@
     min-width: 0;
     align-items: center;
     gap: 20px;
+  }
+
+  @media (min-width: 961px) and (max-width: 1120px) {
+    .header-actions { gap: 10px; }
+    .header-primary-nav { gap: 0; padding-inline: 3px; font-size: 9px; }
+    .header-status { display: none; }
+    .search-surface-compact { width: clamp(190px, 22vw, 250px); flex-basis: clamp(190px, 22vw, 250px); }
   }
 
   .catalog-mode-switch {
@@ -563,12 +572,21 @@
     left: 0;
     z-index: 50;
     max-height: min(520px, calc(100vh - 110px));
+    max-height: min(520px, calc(100dvh - 110px));
     overflow-y: auto;
     overscroll-behavior: contain;
     border-color: rgb(255 255 255 / .9);
     border-radius: 18px;
     background: rgb(255 255 255 / .94);
     box-shadow: 0 28px 65px -28px rgb(0 0 0 / .55), inset 0 1px rgb(255 255 255);
+  }
+
+  /* Header fields cap at 320px wide; let the popover breathe past the field
+     so result rows keep a readable text column. */
+  .search-surface-compact .search-surface-popover {
+    right: auto;
+    width: 340px;
+    max-width: calc(100vw - 24px);
   }
 
   .search-history-popover {
@@ -776,7 +794,10 @@
   }
 }
 
-@media (max-width: 780px) {
+@media (max-width: 960px) {
+  html { scroll-padding-top: 132px; }
+  .editorial-page { padding-bottom: 32px; }
+
   /* Small-viewport header: two calm rows. Row one is the brand lockup; row two
      pairs the catalog switch with a full-width search field. Primary
      navigation moves to the fixed bottom tab bar, so the in-header pill is
@@ -805,7 +826,8 @@
     font-size: 9px;
   }
 
-  .header-primary-nav {
+  .header-primary-nav,
+  .header-status {
     display: none;
   }
 
@@ -832,9 +854,9 @@
   .search-surface-compact .search-surface-submit {
     position: absolute;
     top: 50%;
-    right: 5px;
-    min-width: 38px;
-    min-height: 38px;
+    right: 1px;
+    min-width: 44px;
+    min-height: 44px;
     padding-inline: 0;
     transform: translateY(-50%);
   }
@@ -848,34 +870,57 @@
     font: 15px/1 var(--font-body);
   }
 
+  /* Small viewports: the field itself is narrow, so right-align a
+     viewport-bounded sheet instead of squeezing results into the field. */
   .search-surface-compact .search-surface-popover {
     right: 0;
-    left: 0;
-    width: auto;
+    left: auto;
+    width: min(calc(100vw - 24px), 380px);
   }
+}
+
+@media (min-width: 481px) and (max-width: 960px) {
+  /* Tablets get a real navigation row instead of a floating dock covering
+     filters and headings. The dock remains a phone-only thumb target. */
+  .header-actions {
+    grid-template-rows: auto auto;
+    row-gap: 10px;
+  }
+
+  .header-primary-nav {
+    display: flex;
+    width: 100%;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: space-between;
+    overflow-x: auto;
+  }
+
 }
 
 /* Fixed frosted tab bar: thumb-reach primary navigation with full-size
    targets, floating over the atmosphere like the rest of the glass system.
-   Desktop keeps the in-header pill nav, so the bar is hidden by default. */
+   Larger viewports keep navigation in the header. */
 .mobile-tabbar {
   display: none;
 }
 
-@media (max-width: 780px) {
+@media (max-width: 480px) {
   .mobile-tabbar {
     position: fixed;
-    right: 12px;
+    right: auto;
     bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-    left: 12px;
+    left: 50%;
     z-index: 45;
     display: grid;
+    width: min(560px, calc(100vw - 24px));
     grid-auto-flow: column;
     gap: 3px;
     padding: 6px;
+    transform: translateX(-50%);
     border: 1px solid rgb(255 255 255 / .92);
     border-radius: 24px;
-    background: linear-gradient(180deg, rgb(255 255 255 / .86), rgb(255 255 255 / .64));
+    background: linear-gradient(180deg, rgb(255 255 255 / .97), rgb(248 248 250 / .94));
     box-shadow: var(--shadow-glass);
     backdrop-filter: blur(40px) saturate(180%);
     -webkit-backdrop-filter: blur(40px) saturate(180%);
@@ -883,7 +928,7 @@
 
   .mobile-tab {
     display: flex;
-    min-width: 0;
+    min-width: 44px;
     min-height: 52px;
     flex-direction: column;
     align-items: center;
@@ -891,15 +936,15 @@
     gap: 4px;
     border-radius: 17px;
     color: var(--text-muted);
-    font: 600 8.5px var(--font-mono);
-    letter-spacing: .12em;
+    font: 600 10px var(--font-mono);
+    letter-spacing: .04em;
     text-transform: uppercase;
     transition: background .2s var(--ease), color .2s var(--ease), box-shadow .2s var(--ease);
   }
 
   .mobile-tab svg {
-    width: 19px;
-    height: 19px;
+    width: 20px;
+    height: 20px;
   }
 
   .mobile-tab:active {
@@ -914,8 +959,7 @@
     box-shadow: 0 10px 22px -12px rgb(6 6 9 / .6), inset 0 1px rgb(255 255 255 / .22);
   }
 
-  /* Keep end-of-page content clear of the floating tab bar. The bar unmounts
-     on the manga reader, which owns fixed chrome of its own. */
+  /* Keep end-of-page content clear of the floating tab bar. */
   body:has(.mobile-tabbar) {
     padding-bottom: var(--mobile-tabbar-clearance);
   }
@@ -935,13 +979,29 @@
   }
 }
 
-@media (max-width: 380px) {
+@media (max-width: 480px) {
+  html { scroll-padding-top: 176px; }
+  .header-actions { display: contents; }
+
+  .header-shell > a { min-height: 44px; }
+
   .catalog-mode-switch button {
+    min-height: 44px;
     padding: 0 8px;
   }
 
-  .catalog-mode-switch button span {
-    display: none;
+  .catalog-mode-switch {
+    margin-left: auto;
+  }
+
+  .header-actions > .search-surface-compact {
+    flex: 1 0 100%;
+  }
+
+  .search-surface-compact .search-surface-popover {
+    right: 0;
+    left: 0;
+    width: auto;
   }
 }
 
@@ -952,7 +1012,8 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 20px;
+    flex-wrap: wrap;
+    gap: 8px 20px;
     margin-bottom: 16px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--line-strong);
@@ -1169,12 +1230,13 @@
      artwork full-bleed; a bottom gradient only guards the rank chip. */
   .poster-rail {
     display: grid;
-    grid-auto-columns: minmax(158px, 1fr);
+    grid-auto-columns: clamp(148px, 38vw, 190px);
     grid-auto-flow: column;
     gap: 16px;
     min-width: 0;
     overflow-x: auto;
     padding: 6px 6px 18px;
+    scroll-padding-inline: 6px;
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
   }
@@ -1391,6 +1453,38 @@
 
   .rail-track[role="list"] { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
 
+  .anime-detail-grid { min-width: 0; }
+  .anime-detail-poster-column,
+  .anime-detail-story,
+  .anime-detail-facts { min-width: 0; }
+  .anime-detail-facts { overflow: hidden; }
+  .anime-detail-story h1 { overflow-wrap: anywhere; }
+
+  @media (min-width: 641px) and (max-width: 1023px) {
+    .anime-detail-grid {
+      grid-template-columns: minmax(170px, 190px) minmax(0, 1fr);
+      gap: 24px;
+    }
+
+    .anime-detail-poster-column {
+      width: 100%;
+      max-width: none;
+      margin-inline: 0;
+    }
+
+    .anime-detail-story { min-width: 0; padding-top: 0; }
+    .anime-detail-facts { grid-column: 1 / -1; }
+  }
+
+  @media (max-width: 430px) {
+    .anime-detail-grid { padding-inline: 15px; }
+    .anime-detail-poster-column { max-width: 260px; }
+  }
+
+  @media (max-width: 640px) {
+    .anime-detail-story { order: -1; }
+  }
+
   /* Detail page rhythm: every information group shares the editorial heading
      scale, ink rule, and mono eyebrow instead of falling back to browser text. */
   .detail-section {
@@ -1587,9 +1681,12 @@
   }
 
   @media (max-width: 780px) {
-    .editorial-page { width: min(100% - 28px, 1480px); padding-top: 16px; padding-bottom: 80px; }
+    .editorial-page { width: min(100% - 28px, 1480px); padding-top: 16px; padding-bottom: 24px; }
     .section { margin-top: 70px; }
     .section-head { align-items: start; }
+    .section-heading h2 { font-size: clamp(32px, 9vw, 44px); }
+    .detail-section-heading h2,
+    .detail-subheading { font-size: clamp(28px, 8vw, 34px); }
     .rail-track { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
     .rail-track[role="list"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .trailer { margin-top: 70px; }

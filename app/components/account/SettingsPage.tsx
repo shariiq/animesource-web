@@ -232,7 +232,7 @@ export function SettingsPage() {
     <PageShell class="account-page">
       <header class="frosted-shell relative overflow-hidden px-6 py-7 sm:px-8 sm:py-9">
         <div class="pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] bg-[radial-gradient(circle_at_80%_18%,rgb(217_245_106_/_42%),transparent_39%),radial-gradient(circle_at_38%_82%,rgb(250_119_95_/_18%),transparent_48%)] lg:block" aria-hidden="true" />
-        <div class="relative grid gap-8 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-end">
+        <div class="relative grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-end">
           <div>
             <div class="flex items-center gap-4">
               <div class="grid size-14 shrink-0 place-items-center rounded-[18px] border border-white/85 bg-ink font-display text-3xl leading-none text-white shadow-[0_16px_32px_-22px_rgb(0_0_0_/_1)]" aria-hidden="true">S</div>
@@ -260,7 +260,7 @@ export function SettingsPage() {
       <Show when={message()}>{(value) => <div class="material-panel mt-5 flex items-start gap-3 border-emerald-800/20 bg-emerald-50/80 p-4 text-sm text-emerald-950" role="status"><span class="mt-1.5 size-2 shrink-0 rounded-full bg-emerald-600" aria-hidden="true" /><p>{value()}</p></div>}</Show>
       <Show when={error()}>{(value) => <div class="material-panel mt-5 flex items-start gap-3 border-red-800/25 bg-red-50/80 p-4 text-sm text-red-900" role="alert"><span class="mt-1.5 size-2 shrink-0 rounded-full bg-red-700" aria-hidden="true" /><p>{value()}</p></div>}</Show>
 
-      <div class="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(19rem,.8fr)]">
+      <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(19rem,.8fr)]">
         <section class="material-panel p-6 sm:p-8" aria-labelledby="content-settings-title">
           <div class="flex items-start justify-between gap-5">
             <div>

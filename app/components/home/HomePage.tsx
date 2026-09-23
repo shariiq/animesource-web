@@ -102,7 +102,7 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
               </section>
               <section class="home-deferred-section section" aria-labelledby="season-heading">
                 <SectionHeading id="season-heading" title={copy().seasonalTitle} description={copy().seasonalDescription} />
-                <div class="grid gap-5 lg:grid-cols-3">
+                <div class="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
                   <AnimeColumn mode={mode()} title={copy().columnTrending} items={data.trending.media} search={makeBrowseSearch({ sort: 'TRENDING_DESC' })} />
                   <AnimeColumn mode={mode()} title={copy().columnSecond} items={data.season.media} search={makeBrowseSearch(mode() === 'ANIME' ? { sort: 'POPULARITY_DESC', season: season.season, year: season.year } : { sort: 'UPDATED_AT_DESC' })} />
                   <AnimeColumn mode={mode()} title={copy().columnThird} items={data.allTime.media} search={makeBrowseSearch({ sort: 'POPULARITY_DESC' })} />
@@ -133,7 +133,9 @@ function AnimeColumn(props: { mode: CatalogMode; title: string; items: AniListMe
       {/* Rows stretch evenly to fill the stretched grid panel so every column's
           last row lands flush on the panel's bottom border. */}
       <div class="flex flex-1 flex-col divide-y divide-line [&>*]:flex-1 [&>*:last-child]:border-b-0">
-        <For each={props.items.slice(0, 3)}>{(anime, index) => <AnimeCard anime={anime} mode={props.mode} rank={index() + 1} />}</For>
+        <Show when={props.items.length} fallback={<p class="px-4 py-6 text-sm text-text-secondary">No {props.mode === 'MANGA' ? 'manga' : 'anime'} available right now.</p>}>
+          <For each={props.items.slice(0, 3)}>{(anime, index) => <AnimeCard anime={anime} mode={props.mode} rank={index() + 1} />}</For>
+        </Show>
       </div>
     </section>
   )

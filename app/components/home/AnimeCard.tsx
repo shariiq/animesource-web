@@ -17,7 +17,7 @@ export function AnimeCard(props: { anime: AniListMedia; mode?: CatalogMode; rank
     <CatalogLink
       media={props.anime}
       mode={mode()}
-      class="group editorial-row grid min-h-[152px] min-w-0 grid-cols-[96px_minmax(0,1fr)_40px] text-inherit no-underline sm:grid-cols-[112px_minmax(0,1fr)_46px]"
+      class="group editorial-row grid min-h-[152px] min-w-0 grid-cols-[76px_minmax(0,1fr)_32px] text-inherit no-underline sm:grid-cols-[112px_minmax(0,1fr)_46px]"
       style={{ '--accent': accent() }}
     >
       <div class="relative min-h-[152px] overflow-hidden bg-[var(--accent)] after:pointer-events-none after:absolute after:inset-0 after:shadow-cover-inset">
@@ -37,8 +37,8 @@ export function AnimeCard(props: { anime: AniListMedia; mode?: CatalogMode; rank
         </Show>
       </div>
 
-      <div class="flex min-w-0 flex-col px-[18px] pb-[15px] pt-[16px]">
-        <div class="flex items-center gap-[8px] font-mono text-[9px] font-medium uppercase tracking-[.08em] text-text-muted">
+      <div class="flex min-w-0 flex-col px-3 pb-[15px] pt-[16px] sm:px-[18px]">
+        <div class="flex min-w-0 flex-wrap items-center gap-x-[8px] gap-y-[4px] font-mono text-[9px] font-medium uppercase tracking-[.08em] text-text-muted">
           <Show when={props.anime.status}>
             <span class="inline-flex items-center gap-[5px] font-medium text-emerald"><i class="inline-block size-[5px] rounded-full bg-emerald" />{catalogStatus(mode(), props.anime.status)}</span>
           </Show>

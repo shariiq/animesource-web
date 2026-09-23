@@ -151,24 +151,24 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
         <article class="relative isolate overflow-hidden rounded-[26px] border border-white/80 bg-white/54 shadow-glass backdrop-blur-[54px]" style={{ '--accent': accent() }}>
           <Show when={banner()}>
             <div
-              class="absolute inset-x-0 top-0 h-[430px] bg-cover bg-[center_28%] opacity-80 [mask-image:linear-gradient(180deg,black_0%,black_46%,transparent_96%)]"
+              class="absolute inset-x-0 top-0 h-[300px] bg-cover bg-[center_28%] opacity-80 [mask-image:linear-gradient(180deg,black_0%,black_46%,transparent_96%)] sm:h-[430px]"
               style={{ 'background-image': `url("${banner()?.replaceAll('"', '%22')}")` }}
               aria-hidden="true"
             />
           </Show>
           <div
-            class="absolute inset-x-0 top-0 h-[430px] opacity-60"
+            class="absolute inset-x-0 top-0 h-[300px] opacity-60 sm:h-[430px]"
             style={{ background: `linear-gradient(180deg, color-mix(in srgb, var(--accent) 34%, transparent), transparent 70%)` }}
             aria-hidden="true"
           />
-          <div class="absolute inset-x-0 top-0 h-[430px] bg-[linear-gradient(90deg,rgb(255_255_255_/_0.92),rgb(250_250_253_/_0.5),rgb(250_250_253_/_0.1)),linear-gradient(0deg,rgb(250_250_253)_4%,transparent_100%)]" aria-hidden="true" />
-          <div class="relative z-10 flex justify-between border-b border-white/50 px-6 py-4 font-mono text-[9px] uppercase tracking-[.1em] text-[#42404b]">
+          <div class="absolute inset-x-0 top-0 h-[300px] bg-[linear-gradient(90deg,rgb(255_255_255_/_0.92),rgb(250_250_253_/_0.5),rgb(250_250_253_/_0.1)),linear-gradient(0deg,rgb(250_250_253)_4%,transparent_100%)] sm:h-[430px]" aria-hidden="true" />
+          <div class="relative z-10 flex flex-wrap justify-between gap-x-4 gap-y-1 border-b border-white/50 px-4 py-4 font-mono text-[9px] uppercase tracking-[.1em] text-[#42404b] sm:px-6">
             <Link class="hover:text-black" to="/">← Back to discovery</Link>
             <span>{formatStatus(props.anime.status) || 'Catalog'} · {formatEnum(props.anime.format) || 'Anime'}</span>
           </div>
 
-          <div class="relative z-10 grid gap-6 px-6 pb-9 pt-8 lg:grid-cols-[240px_minmax(0,1fr)_300px] lg:px-8">
-            <div>
+          <div class="anime-detail-grid relative z-10 grid gap-6 px-4 pb-9 pt-8 sm:px-6 lg:grid-cols-[240px_minmax(0,1fr)_300px] lg:px-8">
+            <div class="anime-detail-poster-column mx-auto w-full max-w-[300px] lg:mx-0 lg:max-w-none">
               <div class="overflow-hidden rounded-[15px] border border-white/70 bg-black/10 shadow-[0_22px_45px_rgb(0_0_0/.18)] ring-1 ring-black/5">
                 <Show when={poster()} fallback={<div class="aspect-[2/3] bg-black/10" />}>
                   <img class="aspect-[2/3] w-full object-cover transition-transform duration-500 ease-fluid hover:scale-[1.03]" src={poster()} alt={`${titleOf(props.anime)} poster`} loading="eager" fetchpriority="high" decoding="async" />
@@ -206,11 +206,11 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
               </Show>
             </div>
 
-            <div class="pt-2">
+            <div class="anime-detail-story pt-2">
               <Show when={season()} fallback={<p class="font-mono text-[9px] uppercase tracking-[.14em] text-[#4f4e57]">Anime catalog</p>}>
                 {(browse) => <Link class="font-mono text-[9px] uppercase tracking-[.14em] text-[#4f4e57] underline decoration-black/20 underline-offset-4 hover:text-black" to="/explore" search={browse()}>{formatSeason(props.anime.season)} {props.anime.seasonYear}</Link>}
               </Show>
-              <h1 id="anime-title" class="mt-3 font-display text-[clamp(52px,6vw,88px)] leading-[.82] tracking-[-.055em]">{titleOf(props.anime)}</h1>
+              <h1 id="anime-title" class="mt-3 break-words font-display text-[clamp(40px,11vw,88px)] leading-[.86] tracking-[-.055em] sm:leading-[.82]">{titleOf(props.anime)}</h1>
               <Show when={props.anime.siteUrl && isSafeExternalUrl(props.anime.siteUrl)}>
                 <a class="mt-4 inline-flex font-mono text-[9px] uppercase tracking-[.1em] underline decoration-black/25 underline-offset-4 hover:text-violet" href={props.anime.siteUrl!} target="_blank" rel="noopener noreferrer">View on AniList ↗</a>
               </Show>
@@ -250,7 +250,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
               </Show>
             </div>
 
-            <aside class="self-start rounded-[18px] border border-white/70 bg-white/68 p-5 backdrop-blur-xl">
+            <aside class="anime-detail-facts self-start rounded-[18px] border border-white/70 bg-white/68 p-5 backdrop-blur-xl">
               <p class="font-mono text-[9px] uppercase tracking-[.14em] text-[#4f4e57]">Anime information</p>
               <div class="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-1">
                 <Show when={studios().length > 0}>

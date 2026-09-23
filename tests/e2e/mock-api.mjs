@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 
 const port = Number(process.env.MOCK_API_PORT ?? 3101);
 
-const HOST = "http://127.0.0.1:3101";
+const HOST = `http://127.0.0.1:${port}`;
 // Locally served stand-ins so no external asset is ever requested.
 const POSTER_URL = `${HOST}/poster.jpg`;
 const STREAM_URL = `${HOST}/api/v1/proxy/hls/mock-stream`;
@@ -21,7 +21,7 @@ const media = (id, title, type = "ANIME") => ({
   type,
   title: { romaji: title, english: title, native: null },
   coverImage: {
-    extraLarge: null,
+    extraLarge: POSTER_URL,
     large: POSTER_URL,
     medium: null,
     color: null,

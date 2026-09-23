@@ -140,3 +140,27 @@
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(3vw, -2.4vw, 0); }
 }
+
+/* Small viewports paint the same field with fewer, softer layers: full-size
+   blurs this large stall scrolling on mobile GPUs, so the two smallest
+   blooms retire and the survivors halve their blur. */
+@media (max-width: 780px) {
+  .atmospheric-ink,
+  .atmospheric-depth,
+  .atmospheric-bloom,
+  .atmospheric-violet,
+  .atmospheric-light {
+    filter: blur(48px);
+    opacity: .6;
+  }
+
+  .atmospheric-ink { opacity: .36; }
+  .atmospheric-depth { opacity: .32; }
+  .dot-grid { opacity: .32; }
+  .film-grain { opacity: .2; }
+
+  .atmospheric-mint,
+  .atmospheric-orange {
+    display: none;
+  }
+}

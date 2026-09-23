@@ -21,19 +21,17 @@ function TabIcon(props: { children: JSX.Element }) {
 }
 
 /**
- * Thumb-reach primary navigation for small viewports. The desktop header pill
- * collapses into this fixed frosted tab bar below 781px so every destination
- * keeps a full-size touch target. Hidden on the manga reader, which owns its
- * own fixed chrome.
+ * Thumb-reach navigation on phones. Tablets retain the header navigation row;
+ * Watch and the Manga Reader keep their own immersive media chrome.
  */
 export function MobileTabBar() {
   const catalogMode = useCatalogMode()
   const mode = () => catalogMode.mode()
   const location = useLocation()
-  const isReader = () => /^\/manga\/[^/]+\/read\//.test(location().pathname)
+  const isImmersive = () => /^\/(?:manga\/[^/]+\/read\/|anime\/[^/]+\/watch\/)/.test(location().pathname)
 
   return (
-    <Show when={!isReader()}>
+    <Show when={!isImmersive()}>
       <nav class="mobile-tabbar" aria-label="Primary navigation">
         <Link to="/" preload="intent" activeOptions={{ exact: true }} class="mobile-tab" activeProps={{ class: 'mobile-tab-active' }}>
           <TabIcon><path d="M4 11.2 12 4l8 7.2" /><path d="M6.2 9.4V20h11.6V9.4" /></TabIcon>

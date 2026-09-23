@@ -92,7 +92,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
           </p>
           <h1
             id="watch-title"
-            class="mt-2 max-w-4xl font-display text-6xl leading-[.86] tracking-[-.03em] sm:text-8xl"
+            class="mt-2 max-w-4xl break-words font-display text-[clamp(40px,11vw,96px)] leading-[.88] tracking-[-.03em] [overflow-wrap:anywhere]"
           >
             {titleOf(props.anime)}
           </h1>
@@ -252,7 +252,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
             </Match>
             <Match when={session.playerStage() === 'streams-loading'}>
               <div
-                class="grid aspect-video place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-8 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)]"
+                class="grid min-h-[260px] place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-5 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)] sm:aspect-video sm:p-8"
                 role="status"
               >
                 <div>
@@ -264,7 +264,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
             </Match>
             <Match when={session.playerStage() === 'streams-empty'}>
               <div
-                class="grid aspect-video place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-8 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)]"
+                class="grid min-h-[260px] place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-5 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)] sm:aspect-video sm:p-8"
                 role="status"
               >
                 <div>
@@ -281,7 +281,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
             </Match>
             <Match when={session.playerStage() === 'stream-error'}>
               <div
-                class="grid aspect-video place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-8 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)]"
+                class="grid min-h-[260px] place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-5 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)] sm:aspect-video sm:p-8"
                 role="status"
               >
                 <div>
@@ -298,7 +298,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
             </Match>
             <Match when={session.playerStage() === 'servers-loading'}>
               <div
-                class="grid aspect-video place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-8 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)]"
+                class="grid min-h-[260px] place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-5 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)] sm:aspect-video sm:p-8"
                 role="status"
               >
                 <div>
@@ -310,7 +310,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
             </Match>
             <Match when={session.playerStage() === 'servers-empty'}>
               <div
-                class="grid aspect-video place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-8 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)]"
+                class="grid min-h-[260px] place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-5 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)] sm:aspect-video sm:p-8"
                 role="status"
               >
                 <div>
@@ -323,7 +323,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
               </div>
             </Match>
             <Match when={session.playerStage() === 'server'}>
-              <div class="grid aspect-video place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-8 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)]">
+              <div class="grid min-h-[260px] place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-5 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)] sm:aspect-video sm:p-8">
                 <div>
                   <div class="player-stage-mark" aria-hidden="true">
                     ▶
@@ -334,7 +334,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
               </div>
             </Match>
             <Match when={session.playerStage() === 'episode'}>
-              <div class="grid aspect-video place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-8 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)]">
+              <div class="grid min-h-[260px] place-items-center overflow-hidden rounded-panel border border-black/15 bg-[#121217] p-5 text-center text-white shadow-[0_24px_60px_rgb(0_0_0/.22)] sm:aspect-video sm:p-8">
                 <div>
                   <div class="player-stage-mark" aria-hidden="true">
                     ▶

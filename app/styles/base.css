@@ -3,6 +3,7 @@
 
   html {
     scroll-behavior: smooth;
+    scroll-padding-bottom: var(--mobile-tabbar-clearance);
     background: #fafafd;
   }
 
@@ -10,7 +11,9 @@
     min-width: 320px;
     min-height: 100vh;
     margin: 0;
-    overflow-x: hidden;
+    /* clip (not hidden) so position:sticky headers keep sticking while any
+       horizontal overflow stays out of the scroll container. */
+    overflow-x: clip;
     background: #fafafd;
     color: var(--text-primary);
     font-family: var(--font-body);
@@ -37,7 +40,9 @@
   button { cursor: pointer; }
   button:disabled { cursor: not-allowed; }
   a { color: inherit; text-decoration: none; }
-  img { display: block; max-width: 100%; }
+  img { display: block; max-width: 100%; height: auto; }
+  /* Sticky glass headers and in-page anchors must clear the pinned header. */
+  section[id], div[id], h1[id], h2[id], h3[id] { scroll-margin-top: 96px; }
 
   /* Catalog instrumentation (scores, ranks, counts, pages) aligns on fixed
      figure widths — one of the quiet marks of a precision product. */

@@ -6,10 +6,11 @@ Continuous integration has two independent tracks. They share nothing at runtime
 
 `.github/workflows/verify.yml` runs on every push and pull request. It is fully deterministic: AniList and AniSource are replaced by `tests/e2e/mock-api.mjs`, including the manga source, chapter, and page responses used by the reader journey. Neither live service is ever contacted. A red run here means the commit is broken and blocks the merge.
 
-Two parallel jobs, Node 22.12.0:
+Three parallel jobs, Node 22.12.0. Bun and Playwright downloads are cached; Vitest and Playwright run side by side instead of back to back:
 
 - **`static`** — `bun run lint` (ESLint, zero warnings), `bun run typecheck` (strict TS), `bun run build` (Nitro `vercel` preset, emits `.vercel/output/`).
-- **`test`** — Playwright Chromium install, `bun run test` (Vitest, jsdom, mocked transports), `bun run e2e` (mocked Playwright). On failure it uploads `playwright-report/` and `test-results/` (traces, screenshots) as artifacts.
+- **`unit`** — `bun run test` (Vitest, jsdom, mocked transports).
+- **`e2e`** — Playwright Chromium install, `bun run e2e` (mocked Playwright). On failure it uploads `playwright-report/` and `test-results/` (traces, screenshots) as artifacts.
 
 Runs are concurrency-canceled per ref, so a new push supersedes an in-progress run.
 

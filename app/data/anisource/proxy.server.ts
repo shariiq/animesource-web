@@ -1,6 +1,7 @@
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
 import { z } from 'zod'
+import apiUrls from '../../../config/api-urls.json'
 import {
   anisourceMangaSchema,
   chapterPageSchema,
@@ -14,7 +15,6 @@ import {
   streamSchema,
 } from './schema'
 
-const API_DEFAULT = 'https://anisource-api.vercel.app'
 const API_PREFIX = '/api/anisource'
 const SESSION_LIFETIME_SECONDS = 12 * 60 * 60
 const ASSET_TICKET_LIFETIME_SECONDS = 55 * 60
@@ -200,7 +200,7 @@ function jsonError(status: number, detail: string, headers: HeadersInit = {}): R
 
 function apiBase(): URL | null {
   try {
-    const base = new URL(process.env.ANISOURCE_BASE || API_DEFAULT)
+    const base = new URL(process.env.ANISOURCE_BASE || apiUrls.anisource)
     if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.hash) return null
     if (process.env.NODE_ENV === 'production' && base.protocol !== 'https:') return null
     base.pathname = `${base.pathname.replace(/\/+$/, '')}/`

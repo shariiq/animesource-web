@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
+import apiUrls from '../config/api-urls.json'
 import { handleAniSourceRequest } from '../app/data/anisource/proxy.server'
 
 const APP_ORIGIN = 'https://app.test'
@@ -42,6 +43,24 @@ describe('AniSource server boundary', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
+  })
+
+  it('uses the shared AniSource URL default when no server override is set', async () => {
+    vi.stubEnv('ANISOURCE_BASE', '')
+    const upstreamFetch = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
+      status: 'ok',
+      version: 'test',
+      uptime_seconds: 1,
+      memory_usage_mb: 1,
+      active_sources: 0,
+      cache_stats: {},
+    }), { headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', upstreamFetch)
+
+    const response = await handleAniSourceRequest(request('/api/anisource/health'))
+
+    expect(response.status).toBe(200)
+    expect(new URL(upstreamFetch.mock.calls[0]![0].toString()).origin).toBe(apiUrls.anisource)
   })
 
   it('rewrites HLS children to session-bound same-origin tickets and keeps the API key server-side', async () => {

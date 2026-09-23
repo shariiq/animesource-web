@@ -23,7 +23,7 @@ The client uses one abortable request per operation with these current limits:
 | Slow-response signal | 4.5 seconds | Warn that a cold backend may still be waking up. |
 | Request timeout | 25 seconds | End a stalled request with a typed timeout rather than leaving the Watch UI stuck. |
 | Transport retries | 0 | Do not duplicate provider calls or silently mask source/server failures. |
-| Health retry | 1 bounded retry | Re-check the selected source before a manual stream retry. |
+| Health retry | 1 bounded retry | Bound the initialize-time Source health probe. A manual stream retry resolves the Server directly; its outcome updates Source health. |
 | Manual stream retries | 2 after the initial attempt | Refresh an expired or transient Stream without creating an unbounded provider loop. |
 | HLS recovery | 1 network recovery and 1 media recovery per Stream load | Recover common player faults once, then expose the provider failure. |
 | Source-list cache TTL | 10 minutes, in-browser client instance | Avoid repeated anime or manga source-list calls while evicting rejected promises immediately. |

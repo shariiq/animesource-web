@@ -885,4 +885,27 @@ describe("HomePage", () => {
       screen.getByRole("heading", { name: "Browse by Genre" }),
     ).toBeInTheDocument();
   });
+
+  it("keeps rails visible during a background refetch instead of flashing loading", async () => {
+    mockHomeQueryFn = async () => homeData;
+    render(wrap(client, () => <HomePage />));
+    expect(
+      await screen.findAllByRole("link", { name: /One Piece/i }),
+    ).not.toHaveLength(0);
+
+    // The next fetch stays pending: a stale-while-revalidate UI must keep the
+    // rails and show a non-blocking refresh signal.
+    mockHomeQueryFn = () => new Promise<HomeData>(() => {});
+    void client.refetchQueries({ queryKey: ["anilist", "home"] });
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/Refreshing/i),
+    );
+    expect(
+      screen.getAllByRole("link", { name: /One Piece/i }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.queryByText("Loading anime discovery…"),
+    ).not.toBeInTheDocument();
+  });
 });

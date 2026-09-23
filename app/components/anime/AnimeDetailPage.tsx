@@ -171,7 +171,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
             <div>
               <div class="overflow-hidden rounded-[15px] border border-white/70 bg-black/10 shadow-[0_22px_45px_rgb(0_0_0/.18)] ring-1 ring-black/5">
                 <Show when={poster()} fallback={<div class="aspect-[2/3] bg-black/10" />}>
-                  <img class="aspect-[2/3] w-full object-cover transition-transform duration-500 ease-fluid hover:scale-[1.03]" src={poster()} alt={`${titleOf(props.anime)} poster`} />
+                  <img class="aspect-[2/3] w-full object-cover transition-transform duration-500 ease-fluid hover:scale-[1.03]" src={poster()} alt={`${titleOf(props.anime)} poster`} loading="eager" fetchpriority="high" decoding="async" />
                 </Show>
               </div>
               <button

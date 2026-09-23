@@ -29,6 +29,13 @@ type HlsErrorDetails = {
   details?: string
 }
 
+/** Shared module promise so every stream load reuses one fetch, and the Watch
+ * mount can warm it while the gateway waterfall is still resolving. */
+let hlsModulePromise: Promise<typeof import('hls.js')> | null = null
+function getHlsModule(): Promise<typeof import('hls.js')> {
+  return (hlsModulePromise ??= import('hls.js'))
+}
+
 function isExpiredStreamFailure(data: unknown): boolean {
   if (!data || typeof data !== 'object') return false
   const details = data as HlsErrorDetails
@@ -340,7 +347,7 @@ export function LazyPlayer(props: {
     }
 
     try {
-      const { default: HlsClass } = await import('hls.js')
+      const { default: HlsClass } = await getHlsModule()
       // A newer stream (or an unmounted player) may have superseded this load
       // while the chunk was in flight; its instance must not attach.
       if (generation !== loadGeneration || video() !== element) return
@@ -492,6 +499,11 @@ export function LazyPlayer(props: {
   })
 
   onMount(() => {
+    // Warm the player chunk while the session resolves source → episode →
+    // server → stream, so the first HLS load pays manifest fetch only.
+    void getHlsModule().catch(() => {
+      hlsModulePromise = null
+    })
     const element = video()
     const nativeVideo = element as VideoWithNativeFullscreen | undefined
     setFullscreenAvailable(Boolean(element?.requestFullscreen || nativeVideo?.webkitEnterFullscreen))

@@ -640,8 +640,12 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
 
       try {
         if (draft) {
-          await options.persistence.recordPlayback?.(draft)
-          await options.persistence.recordContinue(draft)
+          // The two writes touch different keys, so issue them together and
+          // only then read back the merged playback record.
+          await Promise.all([
+            options.persistence.recordPlayback?.(draft) ?? Promise.resolve(),
+            options.persistence.recordContinue(draft),
+          ])
           record = (await options.persistence.getPlaybackRecord?.(options.anime.id, episodeId)) ?? null
 
           if (!record) {
@@ -675,14 +679,9 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     const errorToRetry = watchError()
     if (!sourceId || !serverId || errorToRetry?.retryable === false) return
 
-    if (options.api.health) {
-      const operation = begin()
-      await probeHealth(sourceId, operation)
-      const canRetry = current(operation) && sourceHealth()[sourceId]?.status !== 'unavailable'
-      finish(operation)
-      if (!canRetry) return
-    }
-
+    // Retry the useful work directly: the health probe is advisory and would
+    // add a full gateway round-trip before the stream request that actually
+    // determines recovery. Success/failure already updates source health.
     await chooseServer(serverId)
   }
 
@@ -1047,16 +1046,19 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
       let saved: MatchItem | null = null
       let preferred: string | null = null
       try {
-        const [savedMatch, sourcePreference, continueItems] = await Promise.all([
+        const [savedMatch, sourcePreference, continueItems, playbackPrefs] = await Promise.all([
           options.persistence.getSavedMatch(options.anime.id),
           options.persistence.getPreferredSource(),
           options.persistence.getContinue(),
+          // Folded into the same tick as the other IndexedDB reads so the
+          // cold-start waterfall pays one storage round instead of two.
+          options.persistence.getPlaybackPreferences?.() ?? Promise.resolve(null),
         ])
         saved = savedMatch
         preferred = sourcePreference
         setLatestContinue(continueItems.find((item) => item.id === options.anime.id) ?? null)
         setPreferences(
-          (await options.persistence.getPlaybackPreferences?.()) ?? {
+          playbackPrefs ?? {
             quality: null,
             audioLanguage: null,
             audioLabel: null,

@@ -91,6 +91,64 @@ describe('AniSource server boundary', () => {
     expect(upstreamFetch).toHaveBeenCalledTimes(2)
   })
 
+  it('forwards byte ranges through HLS media tickets and preserves partial responses', async () => {
+    const byteRange = 'bytes=10-19'
+    const ifRange = '"segment-v1"'
+    const segmentBytes = Uint8Array.from({ length: 10 }, (_, index) => index + 10)
+    const upstreamFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(input.toString()).pathname
+      if (path.includes('/streams/')) {
+        return new Response(JSON.stringify([{
+          url: `${API_ORIGIN}/api/v1/proxy/hls/master-token`,
+          quality: 'Auto',
+          is_hls: true,
+          is_audio: false,
+        }]), { headers: { 'Content-Type': 'application/json' } })
+      }
+      if (path.endsWith('/master-token')) {
+        return new Response(`#EXTM3U\n#EXTINF:4,\n${API_ORIGIN}/api/v1/proxy/hls/segment-token`, {
+          headers: { 'Content-Type': 'application/vnd.apple.mpegurl' },
+        })
+      }
+      expect(path).toBe('/api/v1/proxy/hls/segment-token')
+      expect(new Headers(init?.headers).get('Range')).toBe(byteRange)
+      expect(new Headers(init?.headers).get('If-Range')).toBe(ifRange)
+      return new Response(segmentBytes, {
+        status: 206,
+        headers: {
+          'Accept-Ranges': 'bytes',
+          'Content-Length': String(segmentBytes.byteLength),
+          'Content-Range': 'bytes 10-19/100',
+          'Content-Type': 'video/mp4',
+        },
+      })
+    })
+    vi.stubGlobal('fetch', upstreamFetch)
+
+    const streams = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/test/streams/episode?server_id=1'))
+    const cookie = sessionCookie(streams)
+    const masterUrl = await ticketUrl(streams)
+    const manifest = await handleAniSourceRequest(request(new URL(masterUrl, APP_ORIGIN).pathname, cookie))
+    const segmentPath = (await manifest.text()).match(/\/api\/anisource\/asset\/[A-Za-z0-9_.-]+/)?.[0]
+    if (!segmentPath) throw new Error('Expected the HLS segment to be rewritten to an asset ticket.')
+    const segment = await handleAniSourceRequest(new Request(`${APP_ORIGIN}${segmentPath}`, {
+      headers: {
+        Origin: APP_ORIGIN,
+        'Sec-Fetch-Site': 'same-origin',
+        Cookie: cookie,
+        Range: byteRange,
+        'If-Range': ifRange,
+      },
+    }))
+
+    expect(segment.status).toBe(206)
+    expect(segment.headers.get('Accept-Ranges')).toBe('bytes')
+    expect(segment.headers.get('Content-Range')).toBe('bytes 10-19/100')
+    expect(segment.headers.get('Content-Length')).toBe('10')
+    expect([...new Uint8Array(await segment.arrayBuffer())]).toEqual([...segmentBytes])
+    expect(upstreamFetch).toHaveBeenCalledTimes(3)
+  })
+
   it('streams signed manga pages and forwards range without sharing the upstream cache policy', async () => {
     const upstreamFetch = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       if (!new URL(input.toString()).pathname.includes('/manga/page/')) {
@@ -142,6 +200,44 @@ describe('AniSource server boundary', () => {
     expect(new URL(upstreamFetch.mock.calls[0]![0].toString()).pathname).toContain('/source%2Fid/search')
     expect(malformedRoute.status).toBe(404)
     expect(upstreamFetch).toHaveBeenCalledOnce()
+  })
+
+  it('preserves source-relative result URLs in a search response', async () => {
+    const sourceUrl = '/anime/return-of-the-blossoming-blade'
+    const upstreamFetch = vi.fn(async () => new Response(JSON.stringify({
+      items: [
+        { id: 'return-of-the-blossoming-blade', title: 'Return of the Blossoming Blade', url: sourceUrl },
+        { id: 'absolute-result', title: 'Absolute result', url: `${API_ORIGIN}/anime/absolute-result` },
+      ],
+      page: 1,
+      has_next: false,
+      total_returned: 1,
+    }), {
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', upstreamFetch)
+
+    const response = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/kickassanime/search?q=Return&page=1'))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      items: [{ url: sourceUrl }, { url: '/anime/absolute-result' }],
+    })
+  })
+
+  it('rejects unsupported AniSource API URLs embedded in JSON', async () => {
+    const upstreamFetch = vi.fn(async () => new Response(JSON.stringify({
+      items: [{ id: 'unexpected', title: 'Unexpected', url: `${API_ORIGIN}/api/v1/private` }],
+      page: 1,
+      has_next: false,
+      total_returned: 1,
+    }), { headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', upstreamFetch)
+
+    const response = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/kickassanime/search?q=Return&page=1'))
+
+    expect(response.status).toBe(502)
+    expect(response.headers.get('x-anisource-error-kind')).toBe('invalid')
   })
 
   it('rejects cross-origin and non-allowlisted requests before contacting AniSource', async () => {

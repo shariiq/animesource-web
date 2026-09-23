@@ -284,7 +284,8 @@ async function verifyTicket(value: string, session: Session, key: CryptoKey): Pr
 }
 
 async function rewriteApiUrl(value: string, base: URL, session: Session, key: CryptoKey, scope: string): Promise<string> {
-  if (!/^(?:https?:\/\/|\/|api\/v1\/)/i.test(value)) return value
+  const absoluteUrl = /^https?:\/\//i.test(value)
+  if (!absoluteUrl && !/^\/?api\/v1\//i.test(value)) return value
   let url: URL
   try {
     url = new URL(value, base)
@@ -300,7 +301,8 @@ async function rewriteApiUrl(value: string, base: URL, session: Session, key: Cr
     return `${API_PREFIX}/asset/${ticket}`
   }
   if (isAllowedUpstreamPath(path, url.search)) return `${API_PREFIX}${path}${url.search}${url.hash}`
-  throw new Error('AniSource returned an unsupported same-origin URL.')
+  if (/^\/api\/v1(?:\/|$)/i.test(path)) throw new Error('AniSource returned an unsupported same-origin URL.')
+  return `${path}${url.search}${url.hash}`
 }
 
 async function rewriteJson(value: unknown, base: URL, session: Session, key: CryptoKey, scope: string): Promise<unknown> {

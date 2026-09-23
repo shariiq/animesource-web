@@ -1,6 +1,6 @@
 # Engineering protocols
 
-Task-triggered reference for `CLAUDE.md`; read the relevant section, not the whole file by default.
+Task-triggered reference for `AGENTS.md`; read the relevant section, not the whole file by default.
 
 ## Stopping rules
 
@@ -14,7 +14,9 @@ These limits prevent side quests, never authorize broken or partial delivery.
 
 ## Testing
 
-Write tests in a batched pass at the end of a coherent, exercisable milestone, rather than alongside each function. Completion requires this pass. Usually 3–6 tests is a floor guideline, not a ceiling; scale to actual failure modes. Avoid unrelated coverage expansion and repeated suites after individual edits.
+`AGENTS.md` § Tests decides whether a test belongs. This section covers timing and priority.
+
+Write tests at the end of a coherent, exercisable milestone rather than alongside each function. There is no test quota: the count follows the failure modes the change introduced, and a change can need none. Avoid unrelated coverage expansion and repeated suites after individual edits.
 
 Priority:
 
@@ -27,7 +29,7 @@ Default exclusions: component-state matrices (cover player/grid error-with-retry
 
 No live-API CI gates. Optional live checks run as scheduled, non-blocking jobs opening issues on failure.
 
-Defer E2E additions until the watch pipeline is feature-complete. Then default to two Playwright smoke journeys: search → detail → watch → player mount; and ambiguous match → picker → episode → server fallback. This is a default scope, not a hard cap on tests justified by actual bugs.
+Playwright journeys in `tests/e2e/` run against `tests/e2e/mock-api.mjs`. Add one when a user flow crosses routes or depends on real browser behavior (scrolling, media, focus) that jsdom cannot show. Extend `mock-api.mjs` when the flow needs new upstream responses.
 
 ## Performance
 
@@ -40,6 +42,6 @@ Defer E2E additions until the watch pipeline is feature-complete. Then default t
 ## Git and CI
 
 - Branch + PR by default; no direct main pushes, secrets, or unrelated commit changes. Commit/push only when asked.
-- Pre-commit: format and lint changed files. Apply the root tier's before-push checks.
+- Pre-commit: lint changed files (the repo has no separate formatter). Before push, run the check `AGENTS.md` § Commands assigns to the change.
 - Before opening a PR, run typecheck, build, and milestone tests locally at least once. CI rechecks; it is not the first check.
 - After pushing, inspect CI. Fix genuine causes and push corrections within the authorized work. For confirmed infrastructure flakes meeting the evidence rule, rerun once and move on. Never weaken a test/type to force green.

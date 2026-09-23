@@ -4,7 +4,7 @@
 **Roadmap status:** Active  
 **Product target:** A production-grade anime and manga discovery, library, playback, and reading platform.
 
-This is the product roadmap for AnimeSource. It tracks user-visible capability and the engineering work required to support it. Production behavior, real AniList data, the current route tree, `CLAUDE.md`, and the accepted ADR remain authoritative.
+This is the product roadmap for AnimeSource. It tracks user-visible capability and the engineering work required to support it. Production behavior, real AniList data, the current route tree, `AGENTS.md`, and the accepted ADR remain authoritative.
 
 ## How to maintain this file
 

@@ -76,4 +76,62 @@ describe('alSchedule pagination', () => {
     expect(items).toHaveLength(1)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
+
+  it('never bursts more than 3 concurrent AniList requests across a wide range', async () => {
+    let inFlight = 0
+    let maxInFlight = 0
+    const fetchMock = vi.fn(async (_input: string, init?: RequestInit) => {
+      const page = (JSON.parse(String(init?.body)) as { variables: { page: number } }).variables.page
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        return new Response(JSON.stringify(schedulePage(page, 8, [page])), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      } finally {
+        inFlight -= 1
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const items = await alSchedule(1_700_000_000, 1_700_100_000)
+
+    expect(items.map((item) => item.episode)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+    expect(fetchMock).toHaveBeenCalledTimes(8)
+    expect(maxInFlight).toBeLessThanOrEqual(3)
+  })
+
+  it('survives an AniList burst limit instead of surfacing 429', async () => {
+    let burstInFlight = 0
+    const fetchMock = vi.fn(async (_input: string, init?: RequestInit) => {
+      const page = (JSON.parse(String(init?.body)) as { variables: { page: number } }).variables.page
+      // Simulate AniList burst protection: more than 3 in flight is rejected.
+      // The hold lets overlapping requests accumulate so a wide fan-out trips
+      // it, and the single client retry re-bursts and exhausts its budget.
+      burstInFlight += 1
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      const burst = burstInFlight > 3
+      try {
+        if (burst) {
+          return new Response(JSON.stringify({ data: null }), {
+            status: 429,
+            headers: { 'content-type': 'application/json', 'retry-after': '0.05' },
+          })
+        }
+        return new Response(JSON.stringify(schedulePage(page, 10, [page])), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      } finally {
+        burstInFlight -= 1
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const items = await alSchedule(1_700_000_000, 1_700_100_000)
+
+    expect(items.map((item) => item.episode)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  }, 15_000)
 })

@@ -203,8 +203,13 @@ export async function alGenres(signal?: AbortSignal): Promise<string[]> {
  * Schedule query: returns airing schedules in a time window.
  * Mirrors alSchedule() from prototype exactly.
  */
-export async function alSchedule(start: number, end: number, signal?: AbortSignal): Promise<AniListScheduleItem[]> {
-  const query = `
+/**
+ * Schedule pages after the first run with bounded concurrency. Three keeps a
+ * wide week range near 3x faster than serial without bursting AniList.
+ */
+const SCHEDULE_PAGE_CONCURRENCY = 3
+
+export async function alSchedule(start: number, end: number, signal?: AbortSignal): Promise<AniListScheduleItem[]> {  const query = `
     query($start:Int,$end:Int,$page:Int){
       Page(page:$page,perPage:50){
         pageInfo{ currentPage lastPage hasNextPage total }
@@ -224,13 +229,16 @@ export async function alSchedule(start: number, end: number, signal?: AbortSigna
   const firstInfo = first.Page.pageInfo
   if (!firstInfo?.hasNextPage) return items
   // The first page reports the total, so the remainder can run concurrently
-  // instead of one RTT per page.
+  // instead of one RTT per page. Concurrency is bounded: an unbounded fan-out
+  // bursts AniList into 429s, and the single client retry re-bursts and burns
+  // its budget, surfacing the rate limit to the Schedule route.
   const lastPage = firstInfo.lastPage ?? null
   if (lastPage && lastPage > 1) {
-    const rest = await Promise.all(
-      Array.from({ length: lastPage - 1 }, (_, index) => fetchPage(index + 2)),
-    )
-    for (const page of rest) items.push(...page.Page.airingSchedules)
+    const remaining = Array.from({ length: lastPage - 1 }, (_, index) => index + 2)
+    for (let offset = 0; offset < remaining.length; offset += SCHEDULE_PAGE_CONCURRENCY) {
+      const batch = await Promise.all(remaining.slice(offset, offset + SCHEDULE_PAGE_CONCURRENCY).map(fetchPage))
+      for (const page of batch) items.push(...page.Page.airingSchedules)
+    }
     return items
   }
   let page = 2

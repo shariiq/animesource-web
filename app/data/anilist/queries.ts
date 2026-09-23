@@ -215,15 +215,34 @@ export async function alSchedule(start: number, end: number, signal?: AbortSigna
       }
     }
   `
-  const items: AniListScheduleItem[] = []
-  let page = 1
-  while (true) {
+  const fetchPage = async (page: number) => {
     const raw = await anilistClient.request(query, { start, end, page }, signal)
-    const parsed = parsePayload(schedulePageShape, raw, 'the airing schedule')
+    return parsePayload(schedulePageShape, raw, 'the airing schedule')
+  }
+  const first = await fetchPage(1)
+  const items: AniListScheduleItem[] = [...first.Page.airingSchedules]
+  const firstInfo = first.Page.pageInfo
+  if (!firstInfo?.hasNextPage) return items
+  // The first page reports the total, so the remainder can run concurrently
+  // instead of one RTT per page.
+  const lastPage = firstInfo.lastPage ?? null
+  if (lastPage && lastPage > 1) {
+    const rest = await Promise.all(
+      Array.from({ length: lastPage - 1 }, (_, index) => fetchPage(index + 2)),
+    )
+    for (const page of rest) items.push(...page.Page.airingSchedules)
+    return items
+  }
+  let page = 2
+  // Unknown page count: keep the serial fallback bounded so a malformed
+  // hasNextPage can never spin forever.
+  for (let guard = 0; guard < 20; guard += 1) {
+    const parsed = await fetchPage(page)
     items.push(...parsed.Page.airingSchedules)
     if (!parsed.Page.pageInfo?.hasNextPage) return items
     page += 1
   }
+  return items
 }
 
 /**

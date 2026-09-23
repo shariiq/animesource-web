@@ -51,13 +51,22 @@ export function createQueryClient() {
 
   if (typeof window !== 'undefined') {
     let persistTimer: number | undefined
-    queryClient.getQueryCache().subscribe(() => {
+    const schedulePersist = () => {
       if (persistTimer !== undefined) return
-      persistTimer = window.setTimeout(() => {
+      const run = () => {
         persistTimer = undefined
         persistQueryCache(queryClient)
-      }, 100)
-    })
+      }
+      // Stringifying up to 40 queries can cost frames during burst navigation,
+      // so persist when idle instead of 100ms after every cache write.
+      const idle = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback
+      if (typeof idle === 'function') {
+        persistTimer = idle.call(window, run, { timeout: 2000 })
+        return
+      }
+      persistTimer = window.setTimeout(run, 800)
+    }
+    queryClient.getQueryCache().subscribe(schedulePersist)
   }
 
   return queryClient

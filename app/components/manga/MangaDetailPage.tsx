@@ -158,7 +158,7 @@ export function MangaDetailPage(props: { manga: AniListDetail }) {
               <figure class="manga-book">
                 <div class="manga-book-art">
                   <Show when={poster()} fallback={<div class="manga-cover-placeholder" aria-label="Cover unavailable">MANGA</div>}>
-                    <img src={poster()} alt={`${title()} cover`} />
+                    <img src={poster()} alt={`${title()} cover`} loading="eager" fetchpriority="high" decoding="async" />
                   </Show>
                 </div>
                 <figcaption class="manga-book-caption"><span>ANILIST / {props.manga.id}</span><b>{formatEnum(props.manga.format) || 'MANGA'}</b></figcaption>

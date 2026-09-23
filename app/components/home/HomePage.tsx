@@ -31,7 +31,11 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
   const nextSeason = nextSeasonOf()
   const [collectionFilter, setCollectionFilter] = createSignal<CollectionFilter>('all')
   const collectionItems = createMemo<AniListMedia[]>(() => {
-    const data = home.isSuccess && !home.isFetching ? home.data : undefined
+    // Keep the last good payload visible through background refetches:
+    // TanStack keeps `data` defined while `isFetching` is true, so gating on
+    // `!isFetching` would flash the full loading state on every stale refetch
+    // (focus, remount, 10-minute staleTime expiry).
+    const data = home.isSuccess ? home.data : undefined
     if (!data) return []
     if (collectionFilter() === 'airing') return data.season.media.filter((anime) => anime.status === 'RELEASING')
     if (collectionFilter() === 'rated') return data.topRated.media
@@ -41,7 +45,7 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
   return (
     <PageShell>
       <Show
-        when={home.isSuccess && !home.isFetching ? home.data : undefined}
+        when={home.isSuccess ? home.data : undefined}
         fallback={
           <Show
             when={!home.isError}
@@ -53,6 +57,9 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
         keyed
       >
             {(data) => <>
+              <Show when={home.isFetching}>
+                <p class="mono-signal" role="status" aria-live="polite">Refreshing discovery…</p>
+              </Show>
               <HeroCarousel items={data.trending.media} mode={mode()} />
               <Rail
                 title={copy().freshRailTitle}

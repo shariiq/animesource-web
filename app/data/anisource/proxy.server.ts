@@ -160,6 +160,9 @@ function getLimiters(): { session: Limiter; ip: Limiter } | null {
   const url = process.env.UPSTASH_REDIS_REST_URL
   const token = process.env.UPSTASH_REDIS_REST_TOKEN
   if (!url || !token) return null
+  const cacheKey = `${url}\n${token}`
+  const cached = limiterCacheKey === cacheKey ? limiterCache : undefined
+  if (cached) return cached
   try {
     const parsed = new URL(url)
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.hash) return null
@@ -168,11 +171,33 @@ function getLimiters(): { session: Limiter; ip: Limiter } | null {
   }
   // Fail fast: the limiter sits on the request hot path, so client-side
   // retries would only stack latency before the fail-closed 503 below.
+  // The REST client holds only URL/token (no sockets), so sharing one per
+  // deploy avoids per-request allocation without storing request state.
   const redis = new Redis({ url, token, retry: false })
-  return {
+  const limiters = {
     session: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(240, '10 s'), prefix: 'anisource:session:v1' }),
     ip: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(1200, '10 s'), prefix: 'anisource:ip:v1' }),
   }
+  limiterCacheKey = cacheKey
+  limiterCache = limiters
+  return limiters
+}
+
+let limiterCacheKey: string | null = null
+let limiterCache: { session: Limiter; ip: Limiter } | null = null
+
+const signingKeyCache = new Map<string, Promise<CryptoKey>>()
+function cachedHmacKey(value: string): Promise<CryptoKey> {
+  // The key derives from the deploy secret only, so caching it shares no
+  // per-request state between users.
+  const cached = signingKeyCache.get(value)
+  if (cached) return cached
+  const pending = hmacKey(value)
+  signingKeyCache.set(value, pending)
+  pending.catch(() => {
+    if (signingKeyCache.get(value) === pending) signingKeyCache.delete(value)
+  })
+  return pending
 }
 
 async function checkRateLimits(request: Request, session: Session, key: CryptoKey): Promise<Response | null> {
@@ -431,7 +456,7 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
     )
   }
   if (!rawPath || rawPath.length > 4096 || url.search.length > 2048) return jsonError(400, 'Invalid AniSource request.', {}, 'invalid')
-  const signingKey = await hmacKey(signingSecret)
+  const signingKey = await cachedHmacKey(signingSecret)
 
   const assetMatch = /^\/asset\/([^/]+)$/.exec(rawPath)
   if (!assetMatch && !isAllowedUpstreamPath(rawPath, url.search)) return jsonError(404, 'AniSource route not found.', {}, 'invalid')

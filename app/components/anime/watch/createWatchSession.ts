@@ -184,7 +184,7 @@ export interface WatchSession {
   updatePlaybackProgress(position: number, duration: number): Promise<void>
   markPlaybackComplete(identity?: PlaybackIdentity): Promise<void>
   savePlaybackPreferences(values: PlaybackPreferenceValues): Promise<void>
-  reportMediaFailure(identity: PlaybackIdentity, message: string): void
+  reportMediaFailure(identity: PlaybackIdentity, message: string, expired?: boolean): boolean
   changeMatch(candidate: AniSourceAnime): Promise<void>
   openMatchPicker(): void
   searchManualMatch(query: string): Promise<void>
@@ -355,6 +355,7 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
   let searchTimer: ReturnType<typeof setTimeout> | undefined
   const healthRetries = new Map<string, number>()
   const streamAttempts = new Map<string, number>()
+  const expiredStreamRefreshes = new Set<string>()
 
   /** Starts an operation on a fresh generation, aborting everything in flight. */
   const begin = (): ScopeOperation => scope.restart()
@@ -555,13 +556,14 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     if (!parent) finish(operation)
   }
 
-  const chooseServer = async (serverId: string) => {
+  const chooseServer = async (serverId: string, preserveExpiryRefreshBudget = false) => {
     const episodeId = selectedEpisode()
     const sourceId = selectedSource()
     if (!episodeId || !sourceId) return
 
     const operation = begin()
     const attemptKey = `${sourceId}:${episodeId}:${serverId}`
+    if (!preserveExpiryRefreshBudget) expiredStreamRefreshes.delete(attemptKey)
     const attempt = (streamAttempts.get(attemptKey) ?? 0) + 1
     streamAttempts.set(attemptKey, attempt)
     setSelectedServer(serverId)
@@ -1017,15 +1019,22 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     }
   }
 
-  const reportMediaFailure = (identity: PlaybackIdentity, message: string, expired = false) => {
-    if (playbackIdentity()?.key === identity.key) {
-      setFailure(
-        expired ? new AniSourceError(message, 'http', 410) : new Error(message),
-        expired ? 'streams' : 'media',
-        identity.sourceId,
-        identity.serverId,
-      )
+  const reportMediaFailure = (identity: PlaybackIdentity, message: string, expired = false): boolean => {
+    if (playbackIdentity()?.key !== identity.key) return false
+
+    if (expired) {
+      const attemptKey = `${identity.sourceId}:${identity.episodeId}:${identity.serverId}`
+      if (!expiredStreamRefreshes.has(attemptKey)) {
+        expiredStreamRefreshes.add(attemptKey)
+        void chooseServer(identity.serverId, true)
+      } else {
+        setFailure(new AniSourceError(message, 'http', 410), 'streams', identity.sourceId, identity.serverId)
+      }
+      return true
     }
+
+    setFailure(new Error(message), 'media', identity.sourceId, identity.serverId)
+    return false
   }
 
   const statusText = () => {

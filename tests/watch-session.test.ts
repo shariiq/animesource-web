@@ -502,6 +502,33 @@ describe('Watch session', () => {
     expect(api.sources).toHaveBeenCalledOnce()
   })
 
+  it('refreshes expired stream links once before surfacing a retryable failure', async () => {
+    const streams = vi.fn(async () => [stream('720p')])
+    const { session, api } = sessionParts({ api: { streams } })
+
+    await session.initialize()
+    await session.chooseServer('server-a')
+
+    const identity = session.playbackIdentity()
+    if (!identity) throw new Error('Expected the selected server to have a playback identity.')
+
+    session.reportMediaFailure(identity, 'This stream link has expired.', true)
+    expect(api.streams).toHaveBeenCalledTimes(2)
+
+    await vi.waitFor(() => {
+      const currentIdentity = session.playbackIdentity()
+      expect(currentIdentity).not.toBeNull()
+      expect(currentIdentity?.key).not.toBe(identity.key)
+    })
+    const refreshedIdentity = session.playbackIdentity()
+    if (!refreshedIdentity) throw new Error('Expected refreshed stream links to have a playback identity.')
+
+    session.reportMediaFailure(refreshedIdentity, 'This stream link has expired again.', true)
+
+    expect(api.streams).toHaveBeenCalledTimes(2)
+    expect(session.watchError()?.kind).toBe('expired-stream')
+  })
+
   it('ignores a stale stream response after the viewer changes server', async () => {
     let releaseStale: ((streams: Stream[]) => void) | undefined
     const streams = vi.fn((_source: string, _episode: string, serverId: string) => {

@@ -96,7 +96,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
 
   const description = createMemo(() => renderDescription(props.anime.description))
   const poster = createMemo(() => props.anime.coverImage?.extraLarge || props.anime.coverImage?.large || '')
-  const banner = createMemo(() => props.anime.bannerImage || poster())
+  const banner = createMemo(() => props.anime.bannerImage || '')
   const accent = createMemo(() => props.anime.coverImage?.color || '#7665e8')
   const titles = createMemo(() => getDetailTitles(props.anime))
   const studios = createMemo(() => getStudios(props.anime))
@@ -151,17 +151,17 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
         <article class="relative isolate overflow-hidden rounded-[26px] border border-white/80 bg-white/54 shadow-glass backdrop-blur-[54px]" style={{ '--accent': accent() }}>
           <Show when={banner()}>
             <div
-              class="absolute inset-x-0 top-0 h-[300px] bg-cover bg-[center_28%] opacity-80 [mask-image:linear-gradient(180deg,black_0%,black_46%,transparent_96%)] sm:h-[430px]"
+              class="anime-detail-banner-image absolute inset-x-0 top-0 bg-cover bg-[center_28%] opacity-80 [mask-image:linear-gradient(180deg,black_0%,black_46%,transparent_96%)]"
               style={{ 'background-image': `url("${banner()?.replaceAll('"', '%22')}")` }}
               aria-hidden="true"
             />
           </Show>
           <div
-            class="absolute inset-x-0 top-0 h-[300px] opacity-60 sm:h-[430px]"
+            class="anime-detail-banner-tint absolute inset-x-0 top-0 opacity-60"
             style={{ background: `linear-gradient(180deg, color-mix(in srgb, var(--accent) 34%, transparent), transparent 70%)` }}
             aria-hidden="true"
           />
-          <div class="absolute inset-x-0 top-0 h-[300px] bg-[linear-gradient(90deg,rgb(255_255_255_/_0.92),rgb(250_250_253_/_0.5),rgb(250_250_253_/_0.1)),linear-gradient(0deg,rgb(250_250_253)_4%,transparent_100%)] sm:h-[430px]" aria-hidden="true" />
+          <div class="anime-detail-banner-wash absolute inset-x-0 top-0 bg-[linear-gradient(90deg,rgb(255_255_255_/_0.92),rgb(250_250_253_/_0.5),rgb(250_250_253_/_0.1)),linear-gradient(0deg,rgb(250_250_253)_4%,transparent_100%)]" aria-hidden="true" />
           <div class="relative z-10 flex flex-wrap justify-between gap-x-4 gap-y-1 border-b border-white/50 px-4 py-4 font-mono text-[9px] uppercase tracking-[.1em] text-[#42404b] sm:px-6">
             <Link class="hover:text-black" to="/">← Back to discovery</Link>
             <span>{formatStatus(props.anime.status) || 'Catalog'} · {formatEnum(props.anime.format) || 'Anime'}</span>

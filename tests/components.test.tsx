@@ -547,7 +547,7 @@ describe("LazyPlayer", () => {
     expect(track.track.mode).toBe("disabled");
   });
 
-  it("passes the stream's provider headers to the subtitle loader", async () => {
+  it("does not forward provider headers to the subtitle loader", async () => {
     const headers = {
       Referer: "https://anikototv.to/",
       Origin: "https://anikototv.to",
@@ -561,10 +561,7 @@ describe("LazyPlayer", () => {
     expect(container.querySelector("track")?.getAttribute("src")).toBeNull();
 
     await waitFor(() =>
-      expect(subtitleLoader.load).toHaveBeenCalledWith(
-        stream.subtitles[0]!.url,
-        headers,
-      ),
+      expect(subtitleLoader.load).toHaveBeenCalledWith(stream.subtitles[0]!.url),
     );
     await waitFor(() =>
       expect(container.querySelector("track")?.getAttribute("src")).toMatch(/^blob:/),

@@ -1,13 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { API_DEFAULTS, API_URLS } from '../app/config/api'
-
-const subtitleRelay = vi.hoisted(() => ({
-  fetchSubtitleText: vi.fn(),
-}))
-
-vi.mock('../app/data/anisource/subtitle-server', () => subtitleRelay)
-
-import { AniSourceError, createAniSourceClient, loadSubtitle, normalizeSubtitleText, resolveUrl } from '../app/data/anisource/client'
+import { AniSourceError, ANISOURCE_PROXY_BASE, createAniSourceClient, loadSubtitle, normalizeSubtitleText, resolveUrl } from '../app/data/anisource/client'
 
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 const transport = (fetch: (input: string, init?: RequestInit) => Promise<Response>) => ({
@@ -17,20 +9,32 @@ const transport = (fetch: (input: string, init?: RequestInit) => Promise<Respons
 })
 
 describe('AniSource client', () => {
-  it('keeps the production AniSource endpoint in shared defaults', () => {
-    expect(API_DEFAULTS.anisource).toBe('https://anisource-api.vercel.app')
+  it('keeps the AniSource endpoint out of browser configuration', () => {
+    expect(ANISOURCE_PROXY_BASE).toBe('/api/anisource')
   })
 
-  it('uses the centralized AniSource endpoint when no client override is configured', async () => {
+  it('uses the same-origin AniSource route when no client override is configured', async () => {
     const fetch = vi.fn(async () => response({ sources: [], count: 0 }))
     const client = createAniSourceClient({ transport: transport(fetch) })
 
     await expect(client.sources()).resolves.toEqual({ sources: [], count: 0 })
-    expect(fetch).toHaveBeenCalledWith(`${API_URLS.anisource}/api/v1/anime/sources`, expect.any(Object))
+    expect(fetch).toHaveBeenCalledWith('/api/anisource/api/v1/anime/sources', expect.any(Object))
   })
 
-  it('resolves relative stream assets against the centralized AniSource endpoint', () => {
-    expect(resolveUrl('/api/v1/proxy/hls/token')).toBe(`${API_URLS.anisource}/api/v1/proxy/hls/token`)
+  it('routes relative media assets through the same-origin gateway', () => {
+    expect(resolveUrl('/api/v1/proxy/hls/token')).toBe('/api/anisource/api/v1/proxy/hls/token')
+    expect(resolveUrl('/api/anisource/asset/ticket')).toBe('/api/anisource/asset/ticket')
+  })
+
+  it('preserves timeout classification returned by the server proxy', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ detail: 'Upstream timed out.' }), {
+      status: 504,
+      headers: { 'content-type': 'application/json', 'x-anisource-error-kind': 'timeout' },
+    })))
+    const client = createAniSourceClient()
+
+    await expect(client.sources()).rejects.toMatchObject({ kind: 'timeout', isColdStart: true, status: 504 })
+    vi.unstubAllGlobals()
   })
 
   it('validates the deployed health response contract', async () => {
@@ -204,33 +208,16 @@ describe('AniSource client', () => {
     expect(() => normalizeSubtitleText('<html>Access denied</html>')).toThrow(AniSourceError)
   })
 
-  it('uses the provider relay before a browser fetch for protected subtitles', async () => {
-    const url = 'https://f0ja7.example/episode-1.vtt'
-    const browserFetch = vi.fn()
+  it('loads subtitles through the same-origin media ticket, without an arbitrary URL relay', async () => {
+    const url = '/api/anisource/asset/signed-ticket'
+    const browserFetch = vi.fn(async () => new Response('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nRelayed caption'))
     vi.stubGlobal('fetch', browserFetch)
-    subtitleRelay.fetchSubtitleText.mockResolvedValue(
-      'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nRelayed caption',
-    )
 
-    await expect(
-      loadSubtitle(url, {
-        Referer: 'https://anikototv.to/',
-        Origin: 'https://anikototv.to',
-        Cookie: 'must-not-forward',
-      }),
-    ).resolves.toContain('Relayed caption')
+    await expect(loadSubtitle(url)).resolves.toContain('Relayed caption')
 
-    expect(browserFetch).not.toHaveBeenCalled()
-    expect(subtitleRelay.fetchSubtitleText).toHaveBeenCalledWith({
-      data: {
-        url,
-        headers: {
-          referer: 'https://anikototv.to/',
-          origin: 'https://anikototv.to',
-        },
-      },
+    expect(browserFetch).toHaveBeenCalledWith(url, {
+      headers: { Accept: 'text/vtt, text/plain;q=0.9, */*;q=0.1' },
     })
     vi.unstubAllGlobals()
-    subtitleRelay.fetchSubtitleText.mockReset()
   })
 })

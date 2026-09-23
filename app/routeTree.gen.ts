@@ -17,6 +17,7 @@ import { Route as ScheduleRouteImport } from './routes/schedule'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as AnimeAnimeIdRouteImport } from './routes/anime/$animeId'
 import { Route as AnimeAnimeIdIndexRouteImport } from './routes/anime/$animeId.index'
+import { Route as ApiAnisourceSplatRouteImport } from './routes/api/anisource/$'
 import { Route as MangaMangaIdIndexRouteImport } from './routes/manga/$mangaId.index'
 import { Route as AnimeAnimeIdWatchEpisodeIdRouteImport } from './routes/anime/$animeId.watch.$episodeId'
 import { Route as MangaMangaIdReadChapterNumberRouteImport } from './routes/manga/$mangaId.read.$chapterNumber'
@@ -61,6 +62,11 @@ const AnimeAnimeIdIndexRoute = AnimeAnimeIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AnimeAnimeIdRoute,
 } as any)
+const ApiAnisourceSplatRoute = ApiAnisourceSplatRouteImport.update({
+  id: '/api/anisource/$',
+  path: '/api/anisource/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MangaMangaIdIndexRoute = MangaMangaIdIndexRouteImport.update({
   id: '/manga/$mangaId/',
   path: '/manga/$mangaId/',
@@ -87,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/schedule': typeof ScheduleRoute
   '/settings': typeof SettingsRoute
   '/anime/$animeId': typeof AnimeAnimeIdRouteWithChildren
+  '/api/anisource/$': typeof ApiAnisourceSplatRoute
   '/anime/$animeId/': typeof AnimeAnimeIdIndexRoute
   '/manga/$mangaId/': typeof MangaMangaIdIndexRoute
   '/anime/$animeId/watch/$episodeId': typeof AnimeAnimeIdWatchEpisodeIdRoute
@@ -99,6 +106,7 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/schedule': typeof ScheduleRoute
   '/settings': typeof SettingsRoute
+  '/api/anisource/$': typeof ApiAnisourceSplatRoute
   '/anime/$animeId': typeof AnimeAnimeIdIndexRoute
   '/manga/$mangaId': typeof MangaMangaIdIndexRoute
   '/anime/$animeId/watch/$episodeId': typeof AnimeAnimeIdWatchEpisodeIdRoute
@@ -113,6 +121,7 @@ export interface FileRoutesById {
   '/schedule': typeof ScheduleRoute
   '/settings': typeof SettingsRoute
   '/anime/$animeId': typeof AnimeAnimeIdRouteWithChildren
+  '/api/anisource/$': typeof ApiAnisourceSplatRoute
   '/anime/$animeId/': typeof AnimeAnimeIdIndexRoute
   '/manga/$mangaId/': typeof MangaMangaIdIndexRoute
   '/anime/$animeId/watch/$episodeId': typeof AnimeAnimeIdWatchEpisodeIdRoute
@@ -128,6 +137,7 @@ export interface FileRouteTypes {
     | '/schedule'
     | '/settings'
     | '/anime/$animeId'
+    | '/api/anisource/$'
     | '/anime/$animeId/'
     | '/manga/$mangaId/'
     | '/anime/$animeId/watch/$episodeId'
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/schedule'
     | '/settings'
+    | '/api/anisource/$'
     | '/anime/$animeId'
     | '/manga/$mangaId'
     | '/anime/$animeId/watch/$episodeId'
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
     | '/schedule'
     | '/settings'
     | '/anime/$animeId'
+    | '/api/anisource/$'
     | '/anime/$animeId/'
     | '/manga/$mangaId/'
     | '/anime/$animeId/watch/$episodeId'
@@ -167,6 +179,7 @@ export interface RootRouteChildren {
   ScheduleRoute: typeof ScheduleRoute
   SettingsRoute: typeof SettingsRoute
   AnimeAnimeIdRoute: typeof AnimeAnimeIdRouteWithChildren
+  ApiAnisourceSplatRoute: typeof ApiAnisourceSplatRoute
   MangaMangaIdIndexRoute: typeof MangaMangaIdIndexRoute
   MangaMangaIdReadChapterNumberRoute: typeof MangaMangaIdReadChapterNumberRoute
 }
@@ -229,6 +242,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AnimeAnimeIdIndexRouteImport
       parentRoute: typeof AnimeAnimeIdRoute
     }
+    '/api/anisource/$': {
+      id: '/api/anisource/$'
+      path: '/api/anisource/$'
+      fullPath: '/api/anisource/$'
+      preLoaderRoute: typeof ApiAnisourceSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/manga/$mangaId/': {
       id: '/manga/$mangaId/'
       path: '/manga/$mangaId'
@@ -275,6 +295,7 @@ const rootRouteChildren: RootRouteChildren = {
   ScheduleRoute: ScheduleRoute,
   SettingsRoute: SettingsRoute,
   AnimeAnimeIdRoute: AnimeAnimeIdRouteWithChildren,
+  ApiAnisourceSplatRoute: ApiAnisourceSplatRoute,
   MangaMangaIdIndexRoute: MangaMangaIdIndexRoute,
   MangaMangaIdReadChapterNumberRoute: MangaMangaIdReadChapterNumberRoute,
 }

@@ -13,7 +13,13 @@ import { CatalogModeProvider } from '../components/layout/CatalogModeSwitch'
 import { Footer } from '../components/layout/Footer'
 import { MobileTabBar } from '../components/layout/MobileTabBar'
 import { ErrorBoundary } from '../components/shared/ErrorBoundary'
+import { API_URLS } from '../config/api'
 import '../styles/app.css'
+
+const anilistOrigin = new URL(API_URLS.anilist).origin
+const developmentConnectSources = import.meta.env.DEV
+  ? ' http://127.0.0.1:3101 ws://127.0.0.1:3000 ws://localhost:3000'
+  : ''
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
@@ -69,6 +75,7 @@ function RootDocument(props: { children: JSX.Element }) {
   return (
     <html lang="en">
       <head>
+        <meta http-equiv="content-security-policy" content={`connect-src 'self' ${anilistOrigin}${developmentConnectSources}`} />
         <HydrationScript />
       </head>
       <body>

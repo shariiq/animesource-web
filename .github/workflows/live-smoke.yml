@@ -1,6 +1,6 @@
 name: Live smoke
 
-# Operational track: exercises the real AniList and AniSource services.
+# Operational track: exercises public AniList and AniSource endpoints without credentials.
 # Never part of the merge gate (verify.yml); fails honestly and opens an issue.
 
 on:

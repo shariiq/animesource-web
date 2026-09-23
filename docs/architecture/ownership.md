@@ -13,7 +13,7 @@ This application keeps discovery data, playback orchestration, and viewer data i
 | `/profile` Profile | Local viewer profile presentation and account-state messaging | Authentication, remote account identity |
 | `/settings` Settings | Viewer preferences, export/import, local deletion, provider import, and sync-state presentation | Authentication and provider credentials |
 | `app/data/anilist` | GraphQL transport, response schemas, discovery query functions | Route navigation or viewer state |
-| `app/data/anisource` | Client-only REST transport, timeout/error mapping, response schemas, subtitle normalization, manga chapter/page requests | AniList metadata and route loaders |
+| `app/data/anisource` | Browser-initiated REST client, typed errors/schemas, subtitle normalization, manga chapter/page requests; `proxy.server.ts` owns the server-only AniSource gateway | AniList metadata and route loaders |
 | `app/lib/source-session` | Shared request cancellation/generation scope, source-match search flow, and transport failure descriptions used by Watch and Manga Reader | Route state, navigation, or durable persistence |
 | `app/lib/persistence/indexedDb` | Browser-only IndexedDB connection and validated key/value transactions | Domain decisions and UI state |
 | `app/lib/persistence/viewer` | Favorites, Continue Watching, preferred Source, and saved Match interface plus browser adapter | Search history and route rendering |
@@ -26,7 +26,7 @@ This application keeps discovery data, playback orchestration, and viewer data i
 ## Rules
 
 - AniList loaders may execute during SSR for SEO and first paint.
-- AniSource is only reached by the Watch or Manga Reader session after the route mounts in a browser. It is never a discovery loader or prefetch.
+- AniSource is only reached by the Watch or Manga Reader session after the route mounts in a browser, through `/api/anisource/*`. The gateway calls AniSource server-side; it is never a discovery loader or prefetch.
 - Watch and Manga Reader own separate route state while sharing cancellation, match-search, and transport-error mechanics from `app/lib/source-session`.
 - IndexedDB is browser-only. UI uses the domain interfaces and does not open a database or issue transactions itself.
 - A future remote or synchronized viewer-data adapter should implement `ViewerData` without changing Detail or Watch presentation.

@@ -20,17 +20,16 @@ Copy `.env.example` to `.env` only when local endpoint overrides are needed. The
 
 ```dotenv
 # VITE_ANILIST_API_URL=https://graphql.anilist.co
-# VITE_ANISOURCE_BASE=https://anisource-api.vercel.app
 ```
 
-These are public endpoint values. Never put credentials or private tokens in `VITE_` variables because Vite embeds them in browser assets.
+AniSource is reached through the same-origin server gateway. Its base URL and credentials are server-only; never use a `VITE_` prefix for them. See [AniSource access control](docs/deployment/anisource-access-control.md) before configuring a deployment.
 
 ## Verification
 
 The repository uses two separate CI tracks:
 
 - **Deterministic merge gate** — `bun run verify` runs ESLint with zero warnings, strict TypeScript checking, the Nitro/Vercel build, Vitest, and mocked Playwright E2E tests. CI uses `tests/e2e/mock-api.mjs` and never calls live AniList or AniSource services.
-- **Live operational smoke** — `bun run test:live` calls the real services, validates their response contracts, and reports health, sources, search, and latency diagnostics. GitHub runs it twice daily and on manual dispatch; it is operational only and does not block merges.
+- **Live operational smoke** — `bun run test:live` checks the real AniList service, AniSource health, and verifies that an unauthenticated catalog request is denied. It never sends an API credential. GitHub runs it twice daily and on manual dispatch; it is operational only and does not block merges.
 
 Run the complete local gate with:
 

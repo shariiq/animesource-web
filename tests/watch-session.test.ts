@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { detailShape } from '../app/data/anilist/schema'
+import { AniSourceError } from '../app/data/anisource/client'
 import {
   createWatchSession,
   derivePlayerStage,
   episodeRouteToken,
+  MAX_EXPIRED_STREAM_REFRESHES,
   orderStreams,
   resolveEpisodeId,
   type WatchPersistence,
@@ -131,6 +133,7 @@ function sessionParts(over: {
   persistence?: Partial<WatchPersistence>
   episodeId?: string
   source?: string
+  fallbackApi?: Partial<WatchSourceClient>
 } = {}) {
   let routeEpisodeId = over.episodeId ?? 'next'
   const navigateToEpisode = vi.fn(async (token: string) => {
@@ -138,6 +141,7 @@ function sessionParts(over: {
   })
   const sourceApi = api(over.api)
   const saved = persistence(over.persistence)
+  const fallback = over.fallbackApi ? api(over.fallbackApi) : undefined
   const session = createWatchSession({
     anime,
     routeEpisodeId: () => routeEpisodeId,
@@ -145,8 +149,9 @@ function sessionParts(over: {
     navigateToEpisode,
     api: sourceApi,
     persistence: saved,
+    ...(fallback ? { fallbackApi: fallback } : {}),
   })
-  return { session, api: sourceApi, persistence: saved, navigateToEpisode }
+  return { session, api: sourceApi, persistence: saved, navigateToEpisode, fallbackApi: fallback }
 }
 
 describe('Watch session', () => {
@@ -502,31 +507,216 @@ describe('Watch session', () => {
     expect(api.sources).toHaveBeenCalledOnce()
   })
 
-  it('refreshes expired stream links once before surfacing a retryable failure', async () => {
+  it('recovers silently from expired links up to a bound, then surfaces a retryable failure', async () => {
+    const streams = vi.fn(async () => [stream('720p')])
+    const { session } = sessionParts({ api: { streams } })
+
+    await session.initialize()
+    await session.chooseServer('server-a')
+
+    for (let round = 0; round < MAX_EXPIRED_STREAM_REFRESHES; round += 1) {
+      const current = session.playbackIdentity()
+      if (!current) throw new Error('Expected the selected server to have a playback identity.')
+      session.reportMediaFailure(current, 'This stream link has expired.', true)
+      await vi.waitFor(() => {
+        expect(session.playbackIdentity()).not.toBeNull()
+        expect(session.playbackIdentity()?.key).not.toBe(current.key)
+      })
+    }
+
+    expect(streams).toHaveBeenCalledTimes(1 + MAX_EXPIRED_STREAM_REFRESHES)
+    expect(session.watchError()).toBeNull()
+
+    const exhausted = session.playbackIdentity()
+    if (!exhausted) throw new Error('Expected refreshed stream links to have a playback identity.')
+    session.reportMediaFailure(exhausted, 'This stream link has expired again.', true)
+
+    expect(streams).toHaveBeenCalledTimes(1 + MAX_EXPIRED_STREAM_REFRESHES)
+    expect(session.watchError()?.kind).toBe('expired-stream')
+  })
+
+  it('recovers from repeated expiries within the silent-refresh budget', async () => {
     const streams = vi.fn(async () => [stream('720p')])
     const { session, api } = sessionParts({ api: { streams } })
 
     await session.initialize()
     await session.chooseServer('server-a')
+    const first = session.playbackIdentity()
+    if (!first) throw new Error('Expected the selected server to have a playback identity.')
 
-    const identity = session.playbackIdentity()
-    if (!identity) throw new Error('Expected the selected server to have a playback identity.')
+    session.reportMediaFailure(first, 'This stream link has expired.', true)
+    await vi.waitFor(() => {
+      expect(session.playbackIdentity()).not.toBeNull()
+      expect(session.playbackIdentity()?.key).not.toBe(first.key)
+    })
+    const second = session.playbackIdentity()
+    if (!second) throw new Error('Expected refreshed stream links to have a playback identity.')
 
-    session.reportMediaFailure(identity, 'This stream link has expired.', true)
+    // The independent upstream capability behind the new links can expire too;
+    // because the refresh succeeded, one more silent recovery is available.
+    session.reportMediaFailure(second, 'This stream link has expired again.', true)
+    await vi.waitFor(() => {
+      expect(session.playbackIdentity()).not.toBeNull()
+      expect(session.playbackIdentity()?.key).not.toBe(second.key)
+    })
+
+    expect(api.streams).toHaveBeenCalledTimes(3)
+    expect(session.watchError()).toBeNull()
+  })
+
+  it('re-resolves the current server with a fresh attempt for in-player retry', async () => {
+    const streams = vi.fn(async () => [stream('720p')])
+    const { session } = sessionParts({ api: { streams } })
+
+    await session.initialize()
+    await session.chooseServer('server-a')
+    const first = session.playbackIdentity()
+    if (!first) throw new Error('Expected the selected server to have a playback identity.')
+
+    await session.retryCurrentServer()
+
+    expect(streams).toHaveBeenCalledTimes(2)
+    const retried = session.playbackIdentity()
+    expect(retried).not.toBeNull()
+    expect(retried?.key).not.toBe(first.key)
+    expect(session.watchError()).toBeNull()
+  })
+
+  it('warms the fallback origin on the first expired link', async () => {
+    const health = vi.fn(async () => ({
+      status: 'ok',
+      version: 'test',
+      uptime_seconds: 1,
+      memory_usage_mb: 1,
+      active_sources: 1,
+      cache_stats: {},
+    }))
+    const fallbackStreams = vi.fn(async () => [stream('720p')])
+    const { session, api } = sessionParts({
+      api: { streams: vi.fn(async () => [stream('720p')]) },
+      fallbackApi: { health, streams: fallbackStreams },
+    })
+
+    await session.initialize()
+    await session.chooseServer('server-a')
+    const first = session.playbackIdentity()
+    if (!first) throw new Error('Expected the selected server to have a playback identity.')
+
+    session.reportMediaFailure(first, 'This stream link has expired.', true)
+    await vi.waitFor(() => {
+      expect(session.playbackIdentity()).not.toBeNull()
+      expect(session.playbackIdentity()?.key).not.toBe(first.key)
+    })
+
+    // The primary budget handles recovery; the fallback only gets a wake-up ping.
     expect(api.streams).toHaveBeenCalledTimes(2)
+    expect(health).toHaveBeenCalledTimes(1)
+    expect(fallbackStreams).not.toHaveBeenCalled()
+
+    const second = session.playbackIdentity()
+    if (!second) throw new Error('Expected refreshed stream links to have a playback identity.')
+    session.reportMediaFailure(second, 'This stream link has expired.', true)
+    await vi.waitFor(() => {
+      expect(session.playbackIdentity()?.key).not.toBe(second.key)
+    })
+    expect(health).toHaveBeenCalledTimes(1)
+  })
+
+  it('resolves streams from the fallback origin after the primary budget is exhausted', async () => {
+    const primaryStreams = vi.fn(async () => [stream('720p')])
+    const fallbackStreams = vi.fn(async () => [stream('fallback-1080p')])
+    const { session, fallbackApi } = sessionParts({
+      api: { streams: primaryStreams },
+      fallbackApi: { streams: fallbackStreams },
+    })
+
+    await session.initialize()
+    await session.chooseServer('server-a')
+
+    for (let round = 0; round < MAX_EXPIRED_STREAM_REFRESHES; round += 1) {
+      const current = session.playbackIdentity()
+      if (!current) throw new Error('Expected the selected server to have a playback identity.')
+      session.reportMediaFailure(current, 'This stream link has expired.', true)
+      await vi.waitFor(() => {
+        expect(session.playbackIdentity()).not.toBeNull()
+        expect(session.playbackIdentity()?.key).not.toBe(current.key)
+      })
+    }
+
+    const exhausted = session.playbackIdentity()
+    if (!exhausted) throw new Error('Expected refreshed stream links to have a playback identity.')
+    session.reportMediaFailure(exhausted, 'This stream link has expired.', true)
+    await vi.waitFor(() => {
+      expect(session.streams().map((item) => item.quality)).toEqual(['fallback-1080p'])
+    })
+
+    expect(primaryStreams).toHaveBeenCalledTimes(1 + MAX_EXPIRED_STREAM_REFRESHES)
+    expect(fallbackStreams).toHaveBeenCalledTimes(1)
+    expect(fallbackApi?.streams).toHaveBeenCalledTimes(1)
+    expect(session.watchError()).toBeNull()
+
+    const served = session.playbackIdentity()
+    if (!served) throw new Error('Expected the fallback streams to have a playback identity.')
+    session.reportMediaFailure(served, 'This stream link has expired.', true)
+
+    expect(fallbackStreams).toHaveBeenCalledTimes(1)
+    expect(session.watchError()?.kind).toBe('expired-stream')
+  })
+
+  it('surfaces the original expiry when the fallback origin is not configured', async () => {
+    const fallbackStreams = vi.fn(async () => {
+      throw new AniSourceError('AniSource fallback access is not configured.', 'misconfigured', 503)
+    })
+    const { session } = sessionParts({
+      api: { streams: vi.fn(async () => [stream('720p')]) },
+      fallbackApi: { streams: fallbackStreams },
+    })
+
+    await session.initialize()
+    await session.chooseServer('server-a')
+
+    for (let round = 0; round <= MAX_EXPIRED_STREAM_REFRESHES; round += 1) {
+      const current = session.playbackIdentity()
+      if (!current) throw new Error('Expected the selected server to have a playback identity.')
+      session.reportMediaFailure(current, 'This stream link has expired.', true)
+      if (round < MAX_EXPIRED_STREAM_REFRESHES) {
+        await vi.waitFor(() => {
+          expect(session.playbackIdentity()).not.toBeNull()
+          expect(session.playbackIdentity()?.key).not.toBe(current.key)
+        })
+      }
+    }
+
+    expect(fallbackStreams).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => {
+      expect(session.watchError()?.kind).toBe('expired-stream')
+    })
+  })
+
+  it('surfaces the original expiry when the fallback server returns no streams', async () => {
+    const { session } = sessionParts({
+      api: { streams: vi.fn(async () => [stream('720p')]) },
+      fallbackApi: { streams: vi.fn(async () => []) },
+    })
+
+    await session.initialize()
+    await session.chooseServer('server-a')
+
+    for (let round = 0; round <= MAX_EXPIRED_STREAM_REFRESHES; round += 1) {
+      const current = session.playbackIdentity()
+      if (!current) throw new Error('Expected the selected server to have a playback identity.')
+      session.reportMediaFailure(current, 'This stream link has expired.', true)
+      if (round < MAX_EXPIRED_STREAM_REFRESHES) {
+        await vi.waitFor(() => {
+          expect(session.playbackIdentity()).not.toBeNull()
+          expect(session.playbackIdentity()?.key).not.toBe(current.key)
+        })
+      }
+    }
 
     await vi.waitFor(() => {
-      const currentIdentity = session.playbackIdentity()
-      expect(currentIdentity).not.toBeNull()
-      expect(currentIdentity?.key).not.toBe(identity.key)
+      expect(session.watchError()?.kind).toBe('expired-stream')
     })
-    const refreshedIdentity = session.playbackIdentity()
-    if (!refreshedIdentity) throw new Error('Expected refreshed stream links to have a playback identity.')
-
-    session.reportMediaFailure(refreshedIdentity, 'This stream link has expired again.', true)
-
-    expect(api.streams).toHaveBeenCalledTimes(2)
-    expect(session.watchError()?.kind).toBe('expired-stream')
   })
 
   it('ignores a stale stream response after the viewer changes server', async () => {

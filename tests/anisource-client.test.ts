@@ -37,6 +37,31 @@ describe('AniSource client', () => {
     vi.unstubAllGlobals()
   })
 
+  it('preserves rate-limit and misconfigured classifications returned by the server proxy', async () => {
+    const stub = (kind: string, status: number, detail: string) => vi.fn(async () => new Response(JSON.stringify({ detail }), {
+      status,
+      headers: { 'content-type': 'application/json', 'x-anisource-error-kind': kind },
+    }))
+
+    vi.stubGlobal('fetch', stub('rate-limited', 429, 'Too many AniSource requests.'))
+    await expect(createAniSourceClient().sources()).rejects.toMatchObject({ kind: 'rate-limited', status: 429 })
+
+    vi.stubGlobal('fetch', stub('misconfigured', 503, 'Server access is not configured.'))
+    await expect(createAniSourceClient().sources()).rejects.toMatchObject({ kind: 'misconfigured', status: 503 })
+    vi.unstubAllGlobals()
+  })
+
+  it('falls back to status handling for unknown gateway error kinds', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ detail: 'Same-origin request required.' }), {
+      status: 403,
+      headers: { 'content-type': 'application/json', 'x-anisource-error-kind': 'forbidden' },
+    })))
+    const client = createAniSourceClient()
+
+    await expect(client.sources()).rejects.toMatchObject({ kind: 'http', status: 403 })
+    vi.unstubAllGlobals()
+  })
+
   it('validates the deployed health response contract', async () => {
     const health = {
       status: 'ok',

@@ -29,7 +29,7 @@ Ask first only when the answer could change the design: adding a dependency, add
 
 ## Writing code here
 
-Before writing a helper, search for one that already exists (`app/lib/`, `app/data/`, the query-key factory). Match the surrounding code's patterns and change only what the task needs. No drive-by refactors, renames, or reformatting. Comments explain *why* something non-obvious is done, never what the code already says.
+Before writing a helper, search for one that already exists (`app/lib/`, `app/data/`, the query-key factory). Match the surrounding code's patterns and change only what the task needs. No drive-by refactors, renames, or reformatting. DO write Comments that explain *why* something non-obvious is done, never what the code already says.
 
 **SolidJS, not React.** Component bodies run once; reactivity lives in the accessors you call.
 - Read props lazily as `props.x`. Destructuring breaks reactivity; use `splitProps`/`mergeProps` to split or default props.
@@ -68,7 +68,7 @@ Baseline: semantic elements, full keyboard operation, visible focus, labelled co
 
 ## Tests
 
-A test earns its place when it would fail for a bug a user would notice and would still pass after a correct refactor. Before adding one, ask: **what plausible wrong implementation would this reject, and what observable result proves it?** Expected values come from the requirement or an independent fixture, never from the code under test, never write tautological tests. Write fewer, sharper tests. Zero new tests is the right answer for style, copy, and pure refactors that existing tests already cover; say so in your summary.
+DO NOT WRITE TESTS BY DEFAULT. A test earns its place when it would fail for a bug a user would notice and would still pass after a correct refactor. Before adding one, ask: **what plausible wrong implementation would this reject, and what observable result proves it?** Expected values come from the requirement or an independent fixture, never from the code under test, never write tautological tests. Write fewer, sharper tests. Zero new tests is the right answer for style, copy, and pure refactors that existing tests already cover; say so in your summary.
 
 Write focused tests for:
 - Every real bug fix: a regression test. Where feasible, confirm it fails for the right reason before the fix. If reproduction is blocked, say so rather than writing a vacuous assertion.

@@ -199,7 +199,9 @@ test("manga library exposes saved reader progress", async ({ page }) => {
   await expect(continueReading).toBeVisible();
   await continueReading.click();
   await expect(page.getByRole("heading", { name: "Continue reading", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Resume" })).toHaveAttribute("href", /\/manga\/1\/read\/1/);
+  await page.getByRole("link", { name: "Resume" }).click();
+  await expect(page).toHaveURL(/\/manga\/1\/read\/id%3Achapter-1(?:\?|$)/i);
+  await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
 });
 
 test("reading progress follows the last-read chapter after a quick chapter switch", async ({ page }) => {
@@ -225,7 +227,9 @@ test("reading progress follows the last-read chapter after a quick chapter switc
   await expect(page.getByRole("heading", { name: "Your manga library.", exact: true })).toBeVisible();
   await page.getByRole("tab", { name: /Continue Reading/ }).click();
   await expect(page.getByRole("heading", { name: "Continue reading", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Resume" })).toHaveAttribute("href", /\/manga\/1\/read\/2/);
+  await page.getByRole("link", { name: "Resume" }).click();
+  await expect(page).toHaveURL(/\/manga\/1\/read\/id%3Achapter-2(?:\?|$)/i);
+  await expect(page.locator(".manga-reader-page-label")).toHaveText("Page 1 / 2");
 });
 
 test("Explore stays active for filtered Explore routes", async ({ page }) => {

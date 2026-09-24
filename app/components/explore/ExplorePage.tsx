@@ -268,7 +268,7 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
                     <Link preload={false} class="explore-page-direction" to="/explore" search={searchAtPage(props.search(), props.search().page + 1)}>Next →</Link>
                   </Show>
                 </div>
-                <span class="explore-pagination-total">{pageInfo()!.lastPage.toLocaleString()} pages</span>
+                <Show when={pageInfo()?.lastPage}>{(lastPage) => <span class="explore-pagination-total">{lastPage().toLocaleString()} pages</span>}</Show>
               </nav>
             </section>
           </Show>

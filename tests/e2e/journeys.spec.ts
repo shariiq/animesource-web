@@ -30,6 +30,57 @@ test("continuous reader keeps both progress controls aligned with scrolling", as
   await expect(page.locator(".manga-reader-hairline i")).toHaveAttribute("style", /width: 100%/);
 });
 
+test("paged reader tap zones track direction changes and announce the page they turn to", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/manga/1/read/1?source=test");
+  await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
+  await page.getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Reader settings" });
+  await settings.getByRole("button", { name: "Paged", exact: true }).click();
+  await settings.getByRole("button", { name: "Right to left", exact: true }).click();
+  await settings.getByRole("button", { name: "Close settings" }).click();
+
+  const start = page.locator(".manga-reader-tap-zone.is-start");
+  const end = page.locator(".manga-reader-tap-zone.is-end");
+  await expect(start).toHaveAttribute("aria-label", "Turn to next page");
+  await expect(end).toHaveAttribute("aria-label", "Turn to previous page");
+  await start.click();
+  await expect(page.locator(".manga-reader-page-label")).toHaveText("Page 2 / 2");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await settings.getByRole("button", { name: "Left to right", exact: true }).click();
+  await settings.getByRole("button", { name: "Close settings" }).click();
+  await expect(start).toHaveAttribute("aria-label", "Turn to previous page");
+  await expect(end).toHaveAttribute("aria-label", "Turn to next page");
+  await start.click();
+  await expect(page.locator(".manga-reader-page-label")).toHaveText("Page 1 / 2");
+});
+
+test("route titles survive preference loading, mode changes and returning home", async ({ page }) => {
+  await page.goto("/?mode=MANGA");
+  const mangaMode = page.getByRole("button", { name: "MANGA", exact: true });
+  await expect(mangaMode).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveTitle("Discover Manga — AniSource");
+  await page.getByRole("link", { name: "Explore" }).click();
+  await expect(page).toHaveTitle("Explore catalog — AniSource");
+
+  const animeMode = page.getByRole("button", { name: "ANIME", exact: true });
+  await animeMode.click();
+  await expect(animeMode).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveTitle("Explore catalog — AniSource");
+  await page.getByRole("link", { name: "AniSource home" }).click();
+  await expect(page).toHaveTitle("Discover Anime — AniSource");
+  await mangaMode.click();
+  await expect(mangaMode).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("link", { name: "Library" }).click();
+  await expect(page).toHaveTitle("Your library — AniSource");
+
+  await page.goto("/manga/1/read/1?source=test");
+  await expect(page).toHaveTitle("Chapter 1 · Test Manga — AniSource");
+  await page.getByRole("link", { name: "Back to Test Manga details" }).click();
+  await expect(page).toHaveTitle("Manga detail — AniSource");
+});
+
 test.describe("high-density mobile Reader", () => {
   test.use({ viewport: { width: 391, height: 844 }, deviceScaleFactor: 3, isMobile: true });
 
@@ -260,6 +311,31 @@ test("home to detail to watch resolves a stream and mounts the player", async ({
   await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
   expect(browserRequests.gateway).toBeGreaterThan(0);
   expect(browserRequests.direct).toEqual([]);
+});
+
+test("a screen click enables Space playback control and hidden chrome leaves the picture", async ({ page }) => {
+  await page.goto("/anime/1/watch/next");
+  await page.getByRole("button", { name: "Episode 1: Pilot" }).click();
+  await page.getByRole("button", { name: "Test server" }).click();
+  const player = page.locator(".player");
+  const video = player.locator("video");
+  await expect(video).toBeVisible();
+  await video.evaluate((element) => {
+    if (!(element instanceof HTMLVideoElement)) throw new Error("Expected a video element");
+    element.dispatchEvent(new Event("canplay"));
+    let paused = true;
+    Object.defineProperty(element, "paused", { configurable: true, get: () => paused });
+    element.play = () => { paused = false; element.dispatchEvent(new Event("play")); return Promise.resolve(); };
+    element.pause = () => { paused = true; element.dispatchEvent(new Event("pause")); };
+  });
+  await player.locator(".player-taplayer").click();
+  await expect(player.locator(".player-screen")).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(player.getByRole("button", { name: "Play" })).toBeVisible();
+  // The mock stream is not a decodable movie: test the actual CSS independently
+  // of the media error that correctly pins the controls for a real failure.
+  await player.evaluate((element) => { element.dataset.chrome = "hidden"; });
+  await expect.poll(() => player.locator(".player-chrome").evaluate((element) => getComputedStyle(element).visibility)).toBe("hidden");
 });
 
 test("search to detail to watch mounts the player", async ({ page }) => {

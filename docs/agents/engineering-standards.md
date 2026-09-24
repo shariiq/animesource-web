@@ -1,45 +1,35 @@
-# Engineering protocols
+# Engineering standards
 
-Task-triggered reference for `CLAUDE.md`; read the relevant section, not the whole file by default.
+Task-triggered guidance for retry loops, flaky checks, and scope decisions. `AGENTS.md` is the primary project guidance and wins if anything here conflicts with it. Keep this document aligned with `AGENTS.md` rather than introducing a second policy.
 
-## Stopping rules
+## Failure, stopping, and scope
 
-These limits prevent side quests, never authorize broken or partial delivery.
-
-1. **Three strikes:** After three failed attempts at the same failure, stop that approach. Report what was tried and current evidence; satisfy the same requirement another way or ask for direction. Never call broken functionality a workaround.
-2. **Fifteen minutes:** Defer genuinely unrelated bugs or nice-to-haves after ~15 minutes. If the requested feature fails, keep working or explicitly report being stuck; this limit does not apply.
-3. **Infrastructure evidence:** Before blaming network, cold starts, rate limits, CI runners, or tooling, reproduce at least twice or find independent evidence (status indicator, a differing second run, documented limit). Once confirmed, avoid debugging infrastructure inline; use an appropriate retry or report the blocker.
-4. **Test versus code:** When a test and manual check disagree, determine which is wrong, including edge cases/races the manual check may miss. Change a test only after establishing its expectation is incorrect. Never weaken/delete tests or types for green checks.
-5. **Deferrals:** File genuinely separate follow-ups in repository GitHub Issues via `gh`, not code comments or silent stubs. A requested feature that fails is incomplete, not shipped with a footnote.
+- Diagnose the cause before adding retries, defensive fallbacks, or recovery UI. Preserve distinct error kinds and retryability; cancellation is not a user-facing failure.
+- After three failed attempts at the same problem, change approach or report the blocker with the evidence collected. Repeating the same unsuccessful approach is not progress.
+- Before attributing a failure to infrastructure, reproduce it at least twice or find independent evidence. Once confirmed, use the appropriate retry or report the blocker instead of debugging infrastructure inline.
+- If a test and a manual check disagree, determine which is wrong—including races and relevant edge cases. Never weaken or remove a failing test or type just to get a green check.
+- Finish all required behavior. A workaround, silent degradation, placeholder, or TODO does not complete the request. Defer only genuinely separate work; file it as a GitHub Issue when appropriate, not as a code comment.
 
 ## Testing
 
-Write tests in a batched pass at the end of a coherent, exercisable milestone, rather than alongside each function. Completion requires this pass. Usually 3–6 tests is a floor guideline, not a ceiling; scale to actual failure modes. Avoid unrelated coverage expansion and repeated suites after individual edits.
+- Tests are not the default for every change. Before adding one, identify a plausible incorrect implementation it rejects and the observable user-facing result that proves the behavior. Prefer fewer, sharper tests over broad coverage.
+- Every real bug fix needs a regression test. Where feasible, confirm it fails for the bug before the fix; if reproduction is blocked, report that rather than adding a vacuous assertion.
+- Focus tests on meaningful edge cases and boundaries: matching and ranking, navigation, persistence and migrations, stale responses, retry bounds, malformed external data, and transport failure branches.
+- Drive public APIs and assert observable outcomes: rendered text and roles, returned values, navigation, and persisted records. Avoid tautologies, tests of constants or types, schemas parsing their own fixtures, markup snapshots, and callback-only wiring assertions.
+- Mock external edges such as `fetch`, media libraries, and time—not application modules. Use real IndexedDB code with `fake-indexeddb` for persistence tests.
+- Add a Playwright test when the contract crosses routes or cannot be exercised meaningfully in a focused test. Use the mocked API and accessible locators; do not gate CI on live AniList or AniSource services. Run live tests only when asked.
+- Give each test one behavior, isolate storage and time, and avoid arbitrary sleeps. For UI changes, also follow the browser-check requirements in `AGENTS.md`.
 
-Priority:
+## Performance and caching
 
-1. Every real bug fix gets a regression test, including bugs encountered during implementation.
-2. Pure logic: normal input, the concerning edge case, and a real sample pair for matchers/formatters.
-3. Schema boundaries: malformed external data rejected/defaulted safely, per schema rather than per field.
-4. API clients with mocked transport: AniList success, HTTP-200 `errors[]`, rate-limit/retry; AniSource success, timeout, cold start.
+- Remove unnecessary requests and serial waits between independent work first. Measure a suspected bottleneck before adding complexity, and do not claim unmeasured speedups.
+- Do not hide latency with broad hover prefetch, another cache, or another retry loop. Follow `docs/architecture/cache-policy.md` for query keys, freshness, invalidation, and prefetch.
+- Preserve the AniSource boundary: it is browser-only within mounted Watch and Reader sessions, through the client and same-origin gateway. Do not move its calls into SSR, loaders, prefetch, or shared layouts.
+- Preserve lazy loading and image dimensions; keep playback libraries out of the shared initial bundle.
 
-Default exclusions: component-state matrices (cover player/grid error-with-retry), loader tests outside watch, and coverage targets. Real regressions override these exclusions. Tests must fail for genuinely broken implementations.
+## Checks and delivery
 
-No live-API CI gates. Optional live checks run as scheduled, non-blocking jobs opening issues on failure.
-
-Defer E2E additions until the watch pipeline is feature-complete. Then default to two Playwright smoke journeys: search → detail → watch → player mount; and ambiguous match → picker → episode → server fallback. This is a default scope, not a hard cap on tests justified by actual bugs.
-
-## Performance
-
-- Use server-loader data for home/explore/detail SEO and first paint.
-- Keep watch and HLS.js/YouTube embeds client-only through Solid `lazy()`, out of the shared/initial bundle.
-- AniSource runs only on user interaction, never SSR or initial page load.
-- Prefetch through router hover/intent. Set explicit image dimensions/aspect ratios; lazy-load below the fold.
-- Every cache, including Solid Query, defines its key, `staleTime`/`gcTime`, invalidation trigger, and failure behavior.
-
-## Git and CI
-
-- Branch + PR by default; no direct main pushes, secrets, or unrelated commit changes. Commit/push only when asked.
-- Pre-commit: format and lint changed files. Apply the root tier's before-push checks.
-- Before opening a PR, run typecheck, build, and milestone tests locally at least once. CI rechecks; it is not the first check.
-- After pushing, inspect CI. Fix genuine causes and push corrections within the authorized work. For confirmed infrastructure flakes meeting the evidence rule, rerun once and move on. Never weaken a test/type to force green.
+- Use Bun and the narrowest relevant check from `AGENTS.md` and `package.json`. Docs-only and copy-only edits need `bun run lint`; markup and behavior changes need appropriate tests and browser review.
+- `bun run verify` is the CI merge gate, not the default iteration loop. Follow the current `AGENTS.md` guidance on when to run it; when a check fails, diagnose with the affected focused check and get a passing final result where required.
+- Work on a feature branch; `main` receives merges only. Commit and push only when asked, and stage only files belonging to the requested change. Never include secrets, generated builds, or unrelated work.
+- When a push or PR is requested, inspect CI results and address genuine failures. For confirmed infrastructure flakes, follow the evidence and retry guidance above.

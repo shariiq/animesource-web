@@ -28,11 +28,12 @@ export function LibraryCard(props: {
   )
 
   return (
-    <article class="editorial-row grid min-w-0 grid-cols-[104px_minmax(0,1fr)] items-start sm:grid-cols-[128px_minmax(0,1fr)]" classList={{ 'opacity-70': props.entry.unavailable }}>
-      {/* Fixed 2/3 poster ratio, top-aligned so tall meta columns never stretch
-          the artwork into a slim strip on narrow viewports. */}
-      <Show when={media()} keyed fallback={<div class="relative aspect-[2/3] w-full self-start overflow-hidden bg-violet/12">{coverContent()}</div>}>
-        {(current) => <CatalogLink media={current} mode={props.mode} class="relative aspect-[2/3] w-full self-start overflow-hidden bg-violet/12">{coverContent()}</CatalogLink>}
+    <article class="editorial-row grid min-w-0 grid-cols-[104px_minmax(0,1fr)] items-stretch sm:grid-cols-[128px_minmax(0,1fr)]" classList={{ 'opacity-70': props.entry.unavailable }}>
+      {/* Cover fills the row edge-to-edge: the 2/3 minimum keeps the poster
+          legible, while stretch absorbs taller meta columns so no blank seam
+          opens between stacked entries on narrow viewports. */}
+      <Show when={media()} keyed fallback={<div class="relative min-h-[156px] w-full self-stretch overflow-hidden bg-violet/12 sm:min-h-[192px]">{coverContent()}</div>}>
+        {(current) => <CatalogLink media={current} mode={props.mode} class="relative min-h-[156px] w-full self-stretch overflow-hidden bg-violet/12 sm:min-h-[192px]">{coverContent()}</CatalogLink>}
       </Show>
       <div class="flex min-w-0 flex-col gap-3 p-4 sm:p-5">
         <div>

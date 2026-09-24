@@ -20,9 +20,10 @@ export function AnimeCard(props: { anime: AniListMedia; mode?: CatalogMode; rank
       class="group editorial-row grid min-w-0 grid-cols-[96px_minmax(0,1fr)_36px] items-stretch text-inherit no-underline sm:grid-cols-[112px_minmax(0,1fr)_46px]"
       style={{ '--accent': accent() }}
     >
-      {/* Fixed 2/3 poster ratio: the cover never stretches with the row height,
-          so object-cover has nothing to crop on narrow viewports. */}
-      <div class="relative aspect-[2/3] w-full self-start overflow-hidden bg-[var(--accent)] after:pointer-events-none after:absolute after:inset-0 after:shadow-cover-inset">
+      {/* Cover fills the row edge-to-edge: the 2/3 minimum keeps the poster
+          legible, while stretch absorbs taller meta columns so no blank seam
+          opens between stacked posters on narrow viewports. */}
+      <div class="relative min-h-[144px] w-full self-stretch overflow-hidden bg-[var(--accent)] after:pointer-events-none after:absolute after:inset-0 after:shadow-cover-inset sm:min-h-[168px]">
         <Show when={props.rank !== undefined}>
           <span class="absolute left-[9px] top-[9px] z-[2] grid h-[27px] min-w-[27px] place-items-center rounded-[6px] border border-[rgb(255_255_255_/_0.3)] bg-[rgb(8_8_12_/_0.78)] px-1 font-mono text-[9px] font-medium text-white backdrop-blur-[8px]">
             {String(props.rank).padStart(2, '0')}

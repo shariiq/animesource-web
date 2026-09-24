@@ -1,0 +1,281 @@
+@layer components {
+  /* Overlay chrome floats over the picture and fades out while playback
+     runs undisturbed. Visibility (not display) keeps the fade animatable
+     and drops hidden controls from the tab order. */
+  .player-chrome {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    pointer-events: none;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity .3s var(--ease);
+  }
+
+  .player[data-chrome="false"] .player-chrome {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .3s var(--ease), visibility 0s .3s;
+  }
+
+  .player-bar {
+    pointer-events: auto;
+  }
+
+  .player-bar-top {
+    background: linear-gradient(180deg, rgb(0 0 0 / .62), transparent);
+    padding-top: max(.75rem, env(safe-area-inset-top));
+  }
+
+  .player-bar-bottom {
+    background: linear-gradient(0deg, rgb(0 0 0 / .72) 20%, transparent);
+    padding-bottom: max(.75rem, env(safe-area-inset-bottom));
+  }
+
+  .player-taplayer {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* Transport buttons: frosted pills with a solid primary play key. */
+  .player-btn {
+    display: grid;
+    min-width: 44px;
+    min-height: 44px;
+    flex: none;
+    place-items: center;
+    border: 1px solid rgb(255 255 255 / .18);
+    border-radius: 999px;
+    background: rgb(255 255 255 / .1);
+    color: white;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: background .2s var(--ease), transform .2s var(--ease);
+  }
+
+  .player-btn:hover {
+    background: rgb(255 255 255 / .22);
+  }
+
+  .player-btn:active {
+    transform: scale(.94);
+  }
+
+  .player-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .player-btn-primary {
+    min-width: 52px;
+    min-height: 52px;
+    border-color: white;
+    background: white;
+    color: black;
+  }
+
+  .player-btn-primary:hover {
+    background: rgb(255 255 255 / .85);
+  }
+
+  .player-btn-primary svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* Option selects stay native (mobile sheet pickers, full keyboard
+     support) dressed as compact pills. */
+  .player-option {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    color: rgb(255 255 255 / .6);
+    font: 500 9px var(--font-mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .player-option select {
+    appearance: none;
+    -webkit-appearance: none;
+    min-height: 44px;
+    max-width: 9rem;
+    border: 1px solid rgb(255 255 255 / .18);
+    border-radius: 999px;
+    background-color: rgb(255 255 255 / .1);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-position: right 12px center;
+    background-repeat: no-repeat;
+    padding: 0 30px 0 14px;
+    color: white;
+    font: 600 11px var(--font-body);
+    letter-spacing: 0;
+    text-transform: none;
+    outline: none;
+  }
+
+  .player-option select:focus-visible {
+    border-color: white;
+    box-shadow: 0 0 0 3px rgb(255 255 255 / .25);
+  }
+
+  .player-option option {
+    background: #121217;
+    color: white;
+  }
+
+  /* Seek and volume rails paint played/buffered progress. Firefox gets
+     native progress; Chromium uses the gradient track. */
+  .player-range {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 28px;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .player-range::-webkit-slider-runnable-track {
+    height: 5px;
+    border-radius: 999px;
+    background:
+      linear-gradient(to right,
+        #fff var(--played, 0%),
+        rgb(255 255 255 / .35) var(--played, 0%),
+        rgb(255 255 255 / .35) var(--buffered, 0%),
+        rgb(255 255 255 / .22) var(--buffered, 0%));
+  }
+
+  .player-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 15px;
+    height: 15px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 8px rgb(0 0 0 / .55);
+    transition: transform .15s var(--ease);
+  }
+
+  .player-range:active::-webkit-slider-thumb {
+    transform: scale(1.25);
+  }
+
+  .player-range::-moz-range-track {
+    height: 5px;
+    border-radius: 999px;
+    background:
+      linear-gradient(to right,
+        rgb(255 255 255 / .35) var(--buffered, 0%),
+        rgb(255 255 255 / .22) var(--buffered, 0%));
+  }
+
+  .player-range::-moz-range-progress {
+    height: 5px;
+    border-radius: 999px;
+    background: #fff;
+  }
+
+  .player-range::-moz-range-thumb {
+    width: 15px;
+    height: 15px;
+    border: 0;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 8px rgb(0 0 0 / .55);
+  }
+
+  /* Double-tap seek flashes. */
+  .player-flash {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 15;
+    display: grid;
+    width: 38%;
+    place-items: center;
+    color: white;
+    pointer-events: none;
+    animation: player-flash .6s var(--ease);
+  }
+
+  .player-flash[data-side="back"] {
+    left: 0;
+    background: radial-gradient(100% 100% at 0% 50%, rgb(255 255 255 / .22), transparent 70%);
+  }
+
+  .player-flash[data-side="forward"] {
+    right: 0;
+    background: radial-gradient(100% 100% at 100% 50%, rgb(255 255 255 / .22), transparent 70%);
+  }
+
+  .player-flash svg {
+    width: 34px;
+    height: 34px;
+  }
+
+  @keyframes player-flash {
+    from { opacity: 0; transform: scale(.85); }
+    25% { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(1.08); }
+  }
+
+  /* Native captions inherit the grade instead of shouting defaults. */
+  .player-screen video::cue {
+    background: rgb(0 0 0 / .65);
+    color: #fff;
+    font-family: var(--font-body);
+    text-shadow: 0 1px 3px rgb(0 0 0 / .8);
+  }
+
+  /* Touch devices drive volume from hardware keys; the slider only eats
+     thumb-reach space. */
+  @media (pointer: coarse) {
+    .player-volume-range {
+      display: none;
+    }
+  }
+}
+
+/* Fullscreen geometry lives outside layers on purpose: the fill-viewport
+   rules must beat the `relative aspect-video` utilities, and unlayered
+   author CSS wins over every layer. The 16:9 box gives way to a
+   fill-viewport stage so landscape phones keep the transport bar on screen
+   instead of pushing it below the fold. Fake fullscreen (position:fixed,
+   for browsers without Element.requestFullscreen) shares the geometry. */
+.player:fullscreen {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
+.player-fake {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+}
+
+.player:fullscreen .player-screen,
+.player-fake .player-screen {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+}
+
+.player:fullscreen video,
+.player-fake video {
+  object-fit: contain;
+}

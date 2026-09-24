@@ -10,6 +10,8 @@ type PlayerStatus = 'connecting' | 'buffering' | 'ready' | 'reconnecting' | 'err
 type HlsQualityOption = { id: number; label: string }
 type HlsAudioOption = { id: number; label: string; language: string; name: string }
 
+type ChromeHideReason = 'playing' | 'pinned'
+
 /**
  * A subtitle the viewer can turn on. External tracks come from the AniSource
  * stream payload as `<track>` elements; HLS tracks are declared by the manifest
@@ -18,11 +20,6 @@ type HlsAudioOption = { id: number; label: string; language: string; name: strin
 type SubtitleOption =
   | { kind: 'external'; label: string; language: string; track: TextTrack }
   | { kind: 'hls'; label: string; language: string; id: number }
-
-type VideoWithNativeFullscreen = HTMLVideoElement & {
-  webkitEnterFullscreen?: () => void
-  webkitExitFullscreen?: () => void
-}
 
 type HlsErrorDetails = {
   response?: { code?: number } | null
@@ -55,6 +52,11 @@ function formatTime(seconds: number): string {
   return `${minutes}:${secs}`
 }
 
+const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+const CHROME_HIDE_DELAY_MS = 3500
+const DOUBLE_TAP_WINDOW_MS = 300
+const SEEK_STEP_SECONDS = 10
+
 /**
  * Client-only playback console.
  *
@@ -62,6 +64,13 @@ function formatTime(seconds: number): string {
  * same decision the working prototype makes. Native HLS is only used when
  * hls.js cannot run, because Chromium's `canPlayType` claims HLS support it
  * does not actually deliver for these proxied playlists.
+ *
+ * The transport chrome floats over the picture and auto-hides while playback
+ * runs, so landscape phone fullscreen keeps every control on screen instead
+ * of pushing a below-video bar below the fold. Where Element.requestFullscreen
+ * is missing (iPhone Safari) the player pins itself over the viewport with the
+ * same chrome rather than surrendering to the native player, which would hide
+ * every custom control.
  */
 export function LazyPlayer(props: {
   streams: Stream[]
@@ -86,8 +95,11 @@ export function LazyPlayer(props: {
   const [bufferedTo, setBufferedTo] = createSignal(0)
   const [muted, setMuted] = createSignal(false)
   const [volume, setVolume] = createSignal(1)
+  const [speed, setSpeed] = createSignal(1)
   const [fullscreen, setFullscreen] = createSignal(false)
-  const [fullscreenAvailable, setFullscreenAvailable] = createSignal(false)
+  const [fakeFullscreen, setFakeFullscreen] = createSignal(false)
+  const [chromeVisible, setChromeVisible] = createSignal(true)
+  const [seekFlash, setSeekFlash] = createSignal<{ side: 'back' | 'forward'; key: number } | null>(null)
   const [subtitleOptions, setSubtitleOptions] = createSignal<SubtitleOption[]>([])
   const [subtitleIndex, setSubtitleIndex] = createSignal(-1)
   const [subtitleFailure, setSubtitleFailure] = createSignal<string | null>(null)
@@ -114,6 +126,10 @@ export function LazyPlayer(props: {
   let progressWrite: Promise<void> = Promise.resolve()
   let pendingProgress: { identity: PlaybackIdentity; position: number; duration: number } | null = null
   let resumeDecisionIdentity: string | undefined
+  let chromeTimer: ReturnType<typeof setTimeout> | undefined
+  let flashTimer: ReturnType<typeof setTimeout> | undefined
+  let lastTap: { time: number; side: 'back' | 'center' | 'forward' } | undefined
+  let previousBodyOverflow = ''
 
   const activeStream = () => props.streams[activeIndex()]
   const streamUrl = (stream: Stream) => stream.url
@@ -137,6 +153,7 @@ export function LazyPlayer(props: {
     setAudioTrack(-1)
   }
   const clipboardAvailable = () => typeof navigator !== 'undefined' && Boolean(navigator.clipboard)
+  const isFullscreen = () => fullscreen() || fakeFullscreen()
 
   const destroyHls = () => {
     hls?.destroy()
@@ -296,6 +313,41 @@ export function LazyPlayer(props: {
     reportProgress(position, totalDuration)
   }
 
+  const cancelChromeTimer = () => {
+    if (chromeTimer !== undefined) {
+      clearTimeout(chromeTimer)
+      chromeTimer = undefined
+    }
+  }
+
+  /** The chrome pins while paused, busy, deciding resume, or failed; it only
+   * auto-hides once playback runs undisturbed. */
+  const chromeHideReason = (): ChromeHideReason | null => {
+    if (!playing() || busy() || resumePrompt() !== null || failure() !== null) return null
+    return 'playing'
+  }
+
+  const armChromeTimer = () => {
+    cancelChromeTimer()
+    if (chromeHideReason() === null) return
+    chromeTimer = setTimeout(() => {
+      chromeTimer = undefined
+      // Keyboard users tabbing through visible controls keep the chrome:
+      // hiding under a focused control strands focus in an invisible tree.
+      const stage = video()?.closest('.player')
+      const focused = document.activeElement
+      if (stage && focused && focused !== document.body && focused !== video() && stage.contains(focused)) {
+        return
+      }
+      if (chromeHideReason() !== null) setChromeVisible(false)
+    }, CHROME_HIDE_DELAY_MS)
+  }
+
+  const revealChrome = () => {
+    setChromeVisible(true)
+    untrack(() => armChromeTimer())
+  }
+
   const loadStream = async (index: number, resumeAt = 0, resumePlayback = false) => {
     const stream = props.streams[index]
     const element = video()
@@ -323,6 +375,7 @@ export function LazyPlayer(props: {
     const restore = () => {
       if (generation !== loadGeneration) return
       mediaReady = true
+      element.playbackRate = untrack(speed)
       const savedPosition = resumeAt > 0 && Number.isFinite(resumeAt) ? Math.min(resumeAt, element.duration - 0.25) : 0
       const identityKey = props.identity?.key ?? 'legacy-player'
       if (savedPosition > 5 && savedPosition < element.duration - 5 && identityKey !== resumeDecisionIdentity) {
@@ -498,6 +551,19 @@ export function LazyPlayer(props: {
     })
   })
 
+  // Re-arm the auto-hide whenever playback state settles.
+  createEffect(() => {
+    playing()
+    busy()
+    resumePrompt()
+    failure()
+    if (!chromeVisible()) {
+      cancelChromeTimer()
+      return
+    }
+    untrack(() => armChromeTimer())
+  })
+
   onMount(() => {
     // Warm the player chunk while the session resolves source → episode →
     // server → stream, so the first HLS load pays manifest fetch only.
@@ -505,22 +571,15 @@ export function LazyPlayer(props: {
       hlsModulePromise = null
     })
     const element = video()
-    const nativeVideo = element as VideoWithNativeFullscreen | undefined
-    setFullscreenAvailable(Boolean(element?.requestFullscreen || nativeVideo?.webkitEnterFullscreen))
     const syncFullscreen = () => {
-      const active = document.fullscreenElement === element?.closest('.player')
+      const active = document.fullscreenElement != null && document.fullscreenElement === element?.closest('.player')
       setFullscreen(active)
-      if (!active) void unlockOrientation()
+      if (active) revealChrome()
+      else void unlockOrientation()
     }
-    const syncNativeFullscreen = () => setFullscreen(true)
-    const syncNativeExit = () => setFullscreen(false)
     document.addEventListener('fullscreenchange', syncFullscreen)
-    element?.addEventListener('webkitbeginfullscreen', syncNativeFullscreen)
-    element?.addEventListener('webkitendfullscreen', syncNativeExit)
     onCleanup(() => {
       document.removeEventListener('fullscreenchange', syncFullscreen)
-      element?.removeEventListener('webkitbeginfullscreen', syncNativeFullscreen)
-      element?.removeEventListener('webkitendfullscreen', syncNativeExit)
     })
   })
 
@@ -530,6 +589,9 @@ export function LazyPlayer(props: {
     removeRestoreListener?.()
     removeRestoreListener = undefined
     destroyHls()
+    cancelChromeTimer()
+    if (flashTimer !== undefined) clearTimeout(flashTimer)
+    if (fakeFullscreen()) exitFakeFullscreen()
     for (const url of subtitleObjectUrls) URL.revokeObjectURL(url)
     subtitleObjectUrls = []
   })
@@ -595,6 +657,15 @@ export function LazyPlayer(props: {
     persistPreferences({ ...(props.preferences ?? { quality: null, audioLanguage: null, audioLabel: null, subtitleLanguage: null, subtitleLabel: null }), subtitleLanguage: option?.language ?? null, subtitleLabel: option?.label ?? null })
   }
 
+  const changeSpeed = (value: string) => {
+    const next = Number(value)
+    const element = video()
+    if (!element || !Number.isFinite(next) || next <= 0) return
+    element.playbackRate = next
+    setSpeed(next)
+    revealChrome()
+  }
+
   const seekTo = (value: string) => {
     const element = video()
     const next = Number(value)
@@ -602,6 +673,50 @@ export function LazyPlayer(props: {
       element.currentTime = next
       setCurrentTime(next)
     }
+  }
+
+  const seekBy = (delta: number) => {
+    const element = video()
+    if (!element) return
+    const max = Number.isFinite(element.duration) && element.duration > 0 ? element.duration : Number.POSITIVE_INFINITY
+    element.currentTime = Math.min(Math.max(0, element.currentTime + delta), max)
+    setCurrentTime(element.currentTime)
+    revealChrome()
+  }
+
+  const flashSeek = (side: 'back' | 'forward') => {
+    if (flashTimer !== undefined) clearTimeout(flashTimer)
+    setSeekFlash({ side, key: Date.now() })
+    flashTimer = setTimeout(() => {
+      flashTimer = undefined
+      setSeekFlash(null)
+    }, 650)
+  }
+
+  /**
+   * Touch taps toggle the chrome; a fast second tap on an outer third seeks
+   * instead. Mouse clicks keep the desktop contract of toggling playback.
+   */
+  const handleScreenTap = (event: PointerEvent & { currentTarget: HTMLElement }) => {
+    if (event.pointerType === 'mouse') {
+      void togglePlayback()
+      revealChrome()
+      return
+    }
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = event.clientX - rect.left
+    const side = x < rect.width / 3 ? 'back' : x > (rect.width * 2) / 3 ? 'forward' : 'center'
+    const now = Date.now()
+    if (lastTap && now - lastTap.time < DOUBLE_TAP_WINDOW_MS && lastTap.side === side && side !== 'center') {
+      lastTap = undefined
+      seekBy(side === 'back' ? -SEEK_STEP_SECONDS : SEEK_STEP_SECONDS)
+      flashSeek(side)
+      return
+    }
+    lastTap = { time: now, side }
+    setChromeVisible(!chromeVisible())
+    if (chromeVisible()) untrack(() => armChromeTimer())
+    else cancelChromeTimer()
   }
 
   const changeVolume = (value: string) => {
@@ -647,32 +762,52 @@ export function LazyPlayer(props: {
     }
   }
 
+  const enterFakeFullscreen = async () => {
+    const stage = video()?.closest('.player')
+    if (!stage) return
+    previousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    stage.classList.add('player-fake')
+    setFakeFullscreen(true)
+    revealChrome()
+    await lockOrientation()
+  }
+
+  const exitFakeFullscreen = () => {
+    video()?.closest('.player')?.classList.remove('player-fake')
+    document.body.style.overflow = previousBodyOverflow
+    setFakeFullscreen(false)
+    revealChrome()
+  }
+
   const toggleFullscreen = async () => {
     const element = video()
     const stage = element?.closest('.player')
     if (!element || !stage) return
-    const nativeVideo = element as VideoWithNativeFullscreen
     try {
       if (document.fullscreenElement) {
         await document.exitFullscreen()
         await unlockOrientation()
         return
       }
-      if (stage.requestFullscreen) {
+      if (fakeFullscreen()) {
+        exitFakeFullscreen()
+        await unlockOrientation()
+        return
+      }
+      if ('requestFullscreen' in stage && typeof stage.requestFullscreen === 'function') {
         await stage.requestFullscreen()
         await lockOrientation()
         return
       }
-      if (nativeVideo.webkitEnterFullscreen) {
-        nativeVideo.webkitEnterFullscreen()
-        await lockOrientation()
-        return
-      }
-      setFullscreenAvailable(false)
-      setPlayerNotice('Fullscreen is unavailable in this browser.')
+      // No element fullscreen (iPhone Safari): pin the player over the
+      // viewport instead of surrendering to the native player, which would
+      // hide every custom control.
+      await enterFakeFullscreen()
     } catch (cause) {
       console.error('Fullscreen was refused by the browser.', cause)
-      setPlayerNotice('Fullscreen was blocked. Try using the browser’s fullscreen control.')
+      if (fakeFullscreen()) exitFakeFullscreen()
+      else await enterFakeFullscreen().catch(() => setPlayerNotice('Fullscreen was blocked. Try using the browser’s fullscreen control.'))
     }
   }
 
@@ -711,28 +846,44 @@ export function LazyPlayer(props: {
 
   return (
     <Show when={props.streams.length > 0}>
-      <section class="player overflow-hidden rounded-shell border border-black/20 bg-[#121217] shadow-[0_24px_60px_rgb(0_0_0/.22)]" aria-labelledby="player-title" aria-keyshortcuts="Space K ArrowLeft ArrowRight M F" onKeyDown={(event) => {
-        const target = event.target as HTMLElement
-        if (target.matches('input, select, textarea, button, [contenteditable="true"]')) return
-        if (event.key === ' ' || event.key.toLowerCase() === 'k') { event.preventDefault(); void togglePlayback() }
-        else if (event.key === 'ArrowLeft') { event.preventDefault(); seekTo(String(Math.max(0, currentTime() - 5))) }
-        else if (event.key === 'ArrowRight') { event.preventDefault(); seekTo(String(Math.min(duration(), currentTime() + 5))) }
-        else if (event.key.toLowerCase() === 'm') { event.preventDefault(); toggleMute() }
-        else if (event.key.toLowerCase() === 'f') { event.preventDefault(); void toggleFullscreen() }
-      }}>
+      <section
+        class="player overflow-hidden rounded-shell border border-black/20 bg-[#121217] shadow-[0_24px_60px_rgb(0_0_0/.22)]"
+        classList={{ 'player-fake': fakeFullscreen() }}
+        data-fullscreen={isFullscreen()}
+        data-chrome={chromeVisible() ? 'visible' : 'hidden'}
+        aria-labelledby="player-title"
+        aria-keyshortcuts="Space K J L ArrowLeft ArrowRight M F"
+        onPointerMove={() => revealChrome()}
+        onPointerDown={() => revealChrome()}
+        onFocusIn={() => revealChrome()}
+        onKeyDown={(event) => {
+          const target = event.target as HTMLElement
+          if (target.matches('input, select, textarea, button, [contenteditable="true"]')) return
+          if (event.key === ' ' || event.key.toLowerCase() === 'k') { event.preventDefault(); void togglePlayback() }
+          else if (event.key.toLowerCase() === 'j') { event.preventDefault(); seekBy(-SEEK_STEP_SECONDS); flashSeek('back') }
+          else if (event.key.toLowerCase() === 'l') { event.preventDefault(); seekBy(SEEK_STEP_SECONDS); flashSeek('forward') }
+          else if (event.key === 'ArrowLeft') { event.preventDefault(); seekTo(String(Math.max(0, currentTime() - 5))) }
+          else if (event.key === 'ArrowRight') { event.preventDefault(); seekTo(String(Math.min(duration(), currentTime() + 5))) }
+          else if (event.key.toLowerCase() === 'm') { event.preventDefault(); toggleMute() }
+          else if (event.key.toLowerCase() === 'f') { event.preventDefault(); void toggleFullscreen() }
+          else if (event.key === 'Escape' && fakeFullscreen()) { event.preventDefault(); exitFakeFullscreen(); void unlockOrientation() }
+        }}
+      >
         <h2 id="player-title" class="sr-only">{props.serverName ? `${props.serverName} player` : 'Video player'}</h2>
-        <div class="relative aspect-video bg-black" tabIndex={0}>
+        <div class="player-screen relative aspect-video bg-black" tabIndex={0}>
           <video
-            class="size-full cursor-pointer bg-black object-contain"
+            class="size-full bg-black object-contain"
             playsinline
+            disablepictureinpicture={isFullscreen() ? true : undefined}
+            aria-label="Video"
             ref={setVideo}
-            onClick={() => { void togglePlayback() }}
             onCanPlay={() => setStatus('ready')}
             onPlaying={() => setStatus('ready')}
             onWaiting={() => setStatus((current) => (current === 'ready' ? 'buffering' : current))}
             onPlay={() => setPlaying(true)}
             onPause={() => {
               setPlaying(false)
+              revealChrome()
               flushProgress()
             }}
             onEnded={() => {
@@ -766,8 +917,25 @@ export function LazyPlayer(props: {
               if (props.identity) props.onMediaError?.(props.identity, message, false)
             }}
           />
+          <div class="player-taplayer" onPointerUp={(event) => handleScreenTap(event)} />
+          <Show when={seekFlash()} keyed>
+            {(flash) => (
+              <div class="player-flash" data-side={flash.side} aria-hidden="true">
+                <div class="grid justify-items-center gap-1">
+                  <Show when={flash.side === 'back'} fallback={<ForwardIcon />}><RewindIcon /></Show>
+                  <span class="font-mono text-[10px] uppercase tracking-[.1em]">{SEEK_STEP_SECONDS} seconds</span>
+                </div>
+              </div>
+            )}
+          </Show>
+          <Show when={busy() && !failure()}>
+            <div class="pointer-events-none absolute inset-0 z-30 grid place-items-center gap-2 bg-black/55 font-mono text-[10px] uppercase tracking-[.12em] text-white" role="status">
+              <span class="size-5 animate-spin rounded-full border-2 border-white/30 border-t-white" aria-hidden="true" />
+              <span>{busyLabel()}</span>
+            </div>
+          </Show>
           <Show when={resumePrompt() !== null}>
-            <div class="absolute inset-0 grid place-items-center bg-black/72 p-5 text-center text-white backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="resume-heading">
+            <div class="absolute inset-0 z-40 grid place-items-center bg-black/72 p-5 text-center text-white backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="resume-heading">
               <div class="max-w-sm">
                 <p class="font-mono text-[9px] uppercase tracking-[.18em] text-white/60">Playback checkpoint</p>
                 <h3 id="resume-heading" class="mt-2 font-display text-4xl leading-none">Continue watching?</h3>
@@ -779,171 +947,204 @@ export function LazyPlayer(props: {
               </div>
             </div>
           </Show>
-          <Show when={busy() && !failure()}>
-            <div class="absolute inset-0 grid place-items-center gap-2 bg-black/55 font-mono text-[10px] uppercase tracking-[.12em] text-white" role="status">
-              <span class="size-5 animate-spin rounded-full border-2 border-white/30 border-t-white" aria-hidden="true" />
-              <span>{busyLabel()}</span>
-            </div>
+          <Show when={failure()}>
+            {(message) => (
+              <div class="absolute inset-x-3 top-14 z-40 max-h-[calc(100%-10rem)] overflow-y-auto rounded-2xl border border-red-400/30 bg-red-950/80 p-4 text-sm text-red-100 shadow-2xl backdrop-blur-md" role="alert">
+                <p class="font-mono text-[9px] uppercase tracking-[.16em] text-red-200/70">Stream interruption</p>
+                <p class="mt-1">{message()}</p>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <Show when={props.onRetry}>
+                    <button
+                      type="button"
+                      class="border border-red-100/50 px-3 py-2 font-mono text-[9px] uppercase tracking-[.08em] transition hover:bg-white hover:text-black disabled:opacity-50"
+                      disabled={busy()}
+                      onClick={() => {
+                        setFailure(null)
+                        setStatus('reconnecting')
+                        void Promise.resolve(props.onRetry?.()).catch((cause) => {
+                          console.error('Retrying the stream failed.', cause)
+                          showFailure('Retrying the stream failed. Try another server, or open the stream directly.')
+                        })
+                      }}
+                    >
+                      Retry stream
+                    </button>
+                  </Show>
+                  <Show when={clipboardAvailable()}>
+                    <button type="button" class="border border-red-100/50 px-3 py-2 font-mono text-[9px] uppercase tracking-[.08em] transition hover:bg-white hover:text-black" onClick={() => { void copyActiveStream() }}>
+                      {copyState() === 'copied' ? 'Link copied' : 'Copy stream link'}
+                    </button>
+                  </Show>
+                </div>
+                <Show when={!clipboardAvailable() || copyState() === 'unavailable'}>
+                  <label class="mt-3 block">
+                    <span class="font-mono text-[9px] uppercase tracking-[.08em] text-white/55">Stream link</span>
+                    <input class="mt-1 h-9 w-full border border-white/20 bg-black/40 px-2 text-xs text-white" type="text" readonly value={activeStream() ? streamUrl(activeStream()!) : ''} />
+                  </label>
+                </Show>
+              </div>
+            )}
           </Show>
-        </div>
+          <Show when={playerNotice() ?? subtitleFailure()}>
+            {(message) => <p class="absolute inset-x-3 top-14 z-50 rounded-xl border border-white/15 bg-black/70 px-3 py-2 text-center font-mono text-[9px] uppercase tracking-[.08em] text-white/75 backdrop-blur-md" role="status">{message()}</p>}
+          </Show>
 
-        <div class="border-t border-white/10 bg-[#0b0b0f] p-3 text-white sm:p-4">
-          <div class="flex items-center gap-2">
-            <span class="w-12 shrink-0 text-right font-mono text-[10px] tabular-nums text-white/60">{formatTime(currentTime())}</span>
-            <label class="sr-only" for="player-seek">Playback position</label>
-            <input
-              id="player-seek"
-              class="h-1 min-w-0 flex-1 accent-white"
-              type="range"
-              min="0"
-              max={Number.isFinite(duration()) && duration() > 0 ? duration() : 0}
-              step="0.1"
-              value={currentTime()}
-              style={{ '--played': `${playedPercent()}%`, '--buffered': `${bufferedPercent()}%` }}
-              onInput={(event) => seekTo(event.currentTarget.value)}
-            />
-            <span class="w-12 shrink-0 font-mono text-[10px] tabular-nums text-white/60">{formatTime(duration())}</span>
-          </div>
-
-          <div class="mt-2 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="grid size-11 shrink-0 place-items-center rounded-[9px] border border-white bg-white text-black transition hover:bg-transparent hover:text-white"
-              aria-label={playing() ? 'Pause' : 'Play'}
-              onClick={() => { void togglePlayback() }}
-            >
-              <Show when={playing()} fallback={<PlayIcon />}><PauseIcon /></Show>
-            </button>
-
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                class="grid size-11 shrink-0 place-items-center rounded-[9px] border border-white/25 transition hover:border-white"
-                aria-label={muted() || volume() === 0 ? 'Unmute' : 'Mute'}
-                aria-pressed={muted() || volume() === 0}
-                onClick={toggleMute}
-              >
-                <Show when={muted() || volume() === 0} fallback={<VolumeIcon />}><MuteIcon /></Show>
-              </button>
-              <label class="sr-only" for="player-volume-range">Volume</label>
-              <input
-                id="player-volume-range"
-                class="w-16 accent-white"
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={muted() ? 0 : volume()}
-                style={{ '--played': `${(muted() ? 0 : volume()) * 100}%` }}
-                onInput={(event) => changeVolume(event.currentTarget.value)}
-              />
+          <div class="player-chrome" aria-hidden={chromeVisible() ? undefined : true}>
+            <div class="player-bar player-bar-top flex items-center gap-3 px-4 pb-6 pt-3">
+              <p class="min-w-0 flex-1 truncate font-mono text-[10px] uppercase tracking-[.14em] text-white/85">
+                {props.serverName ?? 'Player'}
+              </p>
+              <Show when={isFullscreen()}>
+                <button
+                  type="button"
+                  class="player-btn"
+                  aria-label="Exit fullscreen"
+                  onClick={() => { void toggleFullscreen() }}
+                >
+                  <CollapseIcon />
+                </button>
+              </Show>
             </div>
 
-            <span class="flex-1" />
+            <div class="player-bar player-bar-bottom px-3 pt-8 sm:px-4">
+              <div class="flex items-center gap-2">
+                <span class="w-12 shrink-0 text-right font-mono text-[10px] tabular-nums text-white/70">{formatTime(currentTime())}</span>
+                <label class="sr-only" for="player-seek">Playback position</label>
+                <input
+                  id="player-seek"
+                  class="player-range min-w-0 flex-1"
+                  type="range"
+                  min="0"
+                  max={Number.isFinite(duration()) && duration() > 0 ? duration() : 0}
+                  step="0.1"
+                  value={currentTime()}
+                  style={{ '--played': `${playedPercent()}%`, '--buffered': `${bufferedPercent()}%` }}
+                  onInput={(event) => seekTo(event.currentTarget.value)}
+                />
+                <span class="w-12 shrink-0 font-mono text-[10px] tabular-nums text-white/70">{formatTime(duration())}</span>
+              </div>
 
-            <Show when={streamOptions().length > 1}>
-              <label class="flex min-w-0 items-center gap-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/55">
-                <span>{streamOptions().some(({ stream }) => stream.is_audio) ? 'Stream' : 'Quality'}</span>
-                <select class="max-w-[8rem] border border-white/20 bg-transparent px-2 py-2 text-white" value={activeIndex()} onChange={(event) => changeQuality(Number(event.currentTarget.value))}>
-                  <For each={streamOptions()}>
-                    {(option, index) => <option value={option.index}>{streamLabel(option.stream) || `Variant ${index() + 1}`}</option>}
-                  </For>
-                </select>
-              </label>
-            </Show>
+              <div class="mt-1 flex items-center gap-2 overflow-x-auto py-1">
+                <button
+                  type="button"
+                  class="player-btn player-btn-primary"
+                  aria-label={playing() ? 'Pause' : 'Play'}
+                  onClick={() => { void togglePlayback() }}
+                >
+                  <Show when={playing()} fallback={<PlayIcon />}><PauseIcon /></Show>
+                </button>
+                <button
+                  type="button"
+                  class="player-btn"
+                  aria-label="Back 10 seconds"
+                  onClick={() => { seekBy(-SEEK_STEP_SECONDS); flashSeek('back') }}
+                >
+                  <RewindIcon />
+                </button>
+                <button
+                  type="button"
+                  class="player-btn"
+                  aria-label="Forward 10 seconds"
+                  onClick={() => { seekBy(SEEK_STEP_SECONDS); flashSeek('forward') }}
+                >
+                  <ForwardIcon />
+                </button>
 
-            <Show when={qualityLevels().length > 1}>
-              <label class="flex min-w-0 items-center gap-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/55">
-                <span>Quality</span>
-                <select class="max-w-[8rem] border border-white/20 bg-transparent px-2 py-2 text-white" value={qualityLevel()} onChange={(event) => changeHlsQuality(event.currentTarget.value)}>
-                  <option value={-1}>Auto</option>
-                  <For each={qualityLevels()}>
-                    {(option) => <option value={option.id}>{option.label}</option>}
-                  </For>
-                </select>
-              </label>
-            </Show>
-
-            <Show when={audioTracks().length > 1}>
-              <label class="flex min-w-0 items-center gap-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/55">
-                <span>Audio</span>
-                <select class="max-w-[10rem] border border-white/20 bg-transparent px-2 py-2 text-white" value={audioTrack()} onChange={(event) => changeAudioTrack(event.currentTarget.value)}>
-                  <For each={audioTracks()}>
-                    {(track) => <option value={track.id}>{track.label}</option>}
-                  </For>
-                </select>
-              </label>
-            </Show>
-
-            <Show when={subtitleOptions().length > 0}>
-              <label class="flex min-w-0 items-center gap-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/55">
-                <span>Subtitles</span>
-                <select class="max-w-[8rem] border border-white/20 bg-transparent px-2 py-2 text-white" value={subtitleIndex()} onChange={(event) => changeSubtitle(Number(event.currentTarget.value))}>
-                  <option value="-1">Off</option>
-                  <For each={subtitleOptions()}>
-                    {(option, index) => <option value={index()}>{option.label}</option>}
-                  </For>
-                </select>
-              </label>
-            </Show>
-
-            <Show when={fullscreenAvailable()}>
-              <button
-                type="button"
-                class="grid size-11 shrink-0 place-items-center rounded-[9px] border border-white/25 transition hover:border-white"
-                aria-label={fullscreen() ? 'Exit fullscreen' : 'Enter fullscreen'}
-                aria-pressed={fullscreen()}
-                onClick={() => { void toggleFullscreen() }}
-              >
-                <Show when={fullscreen()} fallback={<ExpandIcon />}><CollapseIcon /></Show>
-              </button>
-            </Show>
-          </div>
-        </div>
-
-        <Show when={subtitleFailure()}>
-          {(message) => <p class="border-t border-white/10 px-4 py-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/60" role="status">{message()}</p>}
-        </Show>
-        <Show when={playerNotice()}>
-          {(message) => <p class="border-t border-white/10 px-4 py-2 font-mono text-[9px] uppercase tracking-[.08em] text-white/60" role="status">{message()}</p>}
-        </Show>
-        <Show when={failure()}>
-          {(message) => (
-            <div class="border-t border-red-400/30 bg-red-950/40 p-4 text-sm text-red-100" role="alert">
-              <p>{message()}</p>
-              <div class="mt-3 flex flex-wrap gap-2">
-                <Show when={props.onRetry}>
+                <div class="player-volume-range flex flex-none items-center gap-2">
                   <button
                     type="button"
-                    class="border border-red-100/50 px-3 py-2 font-mono text-[9px] uppercase tracking-[.08em] transition hover:bg-white hover:text-black disabled:opacity-50"
-                    disabled={busy()}
-                    onClick={() => {
-                      setFailure(null)
-                      setStatus('reconnecting')
-                      void Promise.resolve(props.onRetry?.()).catch((cause) => {
-                        console.error('Retrying the stream failed.', cause)
-                        showFailure('Retrying the stream failed. Try another server, or open the stream directly.')
-                      })
-                    }}
+                    class="player-btn"
+                    aria-label={muted() || volume() === 0 ? 'Unmute' : 'Mute'}
+                    aria-pressed={muted() || volume() === 0}
+                    onClick={toggleMute}
                   >
-                    Retry stream
+                    <Show when={muted() || volume() === 0} fallback={<VolumeIcon />}><MuteIcon /></Show>
                   </button>
+                  <label class="sr-only" for="player-volume-range">Volume</label>
+                  <input
+                    id="player-volume-range"
+                    class="player-range w-20"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={muted() ? 0 : volume()}
+                    style={{ '--played': `${(muted() ? 0 : volume()) * 100}%`, '--buffered': '100%' }}
+                    onInput={(event) => changeVolume(event.currentTarget.value)}
+                  />
+                </div>
+
+                <span class="min-w-2 flex-1" />
+
+                <Show when={streamOptions().length > 1}>
+                  <label class="player-option">
+                    <span>{streamOptions().some(({ stream }) => stream.is_audio) ? 'Stream' : 'Quality'}</span>
+                    <select value={activeIndex()} onChange={(event) => changeQuality(Number(event.currentTarget.value))}>
+                      <For each={streamOptions()}>
+                        {(option, index) => <option value={option.index}>{streamLabel(option.stream) || `Variant ${index() + 1}`}</option>}
+                      </For>
+                    </select>
+                  </label>
                 </Show>
-                <Show when={clipboardAvailable()}>
-                  <button type="button" class="border border-red-100/50 px-3 py-2 font-mono text-[9px] uppercase tracking-[.08em] transition hover:bg-white hover:text-black" onClick={() => { void copyActiveStream() }}>
-                    {copyState() === 'copied' ? 'Link copied' : 'Copy stream link'}
+
+                <Show when={qualityLevels().length > 1}>
+                  <label class="player-option">
+                    <span>Quality</span>
+                    <select value={qualityLevel()} onChange={(event) => changeHlsQuality(event.currentTarget.value)}>
+                      <option value={-1}>Auto</option>
+                      <For each={qualityLevels()}>
+                        {(option) => <option value={option.id}>{option.label}</option>}
+                      </For>
+                    </select>
+                  </label>
+                </Show>
+
+                <Show when={audioTracks().length > 1}>
+                  <label class="player-option">
+                    <span>Audio</span>
+                    <select value={audioTrack()} onChange={(event) => changeAudioTrack(event.currentTarget.value)}>
+                      <For each={audioTracks()}>
+                        {(track) => <option value={track.id}>{track.label}</option>}
+                      </For>
+                    </select>
+                  </label>
+                </Show>
+
+                <Show when={subtitleOptions().length > 0}>
+                  <label class="player-option">
+                    <span>Subtitles</span>
+                    <select value={subtitleIndex()} onChange={(event) => changeSubtitle(Number(event.currentTarget.value))}>
+                      <option value="-1">Off</option>
+                      <For each={subtitleOptions()}>
+                        {(option, index) => <option value={index()}>{option.label}</option>}
+                      </For>
+                    </select>
+                  </label>
+                </Show>
+
+                <label class="player-option">
+                  <span>Speed</span>
+                  <select value={speed()} onChange={(event) => changeSpeed(event.currentTarget.value)}>
+                    <For each={PLAYBACK_SPEEDS}>
+                      {(rate) => <option value={rate}>{rate}×</option>}
+                    </For>
+                  </select>
+                </label>
+
+                <Show when={!isFullscreen()}>
+                  <button
+                    type="button"
+                    class="player-btn"
+                    aria-label="Enter fullscreen"
+                    onClick={() => { void toggleFullscreen() }}
+                  >
+                    <ExpandIcon />
                   </button>
                 </Show>
               </div>
-              <Show when={!clipboardAvailable() || copyState() === 'unavailable'}>
-                <label class="mt-3 block">
-                  <span class="font-mono text-[9px] uppercase tracking-[.08em] text-white/55">Stream link</span>
-                  <input class="mt-1 h-9 w-full border border-white/20 bg-black/40 px-2 text-xs text-white" type="text" readonly value={activeStream() ? streamUrl(activeStream()!) : ''} />
-                </label>
-              </Show>
             </div>
-          )}
-        </Show>
+          </div>
+        </div>
       </section>
     </Show>
   )
@@ -984,6 +1185,24 @@ function CollapseIcon() {
   return (
     <svg {...icon}>
       <path d="M9 4v5H4m11 11v-5h5M20 9h-5V4M4 15h5v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    </svg>
+  )
+}
+function RewindIcon() {
+  return (
+    <svg {...icon}>
+      <path d="M11 8.5A5.5 5.5 0 1 0 16.5 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      <path d="M11 5.5v3.2L7.8 7 11 5.5z" fill="currentColor" />
+      <path d="M12.5 12.2l4.5-2.6v5.2z" fill="currentColor" />
+    </svg>
+  )
+}
+function ForwardIcon() {
+  return (
+    <svg {...icon}>
+      <path d="M13 8.5a5.5 5.5 0 1 1-5.5 5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      <path d="M13 5.5v3.2l3.2-1.7L13 5.5z" fill="currentColor" />
+      <path d="M11.5 12.2l-4.5-2.6v5.2z" fill="currentColor" />
     </svg>
   )
 }

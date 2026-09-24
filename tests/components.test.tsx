@@ -797,6 +797,48 @@ describe("LazyPlayer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
     await waitFor(() => expect(lock).toHaveBeenCalledWith("landscape"));
   });
+
+  it("pins the player over the viewport with working controls when element fullscreen is missing", async () => {
+    // iPhone Safari has no Element.requestFullscreen: the player must not
+    // surrender to the native player (which hides every custom control).
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value: undefined,
+    });
+    const { container } = render(() => <LazyPlayer streams={[direct]} />);
+    const stage = container.querySelector(".player")!;
+
+    fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
+    await waitFor(() => expect(stage.classList.contains("player-fake")).toBe(true));
+    expect(screen.getByRole("button", { name: "Exit fullscreen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Play" })).toBeVisible();
+    expect(screen.getByLabelText("Playback position")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Exit fullscreen" }));
+    await waitFor(() => expect(stage.classList.contains("player-fake")).toBe(false));
+    expect(screen.getByRole("button", { name: "Enter fullscreen" })).toBeInTheDocument();
+  });
+
+  it("auto-hides the chrome while playback runs and pins it while paused", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(() => <LazyPlayer streams={[direct]} />);
+      const stage = container.querySelector(".player")!;
+      const video = container.querySelector("video")!;
+      expect(stage).toHaveAttribute("data-chrome", "visible");
+
+      fireEvent.canPlay(video);
+      fireEvent.play(video);
+      expect(stage).toHaveAttribute("data-chrome", "visible");
+      vi.advanceTimersByTime(3500);
+      expect(stage).toHaveAttribute("data-chrome", "hidden");
+
+      fireEvent.pause(video);
+      expect(stage).toHaveAttribute("data-chrome", "visible");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("SearchSurface", () => {

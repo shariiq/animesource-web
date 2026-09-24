@@ -233,4 +233,13 @@ test("legacy zero reader routes resolve to the first numbered chapter", async ({
   await expect(page).toHaveURL(/\/manga\/1\/read\/1(?:\?|$)/);
   await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
   await expect(page.getByText("Chapter 1", { exact: true }).first()).toBeVisible();
+});
+
+test("document policy exposes no API origin in ticketed mode", async ({ page }) => {
+  const response = await page.goto("/");
+  const policy = response?.headers()["content-security-policy"] ?? "";
+  expect(policy).toContain("connect-src 'self'");
+  expect(policy).toContain("http://127.0.0.1:3101");
+  // Default ticketed mode exposes no API origin to the browser.
+  expect(policy).not.toContain("anisource");
 });

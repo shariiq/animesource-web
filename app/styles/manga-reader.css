@@ -287,6 +287,12 @@
     min-height: 240px;
   }
 
+  .manga-reader-shell[data-gap='none'] .manga-reader-frame.is-loaded:not(.is-paged) {
+    /* Short Source slices must size the frame to the image, not the loading placeholder. */
+    min-height: 0;
+    content-visibility: visible;
+  }
+
   .manga-reader-shell[data-gap='none'] .manga-reader-frame:not(.is-paged):not(:last-child) {
     /* Adjacent image edges can expose the canvas after device-pixel rounding. */
     margin-block-end: -2px;

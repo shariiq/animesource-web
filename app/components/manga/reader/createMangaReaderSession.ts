@@ -23,6 +23,7 @@ import {
   type MangaReaderLayout,
   type MangaReaderPersistence,
   type MangaReaderRecord,
+  type MangaReaderSettings,
 } from '../../../lib/persistence/mangaReader'
 
 export type {
@@ -75,6 +76,7 @@ export interface MangaReaderSession {
   slow: Accessor<boolean>
   error: Accessor<MangaReaderError | null>
   persistenceError: Accessor<string | null>
+  settingsSaveStatus: Accessor<'saving' | 'saved' | null>
   statusText: Accessor<string>
   sources: Accessor<SourceInfo[]>
   selectedSource: Accessor<string>
@@ -215,6 +217,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   const [slow, setSlow] = createSignal(false)
   const [error, setError] = createSignal<MangaReaderError | null>(null)
   const [persistenceError, setPersistenceError] = createSignal<string | null>(null)
+  const [settingsSaveStatus, setSettingsSaveStatus] = createSignal<'saving' | 'saved' | null>(null)
   const [sources, setSources] = createSignal<SourceInfo[]>([])
   const [selectedSource, setSelectedSource] = createSignal('')
   const [matchedManga, setMatchedManga] = createSignal<AniSourceManga | null>(null)
@@ -236,6 +239,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   let progressSaveRevision = 0
   let persistenceWrite: Promise<void> = Promise.resolve()
   let settingsSaveRevision = 0
+  const userEditedSettings = new Set<keyof MangaReaderSettings>()
   let lastFailedOperation: MangaReaderError['operation'] | null = null
   /** Chapter pages already fetched (or prefetched) this session, keyed by chapter id. */
   const pageCache = new Map<string, ChapterPage[]>()
@@ -358,20 +362,25 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   function queueRecordSave(
     record: MangaReaderRecord,
     isCurrent: () => boolean,
-    onSaved: () => void,
-    errorRevision?: number,
+    onSaved: (savedRecord: MangaReaderRecord) => void,
   ): Promise<void> {
     const write = persistenceWrite.then(async () => {
       if (!isCurrent()) return
       try {
-        await persistence.save(record)
+        const currentRecord = untrack(() => ({
+          ...record,
+          layout: layout(),
+          direction: direction(),
+          fit: fit(),
+          background: background(),
+          gap: gap(),
+        }))
+        await persistence.save(currentRecord)
         if (!isCurrent()) return
-        onSaved()
+        onSaved(currentRecord)
         setPersistenceError(null)
       } catch {
-        if (errorRevision === undefined || errorRevision === settingsSaveRevision) {
-          setPersistenceError('Reading progress could not be saved on this device.')
-        }
+        setPersistenceError('Reading progress could not be saved on this device.')
       }
     })
     persistenceWrite = write
@@ -380,7 +389,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
 
   async function persistRecord(record: MangaReaderRecord | null): Promise<void> {
     if (!record) return
-    await queueRecordSave(record, () => untrack(() => recordMatchesSelection(record)), () => setSavedRecord(record))
+    await queueRecordSave(record, () => untrack(() => recordMatchesSelection(record)), setSavedRecord)
   }
 
   function scheduleProgressSave(): void {
@@ -415,15 +424,18 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
         : null
     if (!record) return
     const revision = ++settingsSaveRevision
-    void queueRecordSave(
-      record,
-      () => !chapter || untrack(() => recordMatchesSelection(record)),
-      () => {
-        if (revision !== settingsSaveRevision) return
-        setSavedRecord(record)
-      },
-      revision,
-    )
+    setSettingsSaveStatus('saving')
+    void persistence.saveSettings(record).then((saved) => {
+      if (revision !== settingsSaveRevision) return
+      setSavedRecord(saved)
+      setSettingsSaveStatus('saved')
+      setPersistenceError(null)
+    }).catch(() => {
+      if (revision === settingsSaveRevision) {
+        setSettingsSaveStatus(null)
+        setPersistenceError('Reader settings could not be saved on this device.')
+      }
+    })
   }
 
   function resolveRouteChapterId(record: MangaReaderRecord | null): string | null {
@@ -617,11 +629,12 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       if (scope.disposed) return
       setSavedRecord(stored)
       const settings = stored ?? defaults
-      setLayout(settings.layout)
-      setDirection(settings.direction)
-      setFit(settings.fit)
-      setBackground(settings.background)
-      setGap(settings.gap)
+      if (!userEditedSettings.has('layout')) setLayout(settings.layout)
+      if (!userEditedSettings.has('direction')) setDirection(settings.direction)
+      if (!userEditedSettings.has('fit')) setFit(settings.fit)
+      if (!userEditedSettings.has('background')) setBackground(settings.background)
+      if (!userEditedSettings.has('gap')) setGap(settings.gap)
+      if (stored && userEditedSettings.size > 0) persistReaderSettings()
       request = beginRequest()
       const result = await options.api.mangaSources(() => setSlow(true), request.signal)
       if (!isCurrent(request)) return
@@ -737,26 +750,31 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   }
 
   function setLayoutPreference(nextLayout: MangaReaderLayout): void {
+    userEditedSettings.add('layout')
     setLayout(nextLayout)
     persistReaderSettings()
   }
 
   function setDirectionPreference(nextDirection: MangaReaderDirection): void {
+    userEditedSettings.add('direction')
     setDirection(nextDirection)
     persistReaderSettings()
   }
 
   function setFitPreference(nextFit: MangaReaderFit): void {
+    userEditedSettings.add('fit')
     setFit(nextFit)
     persistReaderSettings()
   }
 
   function setBackgroundPreference(nextBackground: MangaReaderBackground): void {
+    userEditedSettings.add('background')
     setBackground(nextBackground)
     persistReaderSettings()
   }
 
   function setGapPreference(nextGap: MangaReaderGap): void {
+    userEditedSettings.add('gap')
     setGap(nextGap)
     persistReaderSettings()
   }
@@ -779,6 +797,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     slow,
     error,
     persistenceError,
+    settingsSaveStatus,
     statusText,
     sources,
     selectedSource,

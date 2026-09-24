@@ -282,7 +282,14 @@
     contain-intrinsic-size: auto 1200px;
   }
 
-  .manga-reader-shell[data-gap='none'] .manga-reader-frame { min-height: 240px; }
+  .manga-reader-shell[data-gap='none'] .manga-reader-frame:not(.is-paged) {
+    min-height: 240px;
+  }
+
+  .manga-reader-shell[data-gap='none'] .manga-reader-frame:not(.is-paged):not(:last-child) {
+    /* Adjacent image edges can expose the canvas after device-pixel rounding. */
+    margin-block-end: -2px;
+  }
 
   .manga-reader-frame img {
     width: 100%;

@@ -417,7 +417,10 @@ export function LazyPlayer(props: {
       // The signed AniSource HLS proxy owns upstream headers. Passing provider
       // or extractor headers from the browser breaks the proxy boundary and
       // can make the manifest or its child URLs fail CORS checks.
-      const instance = new HlsClass()
+      // capLevelToPlayerSize never spends the pipe on pixels the screen
+      // cannot show; the deeper forward buffer rides out upstream stall
+      // patches instead of rebuffering on the first slow segment.
+      const instance = new HlsClass({ capLevelToPlayerSize: true, maxBufferLength: 60 })
       hls = instance
       let audioPreferenceApplied = false
 
@@ -837,12 +840,17 @@ export function LazyPlayer(props: {
   const playedPercent = () => (duration() > 0 ? (currentTime() / duration()) * 100 : 0)
   const bufferedPercent = () => (duration() > 0 ? (bufferedTo() / duration()) * 100 : 0)
   const busy = () => status() === 'connecting' || status() === 'buffering' || status() === 'reconnecting'
-  const busyLabel = () =>
-    status() === 'reconnecting'
-      ? 'Reconnecting to the stream…'
-      : status() === 'buffering'
-        ? 'Buffering…'
-        : 'Connecting to the stream…'
+  const busyLabel = () => {
+    if (status() === 'reconnecting') return 'Reconnecting to the stream…'
+    if (status() === 'buffering') {
+      // A pinned level cannot downshift itself: point at the escape hatch
+      // instead of spinning silently on a pipe that cannot sustain it.
+      return qualityLevels().length > 1 && qualityLevel() >= 0
+        ? 'Buffering… · slow connection, try Auto quality'
+        : 'Buffering…'
+    }
+    return 'Connecting to the stream…'
+  }
 
   return (
     <Show when={props.streams.length > 0}>

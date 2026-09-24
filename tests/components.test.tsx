@@ -38,8 +38,9 @@ const hls = vi.hoisted(() => {
     audioTracks: { name?: string; lang?: string }[] = [];
     subtitleTracks: { id: number; name?: string; lang?: string }[] = [];
     private handlers = new Map<string, Handler[]>();
-    constructor() {
+    constructor(...args: unknown[]) {
       instances.push(this);
+      FakeHls.lastConfig = args[0];
     }
     on(event: string, handler: Handler) {
       this.handlers.set(event, [...(this.handlers.get(event) ?? []), handler]);
@@ -51,10 +52,10 @@ const hls = vi.hoisted(() => {
     static isSupported() {
       return state.supported;
     }
+    static lastConfig: unknown = null;
   }
   return { state, instances, FakeHls };
 });
-
 const subtitleLoader = vi.hoisted(() => ({
   load: vi.fn(),
 }));
@@ -353,6 +354,7 @@ describe("LazyPlayer", () => {
   beforeEach(() => {
     hls.state.supported = true;
     hls.instances.length = 0;
+    (hls.FakeHls as unknown as { lastConfig: unknown }).lastConfig = null;
     subtitleLoader.load.mockReset();
     subtitleLoader.load.mockRejectedValue(new Error("subtitle relay not configured"));
     Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false });
@@ -838,6 +840,36 @@ describe("LazyPlayer", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("caps fetched quality to the player size with a deeper stall buffer", async () => {
+    render(() => <LazyPlayer streams={[hlsStream]} />);
+    await waitFor(() => expect(hls.instances).toHaveLength(1));
+    expect(
+      (hls.FakeHls as unknown as { lastConfig: unknown }).lastConfig,
+    ).toMatchObject({ capLevelToPlayerSize: true, maxBufferLength: 60 });
+  });
+
+  it("points at Auto quality when a pinned level keeps buffering", async () => {
+    const { container } = render(() => (
+      <LazyPlayer
+        streams={[hlsStream]}
+        preferences={{ quality: "720p", audioLanguage: null, audioLabel: null, subtitleLanguage: null, subtitleLabel: null }}
+      />
+    ));
+    await waitFor(() => expect(hls.instances).toHaveLength(1));
+    const instance = hls.instances[0]!;
+    instance.levels = [
+      { name: "1080p", height: 1080, bitrate: 6_000_000 },
+      { name: "720p", height: 720, bitrate: 3_000_000 },
+    ];
+    instance.emit("manifestParsed");
+    const video = container.querySelector("video")!;
+    fireEvent.canPlay(video);
+    fireEvent.waiting(video);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Buffering… · slow connection, try Auto quality",
+    );
   });
 });
 

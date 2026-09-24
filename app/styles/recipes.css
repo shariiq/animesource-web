@@ -42,10 +42,6 @@
     pointer-events: none;
   }
 
-  @media (max-width: 560px) {
-    .manga-detail-banner { height: calc(50vw - 24px); }
-  }
-
   .manga-detail-banner::after {
     position: absolute;
     inset: 0;
@@ -1128,16 +1124,6 @@
   .featured-artwork-image {
     filter: saturate(1.06) contrast(1.06) brightness(1.0);
     transform: scale(1.02);
-  }
-
-  .anime-detail-banner-image,
-  .anime-detail-banner-tint,
-  .anime-detail-banner-wash { height: 430px; }
-
-  @media (max-width: 812px) {
-    .anime-detail-banner-image,
-    .anime-detail-banner-tint,
-    .anime-detail-banner-wash { height: calc(50vw - 24px); }
   }
 
   .featured-contrast {

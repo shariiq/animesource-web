@@ -74,11 +74,11 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
           onMouseEnter={() => setPaused(true)}
           onMouseLeave={() => setPaused(false)}
         >
-          <div class="featured-artwork absolute inset-x-0 top-0 h-[calc(50vw-24px)] overflow-hidden bg-[#0a0a0f] sm:inset-y-0 sm:h-auto" aria-hidden="true">
+          <div class="featured-artwork absolute inset-0 overflow-hidden bg-[#0a0a0f]" aria-hidden="true">
             <For each={slides()}>
               {(media, index) => (
                 <img
-                  class={`featured-artwork-image absolute inset-0 h-full w-full object-cover object-[70%_22%] transition-[opacity,transform] duration-700 ease-fluid ${media.bannerImage ? '' : 'max-[640px]:object-contain max-[640px]:object-right'}`}
+                  class="featured-artwork-image absolute inset-0 h-full w-full object-cover object-[70%_22%] transition-[opacity,transform] duration-700 ease-fluid"
                   classList={{ 'opacity-100': index() === activeIndex(), 'opacity-0': index() !== activeIndex() }}
                   src={image(media)}
                   alt=""

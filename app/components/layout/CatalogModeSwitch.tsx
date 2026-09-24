@@ -1,4 +1,4 @@
-import { createContext, createEffect, createSignal, For, onMount, useContext, type Accessor, type JSX } from 'solid-js'
+import { createContext, createSignal, For, onMount, useContext, type Accessor, type JSX } from 'solid-js'
 import { type CatalogMode } from '../../lib/catalog'
 import type { ViewerPreferences } from '../../lib/persistence/viewer'
 import { viewerData } from '../../lib/persistence/active'
@@ -51,10 +51,6 @@ export function CatalogModeProvider(props: { children: JSX.Element }) {
     }).catch((cause) => {
       console.error('Failed to load the catalog preference.', cause)
     })
-  })
-
-  createEffect(() => {
-    if (typeof document !== 'undefined') document.title = mode() === 'MANGA' ? 'Discover Manga — AniSource' : 'Discover Anime — AniSource'
   })
 
   const changeMode = async (next: CatalogMode) => {

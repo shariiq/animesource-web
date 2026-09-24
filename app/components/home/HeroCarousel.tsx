@@ -51,6 +51,15 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
     }, SLIDE_INTERVAL_MS)
   }
   const image = (media: AniListMedia) => media.bannerImage || media.coverImage?.extraLarge || ''
+  const scheduleLabel = () => {
+    if (mode() !== 'ANIME') return 'AniList record'
+    const media = active()
+    if (media?.nextAiringEpisode) return `Next: ep ${media.nextAiringEpisode.episode}`
+    if (media?.status === 'FINISHED') return 'Finished'
+    if (media?.status === 'NOT_YET_RELEASED') return 'Upcoming'
+    if (media?.status === 'RELEASING') return 'Next airing TBA'
+    return 'Schedule unavailable'
+  }
   const go = (index: number) => {
     if (slides().length) setActiveIndex(index % slides().length)
   }
@@ -189,7 +198,7 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
               </Show>
               <div class="mt-5 flex justify-between gap-4 border-t border-white/12 pt-[10px] font-mono text-[9px] uppercase tracking-[.08em] text-white/60">
                 <Show when={active()?.status}>{(status) => <span>Status: {catalogStatus(mode(), status())}</span>}</Show>
-                <span>{mode() === 'ANIME' ? (active()?.nextAiringEpisode ? `Next: ep ${active()?.nextAiringEpisode?.episode}` : 'Finished') : 'AniList record'}</span>
+                <span>{scheduleLabel()}</span>
               </div>
             </aside>
           </div>

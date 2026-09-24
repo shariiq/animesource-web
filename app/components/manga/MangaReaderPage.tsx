@@ -371,9 +371,6 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
       document.title = chapter ? `${chapterHeading(chapter)} · ${title()} — AniSource` : `${title()} — Manga reader — AniSource`
     }
   })
-  onCleanup(() => {
-    if (typeof document !== 'undefined') document.title = 'AniSource — Discover & Watch Anime'
-  })
 
   function scheduleChromeHide(): void {
     if (chromeTimer !== null) {
@@ -849,9 +846,9 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
               <div class="manga-reader-stage">
                 <Show when={!pastEnd()} fallback={<ChapterEndCard session={session} mangaId={props.manga.id} onPrevious={choosePrevious} onNext={chooseNext} overlay />}>
                   <div class="manga-reader-tap-zones">
-                    <button type="button" class="manga-reader-tap-zone is-start" aria-label="Turn to previous page" onClick={session.direction() === 'rtl' ? goForward : goBackward} />
+                    <button type="button" class="manga-reader-tap-zone is-start" aria-label={session.direction() === 'rtl' ? 'Turn to next page' : 'Turn to previous page'} onClick={() => (session.direction() === 'rtl' ? goForward() : goBackward())} />
                     <button type="button" class="manga-reader-tap-zone is-center" aria-label="Show or hide reader controls" onClick={toggleChrome} />
-                    <button type="button" class="manga-reader-tap-zone is-end" aria-label="Turn to next page" onClick={session.direction() === 'rtl' ? goBackward : goForward} />
+                    <button type="button" class="manga-reader-tap-zone is-end" aria-label={session.direction() === 'rtl' ? 'Turn to previous page' : 'Turn to next page'} onClick={() => (session.direction() === 'rtl' ? goBackward() : goForward())} />
                   </div>
                   <div class="manga-reader-spread" role="list" aria-label="Manga pages">
                     <For each={visibleIndexes()}>

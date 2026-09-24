@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import type { JSX } from "solid-js";
+import { createSignal, type JSX } from "solid-js";
 import type { AniListMedia } from "../app/data/anilist/types";
 
 const searchMocks = vi.hoisted(() => ({
@@ -81,6 +81,7 @@ vi.mock("../app/data/anilist/queries", () => ({
 // Control the home query's queryFn per test so each branch (loading, error,
 // success) is exercised without a live network call.
 let mockHomeQueryFn: (() => Promise<HomeData>) | null = null;
+let mockBrowseQueryFn: (() => Promise<{ pageInfo: { currentPage: number; lastPage: number; hasNextPage: boolean; total: number }; media: AniListMedia[] }>) | null = null;
 vi.mock("../app/data/options", () => ({
   homeQuery: () => ({
     queryKey: ["anilist", "home"],
@@ -91,6 +92,11 @@ vi.mock("../app/data/options", () => ({
   genresQuery: () => ({
     queryKey: ["anilist", "genres"],
     queryFn: () => ["Action", "Comedy"],
+    staleTime: 1,
+  }),
+  browseQuery: () => ({
+    queryKey: ["anilist", "browse"],
+    queryFn: () => mockBrowseQueryFn?.(),
     staleTime: 1,
   }),
   suggestQuery: (query: string) => ({
@@ -107,6 +113,9 @@ import { HomePage } from "../app/components/home/HomePage";
 import { EpisodeList } from "../app/components/anime/watch/EpisodeList";
 import { ServerPicker } from "../app/components/anime/watch/ServerPicker";
 import { LazyPlayer } from "../app/components/anime/watch/LazyPlayer";
+import { HeroCarousel } from "../app/components/home/HeroCarousel";
+import { ExplorePage } from "../app/components/explore/ExplorePage";
+import { makeBrowseSearch } from "../app/lib/browse";
 import { SearchSurface } from "../app/components/layout/SearchSurface";
 
 type HomeData = {
@@ -245,6 +254,51 @@ describe("Rail", () => {
   });
 });
 
+describe("discovery metadata", () => {
+  it("does not call airing, upcoming, hiatus or cancelled anime finished when no next episode is scheduled", () => {
+    const items = [
+      media({ id: 1, status: "RELEASING", bannerImage: "https://cdn.test/banner.jpg" }),
+      media({ id: 2, status: "NOT_YET_RELEASED", bannerImage: "https://cdn.test/banner.jpg" }),
+      media({ id: 3, status: "HIATUS", bannerImage: "https://cdn.test/banner.jpg" }),
+      media({ id: 4, status: "CANCELLED", bannerImage: "https://cdn.test/banner.jpg" }),
+      media({ id: 5, status: "FINISHED", bannerImage: "https://cdn.test/banner.jpg" }),
+    ];
+    render(() => <HeroCarousel items={items} />);
+    expect(screen.getByText("Next airing TBA")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("tab")[1]!);
+    expect(screen.getByText("Upcoming")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("tab")[2]!);
+    expect(screen.getByText("Schedule unavailable")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("tab")[3]!);
+    expect(screen.getByText("Schedule unavailable")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("tab")[4]!);
+    expect(screen.getByText("Finished", { exact: true })).toBeInTheDocument();
+  });
+
+  it("keeps pagination available without claiming zero pages for an unbounded result", async () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    const scrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    mockBrowseQueryFn = async () => ({
+      pageInfo: { currentPage: 1, lastPage: 0, hasNextPage: true, total: 24 },
+      media: [media({})],
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    try {
+      render(wrap(client, () => <ExplorePage search={() => makeBrowseSearch()} />));
+      expect(await screen.findByRole("navigation", { name: "Explore results pages" })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Next →" })).toBeInTheDocument();
+      expect(screen.queryByText("0 pages")).not.toBeInTheDocument();
+    } finally {
+      await Promise.resolve();
+      mockBrowseQueryFn = null;
+      client.clear();
+      HTMLElement.prototype.scrollIntoView = scrollIntoView;
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe("watch selectors", () => {
   const episodes = [
     {
@@ -291,6 +345,18 @@ describe("watch selectors", () => {
     filler.focus();
     fireEvent.keyDown(filler, { key: "Enter" });
     expect(selectEpisode).toHaveBeenCalledWith("episode-2");
+  });
+
+  it("identifies the currently playing episode as the selection changes", () => {
+    const [currentEpisodeId, setCurrentEpisodeId] = createSignal("episode-1");
+    render(() => (
+      <EpisodeList episodes={episodes} currentEpisodeId={currentEpisodeId()} onEpisodeChange={() => undefined} />
+    ));
+    expect(screen.getByRole("button", { name: "Episode 1: Arrival" })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("button", { name: "Episode 2: Filler" })).not.toHaveAttribute("aria-current");
+    setCurrentEpisodeId("episode-2");
+    expect(screen.getByRole("button", { name: "Episode 1: Arrival" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("button", { name: "Episode 2: Filler" })).toHaveAttribute("aria-current", "true");
   });
 
   it("renders grouped servers and an empty state", () => {
@@ -837,6 +903,34 @@ describe("LazyPlayer", () => {
 
       fireEvent.pause(video);
       expect(stage).toHaveAttribute("data-chrome", "visible");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("focuses the screen on a mouse tap so Space pauses without preventing auto-hide", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(() => <LazyPlayer streams={[direct]} />);
+      const stage = container.querySelector(".player")!;
+      const video = container.querySelector("video")!;
+      const tapLayer = container.querySelector(".player-taplayer")!;
+      const pause = vi.spyOn(video, "pause").mockImplementation(() => fireEvent.pause(video));
+      Object.defineProperty(video, "paused", { configurable: true, value: false });
+      fireEvent.canPlay(video);
+      fireEvent.play(video);
+      screen.getByRole("button", { name: "Pause" }).focus();
+      vi.advanceTimersByTime(3500);
+      expect(stage).toHaveAttribute("data-chrome", "visible");
+
+      fireEvent.pointerUp(tapLayer, { pointerType: "mouse" });
+      expect(document.activeElement).toBe(container.querySelector(".player-screen"));
+      fireEvent.keyDown(document.activeElement!, { key: " ", code: "Space" });
+      expect(pause).toHaveBeenCalled();
+
+      fireEvent.play(video);
+      vi.advanceTimersByTime(3500);
+      expect(stage).toHaveAttribute("data-chrome", "hidden");
     } finally {
       vi.useRealTimers();
     }

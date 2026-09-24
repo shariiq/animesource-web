@@ -334,11 +334,10 @@ export function LazyPlayer(props: {
       chromeTimer = undefined
       // Keyboard users tabbing through visible controls keep the chrome:
       // hiding under a focused control strands focus in an invisible tree.
-      const stage = video()?.closest('.player')
       const focused = document.activeElement
-      if (stage && focused && focused !== document.body && focused !== video() && stage.contains(focused)) {
-        return
-      }
+      // Focus on the screen enables shortcuts without pinning the controls;
+      // only focus inside the chrome should keep it visible.
+      if (focused && video()?.closest('.player')?.querySelector('.player-chrome')?.contains(focused)) return
       if (chromeHideReason() !== null) setChromeVisible(false)
     }, CHROME_HIDE_DELAY_MS)
   }
@@ -701,6 +700,7 @@ export function LazyPlayer(props: {
    * instead. Mouse clicks keep the desktop contract of toggling playback.
    */
   const handleScreenTap = (event: PointerEvent & { currentTarget: HTMLElement }) => {
+    event.currentTarget.closest<HTMLElement>('.player-screen')?.focus({ preventScroll: true })
     if (event.pointerType === 'mouse') {
       void togglePlayback()
       revealChrome()

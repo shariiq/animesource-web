@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { chapterIdForNumber, chapterIdForRoute, chapterNeighbors, createMangaReaderSession, normalizeChapters, normalizePages, resolveStartChapterId } from '../app/components/manga/reader/createMangaReaderSession'
 import { detailShape } from '../app/data/anilist/schema'
 import type { AniSourceManga, ChapterPage, MangaChapter } from '../app/data/anisource/schema'
@@ -206,6 +206,65 @@ describe('manga reader source matching', () => {
     expect(session.fit()).toBe('fit-screen')
     expect(session.background()).toBe('paper')
     expect(session.gap()).toBe('large')
+  })
+
+  it('starts an unread next chapter at page zero instead of reusing the previous chapter position', async () => {
+    vi.useFakeTimers()
+    try {
+      const chapters = [chapter('c1', 1), chapter('c2', 2)]
+      const pages = (count: number): ChapterPage[] => Array.from({ length: count }, (_, index) => ({ index, url: `page-${index}`, page_url: '' }))
+      let stored: MangaReaderRecord | null = {
+        anilistId: 42,
+        title: 'Signal',
+        cover: '',
+        sourceId: 'source-a',
+        sourceName: 'Source A',
+        mangaId: 'signal-manga',
+        mangaUrl: '',
+        chapterId: 'c1',
+        chapterNumber: 1,
+        chapterTitle: 'Chapter 1',
+        pageIndex: 4,
+        pageCount: 10,
+        completed: false,
+        ...DEFAULT_MANGA_READER_SETTINGS,
+        updatedAt: 1,
+      }
+      const session = createMangaReaderSession({
+        manga,
+        routeChapterNumber: () => '1',
+        sourceSearchParam: () => undefined,
+        navigateToChapter: async () => undefined,
+        persistence: {
+          get: async () => stored,
+          getDefaults: async () => DEFAULT_MANGA_READER_SETTINGS,
+          list: async () => (stored ? [stored] : []),
+          save: async (record) => { stored = record },
+          saveDefaults: async () => undefined,
+          remove: async () => undefined,
+        },
+        api: {
+          mangaSources: async () => ({ sources: [{ id: 'source-a', name: 'Source A', base_url: '' }], count: 1 }),
+          mangaSearch: async () => ({ items: [mangaCandidate], page: 1, has_next: false, total_returned: 1 }),
+          mangaChapters: async () => chapters,
+          mangaPages: async (_sourceId, chapterId) => pages(chapterId === 'c1' ? 10 : 20),
+        },
+      })
+
+      await session.initialize()
+      expect(session.selectedChapter()?.id).toBe('c1')
+      expect(session.currentPage()).toBe(4)
+      session.setPage(4)
+
+      await session.chooseChapter('c2')
+      await vi.advanceTimersByTimeAsync(500)
+
+      expect(session.currentPage()).toBe(0)
+      expect(stored?.chapterId).toBe('c2')
+      expect(stored?.pageIndex).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

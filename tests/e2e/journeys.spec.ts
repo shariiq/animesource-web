@@ -66,6 +66,32 @@ test("manga library exposes saved reader progress", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Resume" })).toHaveAttribute("href", /\/manga\/1\/read\/1/);
 });
 
+test("reading progress follows the last-read chapter after a quick chapter switch", async ({ page }) => {
+  await page.goto("/manga/1/read/1?source=test");
+  await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
+
+  // Read to the end of chapter 1, then immediately advance: the debounced
+  // chapter-1 progress write must not overwrite the chapter-2 record.
+  await page.locator(".manga-reader-scroll").evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await expect(page.locator(".manga-reader-page-label")).toHaveText("Page 2 / 2");
+  await page.keyboard.press("]");
+  await expect(page).toHaveURL(/\/manga\/1\/read\/2/);
+  await expect(page.locator(".manga-reader-page-label")).toHaveText("Page 1 / 2");
+
+  // The navigations below take longer than the progress debounce, so a stale
+  // chapter-1 write would have landed by the time the library is read.
+  await page.goto("/manga/1");
+  await expect(page.getByRole("heading", { name: "Manga Details" })).toBeVisible();
+  await page.goto("/library");
+  await expect(page.getByRole("heading", { name: "Your manga library.", exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: /Continue Reading/ }).click();
+  await expect(page.getByRole("heading", { name: "Continue reading", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Resume" })).toHaveAttribute("href", /\/manga\/1\/read\/2/);
+});
+
 test("Explore stays active for filtered Explore routes", async ({ page }) => {
   await page.goto("/explore?sort=POPULARITY_DESC&page=1");
   await expect(page.getByRole("link", { name: "Explore" })).toHaveAttribute("aria-current", "page");

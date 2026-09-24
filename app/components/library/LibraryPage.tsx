@@ -17,6 +17,7 @@ import {
 } from '../../lib/library'
 import { formatEnum } from '../../lib/format'
 import { PageShell } from '../ui/PageShell'
+import { LibraryLoadingSkeleton } from '../ui/LoadingSkeleton'
 import { LibraryCard } from './LibraryCard'
 import { ContinueHistory } from './ContinueHistory'
 import { ContinueReading } from './ContinueReading'
@@ -309,7 +310,7 @@ function LibraryStat(props: { label: string; value: number }) {
 }
 
 function LibraryLoading() {
-  return <section class="material-panel mt-8 grid min-h-64 place-items-center" aria-busy="true"><p class="mono-signal">Loading saved titles…</p></section>
+  return <LibraryLoadingSkeleton />
 }
 
 function LibraryLoadError(props: { onRetry: () => void }) {

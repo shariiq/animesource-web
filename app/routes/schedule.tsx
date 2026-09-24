@@ -9,7 +9,18 @@ export const Route = createFileRoute('/schedule')({
     const range = scheduleRequestRange(search.date, search.view)
     return { start: range.start, end: range.end }
   },
-  loader: ({ context, deps }) => context.queryClient.ensureQueryData(scheduleQuery(deps.start, deps.end)),
+  loader: async ({ context, deps }) => {
+    // Keep navigation alive when AniList rate-limits the schedule fan-out.
+    // A failed server fetch is removed before hydration so the server and the
+    // client both begin from the previous (or loading) state; the client
+    // query then renders its own retry state instead of a route error tree.
+    const query = scheduleQuery(deps.start, deps.end)
+    try {
+      await context.queryClient.ensureQueryData(query)
+    } catch {
+      context.queryClient.removeQueries({ queryKey: query.queryKey })
+    }
+  },
   head: () => ({
     meta: [
       { title: 'Airing schedule — AniSource' },

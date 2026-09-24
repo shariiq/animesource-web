@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/solid-router'
 import { Show } from 'solid-js'
 import { MangaDetailPage } from '../../components/manga/MangaDetailPage'
+import { DetailLoadingSkeleton } from '../../components/ui/LoadingSkeleton'
 import { detailQuery } from '../../data/options'
 
 export const Route = createFileRoute('/manga/$mangaId/')({
@@ -30,7 +31,7 @@ function MangaRoute() {
 }
 
 function MangaPending() {
-  return <section class="detail-head" aria-busy="true"><div class="detail-inner"><div class="skeleton" style={{ height: '420px' }} /><p>Loading manga details…</p></div></section>
+  return <DetailLoadingSkeleton message="Loading manga details…" />
 }
 
 function MangaError() {

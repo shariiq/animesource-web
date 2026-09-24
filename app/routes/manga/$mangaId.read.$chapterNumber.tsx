@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, useParams, useSearch } from '@tanstack/so
 import { Show } from 'solid-js'
 import { z } from 'zod'
 import { MangaReaderPage } from '../../components/manga/MangaReaderPage'
+import { RouteLoadingFallback } from '../../components/ui/LoadingSkeleton'
 import { detailQuery } from '../../data/options'
 
 const readerSearchSchema = z.object({
@@ -55,7 +56,7 @@ function MangaReaderRoute() {
 }
 
 function MangaReaderPending() {
-  return <section class="manga-reader-route-state" aria-busy="true"><div class="manga-reader-route-mark">MANGA</div><p>Loading manga reader…</p></section>
+  return <RouteLoadingFallback kicker="Manga reader" title="Loading manga reader…" />
 }
 
 function MangaReaderError() {

@@ -13,6 +13,7 @@ import { catalogCopy, type CatalogMode } from '../../lib/catalog'
 import { useOptionalCatalogMode } from '../layout/CatalogModeSwitch'
 import { PageShell } from '../ui/PageShell'
 import { SectionHeading } from '../ui/SectionHeading'
+import { HomeLoadingSkeleton } from '../ui/LoadingSkeleton'
 
 type CollectionFilter = 'all' | 'airing' | 'rated'
 
@@ -142,7 +143,7 @@ function AnimeColumn(props: { mode: CatalogMode; title: string; items: AniListMe
 }
 
 function HomeLoading(props: { mode: CatalogMode }) {
-  return <section class="grid min-h-[60vh] place-items-center" aria-busy="true"><p class="mono-signal">{catalogCopy[props.mode].loading}</p></section>
+  return <HomeLoadingSkeleton message={catalogCopy[props.mode].loading} />
 }
 
 function State(props: { title: string; copy?: string; action?: () => void }) {

@@ -204,10 +204,25 @@ export async function alGenres(signal?: AbortSignal): Promise<string[]> {
  * Mirrors alSchedule() from prototype exactly.
  */
 /**
- * Schedule pages after the first run with bounded concurrency. Three keeps a
- * wide week range near 3x faster than serial without bursting AniList.
+ * Schedule pages after the first run serially with a small gap. AniList pairs
+ * a 90-requests-per-minute quota (currently degraded to 30/minute) with an
+ * undocumented burst limiter, so the old 3-wide fan-out tripped 429s and the
+ * parallel retries re-burst and burned the single client retry. Serial pages
+ * never trip the burst limiter; the gap keeps rapid Prev/Next navigation from
+ * spending the minute quota in one burst.
  */
-const SCHEDULE_PAGE_CONCURRENCY = 3
+const SCHEDULE_PAGE_GAP_MS = 200
+
+function paceSchedulePages(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.resolve()
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, SCHEDULE_PAGE_GAP_MS)
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer)
+      resolve()
+    }, { once: true })
+  })
+}
 
 export async function alSchedule(start: number, end: number, signal?: AbortSignal): Promise<AniListScheduleItem[]> {  const query = `
     query($start:Int,$end:Int,$page:Int){
@@ -228,16 +243,16 @@ export async function alSchedule(start: number, end: number, signal?: AbortSigna
   const items: AniListScheduleItem[] = [...first.Page.airingSchedules]
   const firstInfo = first.Page.pageInfo
   if (!firstInfo?.hasNextPage) return items
-  // The first page reports the total, so the remainder can run concurrently
-  // instead of one RTT per page. Concurrency is bounded: an unbounded fan-out
-  // bursts AniList into 429s, and the single client retry re-bursts and burns
-  // its budget, surfacing the rate limit to the Schedule route.
+  // The first page reports the total, so the remainder follows serially with
+  // a small gap instead of fanning out. Parallel pages burst AniList into
+  // 429s, and parallel retries re-burst and burn the retry budget, surfacing
+  // the rate limit to the Schedule route.
   const lastPage = firstInfo.lastPage ?? null
   if (lastPage && lastPage > 1) {
-    const remaining = Array.from({ length: lastPage - 1 }, (_, index) => index + 2)
-    for (let offset = 0; offset < remaining.length; offset += SCHEDULE_PAGE_CONCURRENCY) {
-      const batch = await Promise.all(remaining.slice(offset, offset + SCHEDULE_PAGE_CONCURRENCY).map(fetchPage))
-      for (const page of batch) items.push(...page.Page.airingSchedules)
+    for (let page = 2; page <= lastPage; page += 1) {
+      await paceSchedulePages(signal)
+      const parsed = await fetchPage(page)
+      items.push(...parsed.Page.airingSchedules)
     }
     return items
   }
@@ -245,6 +260,7 @@ export async function alSchedule(start: number, end: number, signal?: AbortSigna
   // Unknown page count: keep the serial fallback bounded so a malformed
   // hasNextPage can never spin forever.
   for (let guard = 0; guard < 20; guard += 1) {
+    await paceSchedulePages(signal)
     const parsed = await fetchPage(page)
     items.push(...parsed.Page.airingSchedules)
     if (!parsed.Page.pageInfo?.hasNextPage) return items

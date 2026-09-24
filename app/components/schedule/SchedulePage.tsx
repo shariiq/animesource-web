@@ -2,6 +2,7 @@ import { createQuery } from '@tanstack/solid-query'
 import { Link, useNavigate } from '@tanstack/solid-router'
 import { createMemo, createSignal, For, onCleanup, onMount, Show, type Accessor } from 'solid-js'
 import { scheduleQuery } from '../../data/options'
+import { AniListError } from '../../data/anilist/client'
 import type { AniListScheduleItem } from '../../data/anilist/types'
 import { formatEnum } from '../../lib/format'
 import { viewerData } from '../../lib/persistence/active'
@@ -18,6 +19,7 @@ import {
   type ScheduleSearch,
 } from '../../lib/schedule'
 import { PageShell } from '../ui/PageShell'
+import { ScheduleLoadingSkeleton } from '../ui/LoadingSkeleton'
 
 const STATUS_LABELS: Record<string, string> = {
   RELEASING: 'Releasing',
@@ -60,6 +62,12 @@ export function SchedulePage(props: { search: Accessor<ScheduleSearch> }) {
     onCleanup(() => window.clearInterval(timer))
   })
 
+  const scheduleError = () => schedule.error instanceof AniListError ? schedule.error : null
+  const isRateLimited = () => scheduleError()?.status === 429
+  const retryAfterSeconds = () => {
+    const ms = scheduleError()?.options.retryAfterMs
+    return typeof ms === 'number' && ms > 0 ? Math.max(1, Math.ceil(ms / 1000)) : null
+  }
   const updateSearch = (changes: Partial<ScheduleSearch>) => {
     void navigate({ to: '/schedule', search: { ...search(), ...changes } })
   }
@@ -126,17 +134,32 @@ export function SchedulePage(props: { search: Accessor<ScheduleSearch> }) {
           </label>
         </div>
 
-        <Show when={!schedule.isPending} fallback={<div class="schedule-state schedule-loading"><p class="mono-signal">Reading the release calendar…</p></div>}>
-          <Show when={!schedule.isError} fallback={<div class="schedule-state" role="alert"><p class="schedule-kicker">Connection issue</p><h3>The schedule is unavailable.</h3><p>AniList could not return airing times right now.</p><button class="ink-control schedule-state-action" type="button" onClick={() => { void schedule.refetch() }}>Retry schedule</button></div>}>
-            <Show when={items().length > 0} fallback={<div class="schedule-state"><p class="schedule-kicker">No releases match these filters</p><h3>No releases found.</h3><p>Change the date or filters to view more releases.</p></div>}>
-              <div class="schedule-days">
-                <For each={[...grouped().entries()]}>{([day, dayItems]) => <section class="schedule-day" aria-labelledby={`schedule-${day}`}>
-                  <div class="schedule-day-heading"><h3 id={`schedule-${day}`}>{new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(dateFromKey(day))}</h3><span class="mono-signal">{dayItems.length} {dayItems.length === 1 ? 'release' : 'releases'}</span></div>
-                  <div class="schedule-day-items">
-                    <For each={dayItems}>{(item) => <ScheduleRow item={item} now={now()} saved={item.media?.id !== undefined && savedIds().has(item.media.id)} />}</For>
-                  </div>
-                </section>}</For>
-              </div>
+        <Show when={schedule.isFetching && !schedule.isPending}>
+          <p class="schedule-sync px-6 pt-4" role="status" aria-live="polite"><i aria-hidden="true" />Updating the release calendar…</p>
+        </Show>
+
+        <Show when={!schedule.isPending} fallback={<ScheduleLoadingSkeleton />}>
+          <Show when={!schedule.isError} fallback={
+            <div class="schedule-state" role="alert">
+              <p class="schedule-kicker">{isRateLimited() ? 'AniList rate limit' : 'Connection issue'}</p>
+              <h3>{isRateLimited() ? 'Taking a breather.' : 'The schedule is unavailable.'}</h3>
+              <p>{isRateLimited()
+                ? `AniList allows about 90 requests per minute and slows down bursts. ${retryAfterSeconds() ? `Wait about ${retryAfterSeconds()} seconds, then ` : ''}retry — recently viewed weeks stay cached.`
+                : 'AniList could not return airing times right now.'}</p>
+              <button class="ink-control schedule-state-action" type="button" onClick={() => { void schedule.refetch() }}>Retry schedule</button>
+            </div>
+          }>
+            <Show when={items().length > 0 || schedule.isFetching} fallback={<div class="schedule-state"><p class="schedule-kicker">No releases match these filters</p><h3>No releases found.</h3><p>Change the date or filters to view more releases.</p></div>}>
+              <Show when={items().length > 0} fallback={<ScheduleLoadingSkeleton />}>
+                <div class="schedule-days" classList={{ 'is-retuning': schedule.isFetching }} aria-busy={schedule.isFetching}>
+                  <For each={[...grouped().entries()]}>{([day, dayItems]) => <section class="schedule-day" aria-labelledby={`schedule-${day}`}>
+                    <div class="schedule-day-heading"><h3 id={`schedule-${day}`}>{new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(dateFromKey(day))}</h3><span class="mono-signal">{dayItems.length} {dayItems.length === 1 ? 'release' : 'releases'}</span></div>
+                    <div class="schedule-day-items">
+                      <For each={dayItems}>{(item) => <ScheduleRow item={item} now={now()} saved={item.media?.id !== undefined && savedIds().has(item.media.id)} />}</For>
+                    </div>
+                  </section>}</For>
+                </div>
+              </Show>
             </Show>
           </Show>
         </Show>

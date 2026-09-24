@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/solid-router'
 import { Show } from 'solid-js'
 import { z } from 'zod'
 import { WatchPage } from '../../components/anime/WatchPage'
+import { PlayerLoadingSkeleton } from '../../components/ui/LoadingSkeleton'
 import { detailQuery } from '../../data/options'
 
 const watchSearchSchema = z.object({
@@ -22,7 +23,7 @@ export const Route = createFileRoute('/anime/$animeId/watch/$episodeId')({
 function WatchRoute() {
   const anime = Route.useLoaderData()
   return (
-    <Show when={anime()} fallback={<section class="state"><p>Loading anime details…</p></section>} keyed>
+    <Show when={anime()} fallback={<PlayerLoadingSkeleton message="Loading anime details…" />} keyed>
       {(data) => <WatchPage anime={data} />}
     </Show>
   )

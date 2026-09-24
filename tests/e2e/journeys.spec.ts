@@ -57,20 +57,24 @@ test("paged reader tap zones track direction changes and announce the page they 
 });
 
 test("route titles survive preference loading, mode changes and returning home", async ({ page }) => {
-  await page.goto("/library");
-  await expect(page).toHaveTitle("Your library — AniSource");
-  await page.getByRole("button", { name: "MANGA", exact: true }).click();
-  await expect(page).toHaveTitle("Your library — AniSource");
-  await page.getByRole("link", { name: "AniSource home" }).click();
-  await expect(page).toHaveTitle("Discover Anime — AniSource");
-  await page.getByRole("button", { name: "MANGA", exact: true }).click();
+  await page.goto("/?mode=MANGA");
+  const mangaMode = page.getByRole("button", { name: "MANGA", exact: true });
+  await expect(mangaMode).toHaveAttribute("aria-pressed", "true");
   await expect(page).toHaveTitle("Discover Manga — AniSource");
   await page.getByRole("link", { name: "Explore" }).click();
   await expect(page).toHaveTitle("Explore catalog — AniSource");
-  await page.getByRole("button", { name: "ANIME", exact: true }).click();
+
+  const animeMode = page.getByRole("button", { name: "ANIME", exact: true });
+  await animeMode.click();
+  await expect(animeMode).toHaveAttribute("aria-pressed", "true");
   await expect(page).toHaveTitle("Explore catalog — AniSource");
   await page.getByRole("link", { name: "AniSource home" }).click();
   await expect(page).toHaveTitle("Discover Anime — AniSource");
+  await mangaMode.click();
+  await expect(mangaMode).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("link", { name: "Library" }).click();
+  await expect(page).toHaveTitle("Your library — AniSource");
+
   await page.goto("/manga/1/read/1?source=test");
   await expect(page).toHaveTitle("Chapter 1 · Test Manga — AniSource");
   await page.getByRole("link", { name: "Back to Test Manga details" }).click();

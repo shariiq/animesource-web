@@ -30,6 +30,93 @@ test("continuous reader keeps both progress controls aligned with scrolling", as
   await expect(page.locator(".manga-reader-hairline i")).toHaveAttribute("style", /width: 100%/);
 });
 
+test.describe("high-density mobile Reader", () => {
+  test.use({ viewport: { width: 391, height: 844 }, deviceScaleFactor: 3, isMobile: true });
+
+  test("gap none leaves no raster seam between pages in a long chapter", async ({ page }) => {
+    await page.route("**/api/anisource/**", async (route) => {
+      const { pathname } = new URL(route.request().url());
+      if (pathname.endsWith("/pages/chapter-1")) {
+        await route.fulfill({
+          json: Array.from({ length: 12 }, (_, index) => ({
+            index,
+            url: "/api/anisource/test-reader-page.svg",
+            page_url: "",
+          })),
+        });
+      } else if (pathname.endsWith("/test-reader-page.svg")) {
+        await route.fulfill({
+          contentType: "image/svg+xml",
+          body: '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1080"><rect width="720" height="1080" fill="#345"/></svg>',
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await page.goto("/manga/1/read/start?source=test");
+    await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
+    await page.locator('button[aria-controls="manga-reader-settings-sheet"]').click();
+    const settings = page.getByRole("dialog", { name: "Reader settings" });
+    await settings.getByRole("button", { name: "None", exact: true }).click();
+    await expect(page.locator(".manga-reader-shell")).toHaveAttribute("data-gap", "none");
+    await settings.getByRole("button", { name: "Close settings" }).click();
+
+    const scroll = page.locator(".manga-reader-scroll");
+    await scroll.locator('[data-page-index="7"]').scrollIntoViewIfNeeded();
+    await expect(page.getByRole("img", { name: "Test Manga, page 9" })).toBeVisible();
+    await expect.poll(() => scroll.evaluate((element) => [7, 8].map((index) => {
+      const image = element.querySelector<HTMLElement>(`[data-page-index="${index}"] img`);
+      return image ? getComputedStyle(image).opacity : null;
+    }))).toEqual(["1", "1"]);
+    await scroll.evaluate((element) => {
+      const previous = element.querySelector<HTMLElement>('[data-page-index="7"] img');
+      const next = element.querySelector<HTMLElement>('[data-page-index="8"] img');
+      if (!previous || !next) throw new Error("Expected both adjacent page images");
+      const seam = (previous.getBoundingClientRect().bottom + next.getBoundingClientRect().top) / 2;
+      element.scrollTop += seam - (element.getBoundingClientRect().top + element.clientHeight / 2);
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+
+    const seam = await scroll.evaluate((element) => {
+      const previous = element.querySelector<HTMLElement>('[data-page-index="7"] img');
+      const next = element.querySelector<HTMLElement>('[data-page-index="8"] img');
+      if (!previous || !next) throw new Error("Expected both adjacent page images");
+      const previousImage = previous.getBoundingClientRect();
+      const nextImage = next.getBoundingClientRect();
+      return {
+        y: (previousImage.bottom + nextImage.top) / 2,
+        previousImage: previousImage.toJSON(),
+        nextImage: nextImage.toJSON(),
+      };
+    });
+    const seamY = seam.y;
+    const pixelScale = await page.evaluate(() => ({
+      dpr: window.devicePixelRatio,
+      x: Math.floor(window.innerWidth * window.devicePixelRatio / 2),
+    }));
+    const screenshot = await page.screenshot({ animations: "disabled" });
+    const seamPixels = await page.evaluate(async ({ image, x, y }) => {
+      const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(image), (value) => value.charCodeAt(0))], { type: "image/png" }));
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Could not inspect the rendered page seam");
+      context.drawImage(bitmap, 0, 0);
+      return [-2, -1, 0, 1, 2].map((offset) => [...context.getImageData(x, y + offset, 1, 1).data]);
+    }, { image: screenshot.toString("base64"), x: pixelScale.x, y: Math.floor(seamY * pixelScale.dpr) });
+    expect(seam.nextImage.top).toBeLessThanOrEqual(seam.previousImage.bottom - 2);
+    // A raster seam would expose the near-black reader canvas between these solid pages.
+    for (const pixel of seamPixels) {
+      expect(pixel[0]).toBeGreaterThanOrEqual(47);
+      expect(pixel[1]).toBeGreaterThanOrEqual(64);
+      expect(pixel[2]).toBeGreaterThanOrEqual(81);
+      expect(pixel[3]).toBe(255);
+    }
+  });
+});
+
 test("manga reader restores settings after an immediate reload", async ({ page }) => {
   await page.goto("/manga/1/read/1?source=test");
   await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();

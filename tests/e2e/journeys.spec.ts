@@ -237,11 +237,14 @@ test("discovery initial load does not call AniSource", async ({ page }) => {
 
   await page.goto("/");
   await expect(page.getByRole("banner", { name: "Site header" })).toBeVisible();
-  await expect(page.locator('head meta[http-equiv="content-security-policy"]')).toHaveAttribute(
-    "content",
-    /connect-src 'self'/,
-  );
   expect(anisourceRequests).toEqual([]);
+});
+
+test("document carries the connect-src policy as a response header", async ({ page }) => {
+  const response = await page.goto("/");
+  const policy = response?.headers()["content-security-policy"] ?? "";
+  expect(policy).toContain("connect-src 'self'");
+  expect(policy).toContain("http://127.0.0.1:3101");
 });
 
 test("home shows one recovery state when AniList fails during SSR", async ({

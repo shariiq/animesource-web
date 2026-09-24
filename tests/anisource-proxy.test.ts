@@ -39,6 +39,7 @@ describe('AniSource server boundary', () => {
     vi.stubEnv('ANISOURCE_FALLBACK_BASE', '')
     vi.stubEnv('UPSTASH_REDIS_REST_URL', '')
     vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', '')
+    vi.stubEnv('ANISOURCE_DIRECT_MEDIA', '')
   })
 
   afterEach(() => {
@@ -109,6 +110,40 @@ describe('AniSource server boundary', () => {
     const foreignSession = await handleAniSourceRequest(request(new URL(streamUrl, APP_ORIGIN).pathname))
     expect(foreignSession.status).toBe(403)
     expect(upstreamFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('passes absolute API media URLs through directly when direct media is enabled', async () => {
+    vi.stubEnv('ANISOURCE_DIRECT_MEDIA', '1')
+    const upstreamFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify([
+      {
+        url: `${API_ORIGIN}/api/v1/proxy/hls/master`,
+        quality: 'Auto',
+        headers: { Referer: 'https://extractor.test/watch', Authorization: 'private-extractor-token' },
+      },
+      {
+        // Protocol-relative URLs inherit the API origin and pass through too.
+        url: `//${new URL(API_ORIGIN).host}/api/v1/proxy/hls/variant`,
+        quality: '720p',
+        is_hls: true,
+        is_audio: false,
+      },
+    ]), {
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', upstreamFetch)
+
+    const catalog = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/test/streams/episode?server_id=1'))
+
+    expect(catalog.status).toBe(200)
+    const body = await catalog.json()
+    expect(body[0].url).toBe(`${API_ORIGIN}/api/v1/proxy/hls/master`)
+    expect(body[1].url).toBe(`${API_ORIGIN}/api/v1/proxy/hls/variant`)
+    expect(JSON.stringify(body)).not.toContain('/api/anisource/asset/')
+    // Extractor credentials are still stripped even though URLs pass through.
+    expect(JSON.stringify(body)).not.toContain('private-extractor-token')
+    expect(JSON.stringify(body)).not.toContain('extractor.test')
+    expect(body[0]).not.toHaveProperty('headers')
+    expect(new Headers(upstreamFetch.mock.calls[0]![1]?.headers).get('Authorization')).toBe(`Bearer ${SERVICE_TOKEN}`)
   })
 
   it('rewrites protocol-relative HLS URLs to session-bound same-origin tickets', async () => {

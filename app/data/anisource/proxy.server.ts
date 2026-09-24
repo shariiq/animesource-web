@@ -240,6 +240,19 @@ function apiBase(): URL | null {
   return upstreamBase(process.env.ANISOURCE_BASE, apiUrls.anisource)
 }
 
+/**
+ * Direct media mode: the gateway passes absolute API media URLs (segments,
+ * keys, subtitles, manga pages) through to the browser instead of wrapping
+ * them in session-bound asset tickets. Catalog JSON still resolves through
+ * the gateway, so the service credential never leaves the server. Enable
+ * only once the API deployment enforces short segment TTLs and the site's
+ * origin allowlist; otherwise the exposed bearer URLs stay replayable for
+ * the full playlist window with no hotlink check.
+ */
+function directMediaEnabled(): boolean {
+  return process.env.ANISOURCE_DIRECT_MEDIA === '1'
+}
+
 function fallbackBase(): URL | null {
   // An explicit empty value disables the fallback; otherwise the shared
   // default keeps local/dev working without per-machine env, like primary.
@@ -348,6 +361,7 @@ async function rewriteApiUrl(value: string, base: URL, session: Session, key: Cr
   const basePath = base.pathname.replace(/\/$/, '')
   const path = basePath && url.pathname.startsWith(`${basePath}/`) ? url.pathname.slice(basePath.length) : url.pathname
   if (isMediaPath(path)) {
+    if (directMediaEnabled()) return url.toString()
     const ticket = await issueTicket(path, url.search, scope, session, key, viaFallback)
     return `${API_PREFIX}/asset/${ticket}`
   }
@@ -650,7 +664,7 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
         }))
       }
     }
-    if (containsUpstreamHost(body, activeBase)) {
+    if (!directMediaEnabled() && containsUpstreamHost(body, activeBase)) {
       return withSession(jsonError(502, 'AniSource response contained an unrewritten upstream URL.', {
         'X-AniSource-Error-Kind': 'invalid',
       }))

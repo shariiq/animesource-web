@@ -22,6 +22,21 @@ const developmentConnectSources = import.meta.env.DEV
   ? ' http://127.0.0.1:3101 ws://127.0.0.1:3000 ws://localhost:3000'
   : ''
 
+function documentConnectSources(): string {
+  // Request-scoped and server-only: API origins come from runtime env during
+  // SSR so the hosts never enter the client bundle (see verify:boundary).
+  // Browsers ignore CSP meta tags injected after the initial document, so the
+  // policy ships as a response header instead of a static meta tag.
+  const env = typeof process === 'undefined' ? undefined : process.env
+  const direct = env?.ANISOURCE_DIRECT_MEDIA === '1'
+  const apiOrigins = !direct ? [] : [env?.ANISOURCE_BASE, env?.ANISOURCE_FALLBACK_BASE]
+    .map((value) => {
+      try { return value ? new URL(value).origin : null } catch { return null }
+    })
+    .filter((origin): origin is string => origin !== null)
+  return `${anilistOrigin}${developmentConnectSources}${apiOrigins.length > 0 ? ` ${apiOrigins.join(' ')}` : ''}`
+}
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
     meta: [
@@ -42,6 +57,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   component: RootLayout,
   errorComponent: RootError,
   shellComponent: RootDocument,
+  headers: () => ({
+    'Content-Security-Policy': `connect-src 'self' ${documentConnectSources()}`,
+  }),
 })
 
 function RootLayout() {
@@ -76,7 +94,6 @@ function RootDocument(props: { children: JSX.Element }) {
   return (
     <html lang="en">
       <head>
-        <meta http-equiv="content-security-policy" content={`connect-src 'self' ${anilistOrigin}${developmentConnectSources}`} />
         <HydrationScript />
       </head>
       <body>

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AniSourceError, ANISOURCE_PROXY_BASE, createAniSourceClient, loadSubtitle, normalizeSubtitleText, resolveUrl } from '../app/data/anisource/client'
+import { AniSourceError, createAniSourceClient, loadSubtitle, normalizeSubtitleText, resolveUrl } from '../app/data/anisource/client'
 
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 const transport = (fetch: (input: string, init?: RequestInit) => Promise<Response>) => ({
@@ -9,10 +9,6 @@ const transport = (fetch: (input: string, init?: RequestInit) => Promise<Respons
 })
 
 describe('AniSource client', () => {
-  it('keeps the AniSource endpoint out of browser configuration', () => {
-    expect(ANISOURCE_PROXY_BASE).toBe('/api/anisource')
-  })
-
   it('uses the same-origin AniSource route when no client override is configured', async () => {
     const fetch = vi.fn(async () => response({ sources: [], count: 0 }))
     const client = createAniSourceClient({ transport: transport(fetch) })

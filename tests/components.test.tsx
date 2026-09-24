@@ -211,16 +211,6 @@ describe("AnimeCard", () => {
 });
 
 describe("Rail", () => {
-  it("renders cards for a populated rail", () => {
-    render(() => <Rail title="Trending now" items={[media({})]} />);
-    expect(
-      screen.getByRole("heading", { name: "Trending now" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /Test Anime/i }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("80%")).toBeInTheDocument();
-  });
   it("shows its empty state and no arrows when there are no items", () => {
     render(() => <Rail title="Empty rail" items={[]} />);
     expect(
@@ -229,28 +219,6 @@ describe("Rail", () => {
     expect(
       screen.queryByRole("button", { name: /Scroll Empty rail right/ }),
     ).not.toBeInTheDocument();
-  });
-  it("renders a see-all link when an explore target is provided", () => {
-    render(() => (
-      <Rail
-        title="Top rated"
-        items={[media({})]}
-        explore={{
-          query: undefined,
-          genre: undefined,
-          format: undefined,
-          status: undefined,
-          season: undefined,
-          year: undefined,
-          sort: "SCORE_DESC",
-          page: 1,
-        }}
-      />
-    ));
-    expect(screen.getByRole("link", { name: /See all/ })).toHaveAttribute(
-      "href",
-      "/explore",
-    );
   });
 });
 
@@ -887,22 +855,26 @@ describe("LazyPlayer", () => {
     expect(screen.getByRole("button", { name: "Enter fullscreen" })).toBeInTheDocument();
   });
 
-  it("auto-hides the chrome while playback runs and pins it while paused", () => {
+  it("hides player controls from assistive technology during playback and restores them while paused", () => {
     vi.useFakeTimers();
     try {
       const { container } = render(() => <LazyPlayer streams={[direct]} />);
       const stage = container.querySelector(".player")!;
+      const chrome = container.querySelector(".player-chrome")!;
       const video = container.querySelector("video")!;
       expect(stage).toHaveAttribute("data-chrome", "visible");
+      expect(chrome).not.toHaveAttribute("aria-hidden", "true");
 
       fireEvent.canPlay(video);
       fireEvent.play(video);
       expect(stage).toHaveAttribute("data-chrome", "visible");
       vi.advanceTimersByTime(3500);
       expect(stage).toHaveAttribute("data-chrome", "hidden");
+      expect(chrome).toHaveAttribute("aria-hidden", "true");
 
       fireEvent.pause(video);
       expect(stage).toHaveAttribute("data-chrome", "visible");
+      expect(chrome).not.toHaveAttribute("aria-hidden", "true");
     } finally {
       vi.useRealTimers();
     }

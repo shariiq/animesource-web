@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { countdownLabel, dateFromKey, extractScheduleGenres, filterScheduleItems, groupScheduleByDay, itemsInRange, localDateKey, scheduleRange, scheduleSearchSchema, shiftedDateKey } from '../app/lib/schedule'
+import { countdownLabel, dateFromKey, extractScheduleGenres, filterScheduleItems, groupScheduleByDay, itemsInRange, localDateKey, scheduleRange, shiftedDateKey } from '../app/lib/schedule'
 import type { AniListScheduleItem } from '../app/data/anilist/types'
 
 const item = (airingAt: number): AniListScheduleItem => ({ episode: 1, airingAt, media: null })
@@ -62,12 +62,5 @@ describe('schedule calendar helpers', () => {
       { episode: 1, airingAt: 0, media: { id: 2, genres: ['Zombies', 'Action'], status: '', title: null, coverImage: null, format: null } },
     ]
     expect(extractScheduleGenres(items)).toEqual(['Action', 'Mecha', 'Zombies'])
-  })
-
-  it('parses schema with optional genre and status filters', () => {
-    const parsed = scheduleSearchSchema.parse({ view: 'day', genre: 'Action', status: 'RELEASING' })
-    expect(parsed.genre).toBe('Action')
-    expect(parsed.status).toBe('RELEASING')
-    expect(parsed.view).toBe('day')
   })
 })

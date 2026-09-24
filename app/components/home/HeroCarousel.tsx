@@ -78,7 +78,7 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
             <For each={slides()}>
               {(media, index) => (
                 <img
-                  class="featured-artwork-image absolute inset-0 h-full w-full object-cover object-[70%_22%] transition-[opacity,transform] duration-700 ease-fluid"
+                  class="featured-artwork-image absolute inset-0 h-full w-full object-cover object-center transition-[opacity,transform] duration-700 ease-fluid sm:object-[70%_22%]"
                   classList={{ 'opacity-100': index() === activeIndex(), 'opacity-0': index() !== activeIndex() }}
                   src={image(media)}
                   alt=""
@@ -102,7 +102,7 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
                 {(media, index) => (
                   <button
                     type="button"
-                    class="grid h-[28px] min-w-[30px] shrink-0 place-items-center rounded-[8px] border border-white/18 bg-white/12 px-[6px] font-mono text-[9px] font-semibold text-white/78 backdrop-blur-[10px] transition-[background,border-color,color,transform] duration-200 hover:-translate-y-px hover:bg-white/24 hover:text-white sm:min-w-[32px] sm:px-[8px]"
+                    class="grid h-[36px] min-w-[40px] shrink-0 place-items-center rounded-[8px] border border-white/18 bg-white/12 px-[8px] font-mono text-[9px] font-semibold text-white/78 backdrop-blur-[10px] transition-[background,border-color,color,transform] duration-200 hover:-translate-y-px hover:bg-white/24 hover:text-white sm:h-[28px] sm:min-w-[32px] sm:px-[8px]"
                     classList={{ 'border-white bg-white text-ink shadow-[0_4px_12px_rgb(0_0_0_/_0.3)] hover:bg-white hover:text-ink': index() === activeIndex() }}
                     role="tab"
                     aria-selected={index() === activeIndex()}
@@ -147,10 +147,10 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
                   {(media) => (
                     <Show
                       when={mode() === 'ANIME'}
-                      fallback={<Link preload={false} to="/manga/$mangaId/read/$chapterNumber" params={{ mangaId: String(media.id), chapterNumber: 'start' }} class="inline-flex min-h-[48px] w-full items-center justify-center gap-[10px] rounded-[11px] border border-white/60 bg-white px-[26px] font-mono text-[11px] font-bold normal-case tracking-normal text-ink shadow-[0_14px_34px_rgb(0_0_0_/_0.34),inset_0_1px_rgb(255_255_255_/_0.9)] transition-[background,box-shadow,transform] duration-200 hover:-translate-y-[2px] hover:shadow-[0_22px_44px_rgb(0_0_0_/_0.42),inset_0_1px_white] sm:w-auto">{copy().heroPrimary}</Link>}
+                      fallback={<Link preload={false} to="/manga/$mangaId/read/$chapterNumber" params={{ mangaId: String(media.id), chapterNumber: 'start' }} class="inline-flex min-h-[48px] min-w-[140px] flex-1 items-center justify-center gap-[10px] rounded-[11px] border border-white/60 bg-white px-[26px] font-mono text-[11px] font-bold normal-case tracking-normal text-ink shadow-[0_14px_34px_rgb(0_0_0_/_0.34),inset_0_1px_rgb(255_255_255_/_0.9)] transition-[background,box-shadow,transform] duration-200 hover:-translate-y-[2px] hover:shadow-[0_22px_44px_rgb(0_0_0_/_0.42),inset_0_1px_white] sm:flex-none sm:w-auto">{copy().heroPrimary}</Link>}
                     >
                       <Link
-                        class="inline-flex min-h-[48px] w-full items-center justify-center gap-[10px] rounded-[11px] border border-white/60 bg-white px-[26px] font-mono text-[11px] font-bold normal-case tracking-normal text-ink shadow-[0_14px_34px_rgb(0_0_0_/_0.34),inset_0_1px_rgb(255_255_255_/_0.9)] transition-[background,box-shadow,transform] duration-200 hover:-translate-y-[2px] hover:shadow-[0_22px_44px_rgb(0_0_0_/_0.42),inset_0_1px_white] sm:w-auto"
+                        class="inline-flex min-h-[48px] min-w-[140px] flex-1 items-center justify-center gap-[10px] rounded-[11px] border border-white/60 bg-white px-[26px] font-mono text-[11px] font-bold normal-case tracking-normal text-ink shadow-[0_14px_34px_rgb(0_0_0_/_0.34),inset_0_1px_rgb(255_255_255_/_0.9)] transition-[background,box-shadow,transform] duration-200 hover:-translate-y-[2px] hover:shadow-[0_22px_44px_rgb(0_0_0_/_0.42),inset_0_1px_white] sm:flex-none sm:w-auto"
                         to="/anime/$animeId/watch/$episodeId"
                         params={{ animeId: String(media.id), episodeId: 'next' }}
                       >
@@ -163,9 +163,9 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
                   {(media) => (
                     <Show
                       when={mode() === 'ANIME'}
-                      fallback={<CatalogLink media={media} mode={mode()} class="paper-control inline-flex min-h-[48px] w-full items-center justify-center rounded-[10px] border-white/28 bg-white/10 px-5 text-[11px] font-bold normal-case tracking-normal text-white backdrop-blur-[12px] transition-[background,border-color,transform] duration-200 hover:-translate-y-[2px] hover:border-white/50 hover:bg-white/20 sm:w-auto">{copy().heroSecondary}</CatalogLink>}
+                      fallback={<CatalogLink media={media} mode={mode()} class="paper-control inline-flex min-h-[48px] min-w-[140px] flex-1 items-center justify-center rounded-[10px] border-white/28 bg-white/10 px-5 text-[11px] font-bold normal-case tracking-normal text-white backdrop-blur-[12px] transition-[background,border-color,transform] duration-200 hover:-translate-y-[2px] hover:border-white/50 hover:bg-white/20 sm:flex-none sm:w-auto">{copy().heroSecondary}</CatalogLink>}
                     >
-                      <CatalogLink media={media} mode={mode()} class="paper-control inline-flex min-h-[48px] w-full items-center justify-center rounded-[10px] border-white/28 bg-white/10 px-5 text-[11px] font-bold normal-case tracking-normal text-white backdrop-blur-[12px] transition-[background,border-color,transform] duration-200 hover:-translate-y-[2px] hover:border-white/50 hover:bg-white/20 sm:w-auto">{copy().heroSecondary}</CatalogLink>
+                      <CatalogLink media={media} mode={mode()} class="paper-control inline-flex min-h-[48px] min-w-[140px] flex-1 items-center justify-center rounded-[10px] border-white/28 bg-white/10 px-5 text-[11px] font-bold normal-case tracking-normal text-white backdrop-blur-[12px] transition-[background,border-color,transform] duration-200 hover:-translate-y-[2px] hover:border-white/50 hover:bg-white/20 sm:flex-none sm:w-auto">{copy().heroSecondary}</CatalogLink>
                     </Show>
                   )}
                 </Show>

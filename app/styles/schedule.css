@@ -363,14 +363,14 @@
   .schedule-masthead h1 { font-size: clamp(40px, 14vw, 54px); }
   .schedule-masthead-copy > p:last-child { margin-top: 18px; font-size: 13px; }
   .schedule-period-nav { width: 100%; }
-  .schedule-period-button { min-width: 0; padding-inline: 10px; }
+  .schedule-period-button { min-width: 0; min-height: 44px; padding-inline: 10px; }
 
   .schedule-filter-deck { grid-template-columns: 1fr; }
-  .schedule-saved-toggle { grid-column: auto; }
+  .schedule-saved-toggle { grid-column: auto; min-height: 44px; }
 
   .schedule-day-heading { align-items: flex-start; flex-direction: column; gap: 6px; }
-  .schedule-row { grid-template-columns: 52px minmax(0, 1fr); gap: 10px; }
+  .schedule-row { grid-template-columns: 60px minmax(0, 1fr); gap: 10px; }
   .schedule-row-action { grid-column: 2; align-items: flex-start; flex-direction: row; justify-content: space-between; min-width: 0; text-align: left; }
-  .schedule-watch-button { padding: 0 11px; }
+  .schedule-watch-button { min-height: 44px; padding: 0 11px; }
   .schedule-row-title { white-space: normal; }
 }

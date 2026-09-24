@@ -74,4 +74,25 @@ describe('AniList client', () => {
     const client = createAniListClient({ transport: transport(async () => response({}, 500)) })
     await expect(client.request('query')).rejects.toBeInstanceOf(AniListError)
   })
+  it('treats GraphQL too-many-requests errors as a rate limit with retry budget', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response({ data: null, errors: [{ message: 'Too Many Requests.' }] }, 200, { 'retry-after': '1' }))
+      .mockResolvedValueOnce(response({ data: { Media: { id: 1 } } }))
+    const clientTransport = transport(fetch)
+    const client = createAniListClient({ transport: clientTransport, maxRetries: 1 })
+    await expect(client.request('query')).resolves.toEqual({ Media: { id: 1 } })
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+  it('banks an exhausted quota window so the next request waits instead of 429ing', async () => {
+    const reset = String(Math.floor(Date.now() / 1000) + 60)
+    const fetch = vi.fn(async () => response({ data: { Media: { id: 1 } } }, 200, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': reset }))
+    const clientTransport = transport(fetch)
+    const client = createAniListClient({ transport: clientTransport, maxRetries: 1 })
+    await expect(client.request('first')).resolves.toEqual({ Media: { id: 1 } })
+    // No quota left until reset: the second request must honor the shared
+    // cooldown before touching the network.
+    await expect(client.request('second')).resolves.toEqual({ Media: { id: 1 } })
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(clientTransport.sleep).toHaveBeenCalledTimes(1)
+  })
 })

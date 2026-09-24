@@ -13,6 +13,7 @@ import { CatalogModeProvider } from '../components/layout/CatalogModeSwitch'
 import { Footer } from '../components/layout/Footer'
 import { MobileTabBar } from '../components/layout/MobileTabBar'
 import { ErrorBoundary } from '../components/shared/ErrorBoundary'
+import { RouteLoadingFallback } from '../components/ui/LoadingSkeleton'
 import { API_URLS } from '../config/api'
 import '../styles/app.css'
 
@@ -53,7 +54,7 @@ function RootLayout() {
           <Header />
           <main id="main" class="flex-1">
             <ErrorBoundary>
-              <Suspense fallback={<section class="editorial-page grid min-h-[60vh] place-items-center" aria-busy="true"><p class="mono-signal">Loading discovery…</p></section>}>
+              <Suspense fallback={<RouteLoadingFallback kicker="Discovery" title="Loading discovery…" />}>
                 <Outlet />
               </Suspense>
             </ErrorBoundary>

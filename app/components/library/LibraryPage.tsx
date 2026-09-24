@@ -17,6 +17,7 @@ import {
 } from '../../lib/library'
 import { formatEnum } from '../../lib/format'
 import { PageShell } from '../ui/PageShell'
+import { LibraryLoadingSkeleton } from '../ui/LoadingSkeleton'
 import { LibraryCard } from './LibraryCard'
 import { ContinueHistory } from './ContinueHistory'
 import { ContinueReading } from './ContinueReading'
@@ -305,11 +306,11 @@ export function LibraryPage() {
 }
 
 function LibraryStat(props: { label: string; value: number }) {
-  return <div class="min-w-0 rounded-[12px] border border-white/80 bg-white/58 px-2.5 py-3 shadow-[0_12px_30px_-22px_rgb(0_0_0/.4)] sm:px-4"><dt class="mono-signal">{props.label}</dt><dd class="mt-1 font-display text-3xl leading-none sm:text-4xl">{props.value}</dd></div>
+  return <div class="min-w-0 rounded-[12px] border border-white/80 bg-white/58 px-2.5 py-3 tabular-nums shadow-[0_12px_30px_-22px_rgb(0_0_0/.4)] sm:px-4"><dt class="mono-signal">{props.label}</dt><dd class="mt-1 font-display text-2xl leading-none sm:text-4xl">{props.value}</dd></div>
 }
 
 function LibraryLoading() {
-  return <section class="material-panel mt-8 grid min-h-64 place-items-center" aria-busy="true"><p class="mono-signal">Loading saved titles…</p></section>
+  return <LibraryLoadingSkeleton />
 }
 
 function LibraryLoadError(props: { onRetry: () => void }) {

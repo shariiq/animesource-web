@@ -3,6 +3,7 @@ import { Link, useNavigate } from '@tanstack/solid-router'
 import { createEffect, createMemo, For, on, Show, type Accessor } from 'solid-js'
 import { browseQuery, genresQuery } from '../../data/options'
 import { AnimeCard } from '../home/AnimeCard'
+import { ExploreLoadingSkeleton } from '../ui/LoadingSkeleton'
 import { useOptionalCatalogMode } from '../layout/CatalogModeSwitch'
 import {
   BROWSE_FILTER_KEYS,
@@ -217,7 +218,7 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
         </div>
       </form>
 
-      <Show when={!results.isPending} fallback={<ExploreLoading />}>
+      <Show when={!results.isPending} fallback={<ExploreLoadingSkeleton />}>
         <Show when={!results.isError} fallback={
           <section class="explore-state" role="alert">
             <p class="explore-kicker">Unable to load {catalogName()} results</p>
@@ -277,6 +278,3 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
   )
 }
 
-function ExploreLoading() {
-  return <section class="explore-state" aria-busy="true"><p class="explore-kicker">Loading catalog</p><h2>Loading the collection…</h2></section>
-}

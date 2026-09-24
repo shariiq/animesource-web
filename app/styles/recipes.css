@@ -785,7 +785,7 @@
   .genre-tile:nth-child(2n) { border-right: 0; }
 
   @media (max-width: 640px) {
-    .genre-tile { min-height: 122px; }
+    .genre-tile { min-height: 136px; }
   }
 
   @media (min-width: 1024px) {
@@ -1227,18 +1227,27 @@
   }
 
   /* Poster-led rail card: cover-first catalog browsing. The cover carries the
-     artwork full-bleed; a bottom gradient only guards the rank chip. */
+     artwork full-bleed; a bottom gradient only guards the rank chip. Mobile
+     cards stay wide enough to keep the 2/3 poster legible (~2 visible cards
+     on a 390px phone) instead of collapsing into slim strips. */
   .poster-rail {
     display: grid;
-    grid-auto-columns: clamp(148px, 38vw, 190px);
+    grid-auto-columns: clamp(168px, 44vw, 196px);
     grid-auto-flow: column;
-    gap: 16px;
+    gap: 12px;
     min-width: 0;
     overflow-x: auto;
     padding: 6px 6px 18px;
     scroll-padding-inline: 6px;
-    scroll-snap-type: x mandatory;
+    scroll-snap-type: x proximity;
     scrollbar-width: none;
+  }
+
+  @media (min-width: 768px) {
+    .poster-rail {
+      grid-auto-columns: clamp(172px, 20vw, 196px);
+      gap: 16px;
+    }
   }
 
   .poster-rail::-webkit-scrollbar { display: none; }
@@ -1682,24 +1691,100 @@
 
   @media (max-width: 780px) {
     .editorial-page { width: min(100% - 28px, 1480px); padding-top: 16px; padding-bottom: 24px; }
-    .section { margin-top: 70px; }
+    .section { margin-top: 52px; }
     .section-head { align-items: start; }
     .section-heading h2 { font-size: clamp(32px, 9vw, 44px); }
     .detail-section-heading h2,
     .detail-subheading { font-size: clamp(28px, 8vw, 34px); }
-    .rail-track { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .rail-track { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .rail-track[role="list"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .trailer { margin-top: 70px; }
+    .trailer { margin-top: 52px; }
     .section-heading { grid-template-columns: 1fr; gap: 8px; }
     .section-heading p { max-width: 52ch; text-align: left; }
-    .detail-section { margin-top: 70px; }
+    .detail-section { margin-top: 56px; }
     .detail-section-heading { display: grid; gap: 8px; margin-bottom: 16px; }
     .detail-section-heading p,
     .detail-kicker { text-align: left; }
     .detail-panel-header { align-items: start; display: grid; gap: 5px; }
     .detail-panel-header .detail-kicker { text-align: left; }
-    .detail-identity-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .detail-identity-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .detail-media-grid,
-    .detail-media-grid[role="list"] { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .detail-media-grid[role="list"] { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  }
+
+  /* Very narrow phones: keep two compact poster columns rather than
+     stretching one card across the full width. */
+  @media (max-width: 380px) {
+    .rail-track { gap: 10px; }
+    .detail-identity-rail { gap: 10px; }
+    .detail-media-grid,
+    .detail-media-grid[role="list"] { gap: 10px; }
+  }
+
+  /* Loading skeletons: shimmer blocks inside the real layout containers so
+     pending states hold their shape instead of flashing bare text. The sweep
+     pauses under prefers-reduced-motion via the global base rule. */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    min-height: 12px;
+    background: linear-gradient(100deg, rgb(6 6 9 / .08) 30%, rgb(6 6 9 / .16) 50%, rgb(6 6 9 / .08) 70%);
+    background-size: 200% 100%;
+    animation: skeleton-sweep 1.4s var(--ease) infinite;
+  }
+
+  @keyframes skeleton-sweep {
+    from { background-position: 180% 0; }
+    to { background-position: -80% 0; }
+  }
+
+  /* Dim live content slightly while a background refetch retunes it. The
+     previous page stays readable and interactive underneath. */
+  .explore-grid.is-retuning,
+  .schedule-days.is-retuning {
+    opacity: .62;
+    filter: saturate(.85);
+    transition: opacity .25s var(--ease);
+  }
+
+  /* Updating pill shared by Explore and Schedule background refetches. */
+  .explore-sync,
+  .schedule-sync {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--text-muted);
+    font: 500 9px var(--font-mono);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+
+  .explore-sync i,
+  .schedule-sync i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--violet);
+    box-shadow: 0 0 10px rgb(106 90 249 / .55);
+    animation: sync-pulse 1.2s var(--ease) infinite;
+  }
+
+  @keyframes sync-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: .45; transform: scale(.8); }
+  }
+
+  /* Player-shaped loading spinner for Watch route fallbacks. */
+  .player-spinner {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 3px solid rgb(255 255 255 / .25);
+    border-top-color: white;
+    animation: player-spin .9s linear infinite;
+  }
+
+  @keyframes player-spin {
+    to { transform: rotate(360deg); }
   }
 }

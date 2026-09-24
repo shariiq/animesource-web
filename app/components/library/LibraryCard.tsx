@@ -23,14 +23,17 @@ export function LibraryCard(props: {
   const mediaStatus = () => props.entry.unavailable ? null : catalogStatus(props.mode, media()?.status)
   const coverContent = () => (
     <Show when={cover()}>
-      {(src) => <img class="size-full object-cover" src={src()} alt={`${title()} cover`} loading="lazy" decoding="async" classList={{ 'grayscale': props.entry.unavailable }} />}
+      {(src) => <img class="absolute inset-0 size-full object-cover" src={src()} alt={`${title()} cover`} loading="lazy" decoding="async" classList={{ 'grayscale': props.entry.unavailable }} />}
     </Show>
   )
 
   return (
-    <article class="editorial-row grid min-w-0 grid-cols-[92px_minmax(0,1fr)] sm:grid-cols-[116px_minmax(0,1fr)]" classList={{ 'opacity-70': props.entry.unavailable }}>
-      <Show when={media()} keyed fallback={<div class="relative min-h-[168px] overflow-hidden bg-violet/12">{coverContent()}</div>}>
-        {(current) => <CatalogLink media={current} mode={props.mode} class="relative min-h-[168px] overflow-hidden bg-violet/12">{coverContent()}</CatalogLink>}
+    <article class="editorial-row grid min-w-0 grid-cols-[104px_minmax(0,1fr)] items-stretch sm:grid-cols-[128px_minmax(0,1fr)]" classList={{ 'opacity-70': props.entry.unavailable }}>
+      {/* Cover fills the row edge-to-edge: the 2/3 minimum keeps the poster
+          legible, while stretch absorbs taller meta columns so no blank seam
+          opens between stacked entries on narrow viewports. */}
+      <Show when={media()} keyed fallback={<div class="relative min-h-[156px] w-full self-stretch overflow-hidden bg-violet/12 sm:min-h-[192px]">{coverContent()}</div>}>
+        {(current) => <CatalogLink media={current} mode={props.mode} class="relative min-h-[156px] w-full self-stretch overflow-hidden bg-violet/12 sm:min-h-[192px]">{coverContent()}</CatalogLink>}
       </Show>
       <div class="flex min-w-0 flex-col gap-3 p-4 sm:p-5">
         <div>

@@ -31,7 +31,7 @@ afterEach(() => {
 })
 
 describe('alSchedule pagination', () => {
-  it('fetches remaining pages concurrently and preserves episode order', async () => {
+  it('fetches remaining pages serially and preserves episode order', async () => {
     let inFlight = 0
     let maxInFlight = 0
     const seenPages: number[] = []
@@ -41,8 +41,6 @@ describe('alSchedule pagination', () => {
       inFlight += 1
       maxInFlight = Math.max(maxInFlight, inFlight)
       try {
-        // Overlap window: with a serial loop the second fetch starts only
-        // after the first resolves, so maxInFlight stays 1.
         await new Promise((resolve) => setTimeout(resolve, 20))
         const episodes = page === 1 ? [1, 2] : page === 2 ? [3, 4] : [5, 6]
         return new Response(JSON.stringify(schedulePage(page, 3, episodes)), {
@@ -59,7 +57,8 @@ describe('alSchedule pagination', () => {
 
     expect(items.map((item) => item.episode)).toEqual([1, 2, 3, 4, 5, 6])
     expect(seenPages).toEqual(expect.arrayContaining([1, 2, 3]))
-    expect(maxInFlight).toBeGreaterThanOrEqual(2)
+    // Serial pages never trip AniList's undocumented burst limiter.
+    expect(maxInFlight).toBeLessThanOrEqual(1)
   })
 
   it('returns the single page without extra requests', async () => {
@@ -77,7 +76,7 @@ describe('alSchedule pagination', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('never bursts more than 3 concurrent AniList requests across a wide range', async () => {
+  it('never has more than 1 concurrent AniList request across a wide range', async () => {
     let inFlight = 0
     let maxInFlight = 0
     const fetchMock = vi.fn(async (_input: string, init?: RequestInit) => {
@@ -100,38 +99,35 @@ describe('alSchedule pagination', () => {
 
     expect(items.map((item) => item.episode)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
     expect(fetchMock).toHaveBeenCalledTimes(8)
-    expect(maxInFlight).toBeLessThanOrEqual(3)
+    expect(maxInFlight).toBeLessThanOrEqual(1)
   })
 
-  it('survives an AniList burst limit instead of surfacing 429', async () => {
-    let burstInFlight = 0
+  it('survives a rate-limited page via the client retry instead of surfacing 429', async () => {
+    const attempts = new Map<number, number>()
     const fetchMock = vi.fn(async (_input: string, init?: RequestInit) => {
       const page = (JSON.parse(String(init?.body)) as { variables: { page: number } }).variables.page
-      // Simulate AniList burst protection: more than 3 in flight is rejected.
-      // The hold lets overlapping requests accumulate so a wide fan-out trips
-      // it, and the single client retry re-bursts and exhausts its budget.
-      burstInFlight += 1
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      const burst = burstInFlight > 3
-      try {
-        if (burst) {
-          return new Response(JSON.stringify({ data: null }), {
-            status: 429,
-            headers: { 'content-type': 'application/json', 'retry-after': '0.05' },
-          })
-        }
-        return new Response(JSON.stringify(schedulePage(page, 10, [page])), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
+      const count = (attempts.get(page) ?? 0) + 1
+      attempts.set(page, count)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      // Page 2 hits the minute quota once; the shared client cooldown waits
+      // out Retry-After and the single retry succeeds.
+      if (page === 2 && count === 1) {
+        return new Response(JSON.stringify({ data: null }), {
+          status: 429,
+          headers: { 'content-type': 'application/json', 'retry-after': '0.05' },
         })
-      } finally {
-        burstInFlight -= 1
       }
+      const episodes = page === 1 ? [1, 2] : page === 2 ? [3, 4] : [5, 6]
+      return new Response(JSON.stringify(schedulePage(page, 3, episodes)), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
     })
     vi.stubGlobal('fetch', fetchMock)
 
     const items = await alSchedule(1_700_000_000, 1_700_100_000)
 
-    expect(items.map((item) => item.episode)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    expect(items.map((item) => item.episode)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(fetchMock).toHaveBeenCalledTimes(4)
   }, 15_000)
 })

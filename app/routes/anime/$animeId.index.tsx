@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/solid-router'
 import { Show } from 'solid-js'
 import { AnimeDetailPage } from '../../components/anime/AnimeDetailPage'
+import { DetailLoadingSkeleton } from '../../components/ui/LoadingSkeleton'
 import { detailQuery } from '../../data/options'
 
 export const Route = createFileRoute('/anime/$animeId/')({
@@ -24,7 +25,7 @@ function DetailRoute() {
 }
 
 function DetailPending() {
-  return <section class="detail-head" aria-busy="true"><div class="detail-inner"><div class="skeleton" style={{ height: '420px' }} /><p>Loading anime details…</p></div></section>
+  return <DetailLoadingSkeleton message="Loading anime details…" />
 }
 
 function DetailError() {

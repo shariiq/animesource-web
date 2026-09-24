@@ -23,7 +23,7 @@ export function EpisodeList(props: {
         <div><p class="font-mono text-[9px] uppercase tracking-[.16em] text-[#4f4e57]">Episode list</p><h2 id="episode-heading" class="mt-1 font-display text-3xl leading-none">Episodes</h2></div>
         <div class="flex items-center gap-2">
           <label class="sr-only" for="episode-filter">Filter by audio</label>
-          <select id="episode-filter" class="h-8 rounded-[8px] border border-black/18 bg-white/78 px-2 font-mono text-[10px] uppercase tracking-[.08em] outline-none focus:border-black" value={filter()} onChange={(event) => {
+          <select id="episode-filter" class="h-11 rounded-[8px] border border-black/18 bg-white/78 px-2 font-mono text-[10px] uppercase tracking-[.08em] outline-none focus:border-black sm:h-8" value={filter()} onChange={(event) => {
             const value = event.currentTarget.value
             if (value === 'all' || value === 'sub' || value === 'dub') setFilter(value)
           }}>

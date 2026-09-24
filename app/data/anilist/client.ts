@@ -61,6 +61,29 @@ function retryAfterMilliseconds(value: string | null): number {
   return Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : 1_000
 }
 
+function rateLimitResetMilliseconds(value: string | null): number | null {
+  if (value === null) return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const asNumber = Number(trimmed)
+  // AniList sends X-RateLimit-Reset as a Unix timestamp in seconds.
+  if (Number.isFinite(asNumber) && asNumber > 0) {
+    // Values far in the past are millisecond timestamps already; values near
+    // the current epoch in seconds need scaling. Anything below 1e12 is
+    // treated as seconds.
+    const resetMs = asNumber < 1_000_000_000_000 ? asNumber * 1_000 : asNumber
+    return resetMs > Date.now() ? resetMs : null
+  }
+  const parsed = Date.parse(trimmed)
+  return Number.isFinite(parsed) && parsed > Date.now() ? parsed : null
+}
+
+function rateLimitRemaining(value: string | null): number | null {
+  if (value === null) return null
+  const remaining = Number.parseInt(value.trim(), 10)
+  return Number.isFinite(remaining) ? remaining : null
+}
+
 /** Network client only: caller-owned QueryClient scopes caching and deduplication. */
 export function createAniListClient(options: AniListClientOptions = {}) {
   const transport: AniListTransport = { ...defaultTransport, ...options.transport }
@@ -70,6 +93,32 @@ export function createAniListClient(options: AniListClientOptions = {}) {
   let rateLimitedUntil = 0
 
   const cancelledError = () => new AniListError('AniList request was cancelled.', { cancelled: true })
+
+  const noteRateLimitHeaders = (headers: Headers) => {
+    // A successful response with no remaining quota still tells us when the
+    // window resets. Banking that timestamp keeps the next request from
+    // spending the shared retry budget on a predictable 429.
+    const resetMs = rateLimitResetMilliseconds(headers.get('x-ratelimit-reset'))
+    if (resetMs !== null && rateLimitRemaining(headers.get('x-ratelimit-remaining')) === 0) {
+      rateLimitedUntil = Math.max(rateLimitedUntil, resetMs)
+    }
+  }
+
+  const rateLimitError = (headers: Headers, details?: z.infer<typeof graphQLResponseShape>['errors']) => {
+    const retryAfterMs = Math.max(
+      retryAfterMilliseconds(headers.get('retry-after')),
+      (() => {
+        const resetMs = rateLimitResetMilliseconds(headers.get('x-ratelimit-reset'))
+        return resetMs === null ? 0 : resetMs - Date.now()
+      })(),
+    )
+    rateLimitedUntil = Math.max(rateLimitedUntil, Date.now() + retryAfterMs)
+    return new AniListError('AniList rate limit exceeded.', {
+      status: 429,
+      retryAfterMs,
+      details,
+    })
+  }
 
   const throwIfCancelled = (signal?: AbortSignal) => {
     if (signal?.aborted) throw cancelledError()
@@ -114,12 +163,7 @@ export function createAniListClient(options: AniListClientOptions = {}) {
       })
 
       if (response.status === 429) {
-        const retryAfterMs = retryAfterMilliseconds(response.headers.get('retry-after'))
-        rateLimitedUntil = Math.max(rateLimitedUntil, Date.now() + retryAfterMs)
-        throw new AniListError('AniList rate limit exceeded.', {
-          status: 429,
-          retryAfterMs,
-        })
+        throw rateLimitError(response.headers)
       }
       if (!response.ok) {
         throw new AniListError(`AniList request failed (${response.status}).`, { status: response.status })
@@ -136,6 +180,10 @@ export function createAniListClient(options: AniListClientOptions = {}) {
         throw new AniListError('AniList returned an unexpected response shape.', { status: response.status })
       }
       if (parsed.data.errors?.length) {
+        const rateLimited = parsed.data.errors.some(
+          (entry) => entry.message.toLowerCase().includes('too many requests') || entry.message.toLowerCase().includes('rate limit'),
+        )
+        if (rateLimited || response.status === 429) throw rateLimitError(response.headers, parsed.data.errors)
         throw new AniListError(parsed.data.errors[0]?.message ?? 'AniList reported a GraphQL error.', {
           status: response.status,
           isGraphQL: true,
@@ -145,6 +193,7 @@ export function createAniListClient(options: AniListClientOptions = {}) {
       if (parsed.data.data === null) {
         throw new AniListError('AniList returned no data.', { status: response.status })
       }
+      noteRateLimitHeaders(response.headers)
       return parsed.data.data
     } catch (error) {
       if (signal?.aborted) throw cancelledError()

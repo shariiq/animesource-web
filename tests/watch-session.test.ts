@@ -413,6 +413,30 @@ describe('Watch session', () => {
     }))
   })
 
+  it('starts playback and Continue writes concurrently before enabling playback', async () => {
+    let inFlight = 0
+    let maxInFlight = 0
+    const write = vi.fn(async () => {
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await Promise.resolve()
+      inFlight -= 1
+    })
+    const { session } = sessionParts({
+      persistence: {
+        recordPlayback: write,
+        recordContinue: write,
+      },
+    })
+
+    await session.initialize()
+    await session.chooseServer('server-a')
+
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(maxInFlight).toBe(2)
+    expect(session.playbackIdentity()).not.toBeNull()
+  })
+
   it('exposes the stored resume position only once the episode is actually playable', async () => {
     const stored = {
       id: 42,

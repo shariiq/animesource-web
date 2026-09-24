@@ -9,7 +9,7 @@ This file holds what the code cannot tell you. When it and the code disagree, th
 Bun only: `bun install --frozen-lockfile`, `bun run <script>`, `bunx <tool>`. Scripts live in `package.json`.
 
 - Iterate with the narrowest check: `bun run typecheck`, `bun run lint`, `bunx vitest run tests/<file>`, `bunx playwright test -g "<title>"`.
-- `bun run verify` is the CI merge gate (lint, typecheck, build, AniSource boundary check, Vitest, mocked Playwright). Run it once ONLY on a finished BIG change under `app/`, `scripts/`, or `tests/`, not after every edit. Diagnose failures with the affected check, then get one passing final run. If Playwright's browser is missing, run `bunx playwright install chromium`.
+- `bun run verify` is the CI merge gate (lint, typecheck, build, AniSource boundary check, Vitest, mocked Playwright). DO NOT RUN THIS!, Prefer running proper focused tests. Diagnose failures with the affected check, then get one passing final run. If Playwright's browser is missing, run `bunx playwright install chromium`.
 - Docs-only and copy-only changes need `bun run lint`. Markup or behavior changes are not copy-only. Lint does not validate prose or paths, so review those directly.
 - Local checks use mocks and disposable fixtures with no production access. Run them, fix failures your change caused, and rerun without asking. A plain dev server is not mocked.
 - `bun run test:live` hits real AniList/AniSource. Run it only when asked; it never gates a merge.
@@ -68,7 +68,7 @@ Baseline: semantic elements, full keyboard operation, visible focus, labelled co
 
 ## Tests
 
-DO NOT WRITE TESTS BY DEFAULT. A test earns its place when it would fail for a bug a user would notice and would still pass after a correct refactor. Before adding one, ask: **what plausible wrong implementation would this reject, and what observable result proves it?** Expected values come from the requirement or an independent fixture, never from the code under test, never write tautological tests. Write fewer, sharper tests. Zero new tests is the right answer for style, copy, and pure refactors that existing tests already cover; say so in your summary.
+DO NOT WRITE UNIT TESTS BY DEFAULT. A test earns its place when it would fail for a bug a user would notice and would still pass after a correct refactor, if a test would get stale or irrelevant with a slight change or improvement in the code it's testing it is redudant, prefer tests that would remain relevant no matter what. Before adding one, ask: **what plausible wrong implementation would this reject, and what observable result proves it?** Expected values come from the requirement or an independent fixture, never from the code under test, never write tautological tests. Write fewer, sharper tests. Zero new tests is the right answer for style, copy, and pure refactors that existing tests already cover; say so in your summary.
 
 Write focused tests for:
 - Every real bug fix: a regression test. Where feasible, confirm it fails for the right reason before the fix. If reproduction is blocked, say so rather than writing a vacuous assertion.

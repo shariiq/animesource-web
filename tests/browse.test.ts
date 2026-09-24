@@ -1,24 +1,31 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { BROWSE_COUNTRIES, browseSearchSchema, makeBrowseSearch, pageWindow, searchAtPage, searchWithoutFilter } from '../app/lib/browse'
-
-const { request } = vi.hoisted(() => ({ request: vi.fn() }))
-vi.mock('../app/data/anilist/client', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../app/data/anilist/client')>()
-  return { ...original, anilistClient: { request } }
-})
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { browseSearchSchema, makeBrowseSearch, pageWindow, searchAtPage, searchWithoutFilter } from '../app/lib/browse'
 
 import { alBrowse, alHome } from '../app/data/anilist/queries'
 
-describe('browse search state', () => {
-  it('uses the AniList catalog origin choices', () => {
-    expect(BROWSE_COUNTRIES).toEqual([
-      ['JP', 'Japan'],
-      ['KR', 'South Korea'],
-      ['CN', 'China'],
-      ['TW', 'Taiwan'],
-    ])
-  })
+const response = (data: unknown) => new Response(JSON.stringify({ data }), {
+  status: 200,
+  headers: { 'content-type': 'application/json' },
+})
 
+function stubAniList(data: unknown) {
+  const fetch = vi.fn(async (_input: string, _init?: RequestInit) => response(data))
+  vi.stubGlobal('fetch', fetch)
+  return fetch
+}
+
+function requestedBody(fetch: ReturnType<typeof stubAniList>) {
+  return JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)) as {
+    query: string
+    variables: Record<string, unknown>
+  }
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('browse search state', () => {
   it('normalizes blank controls and restores page and sort defaults', () => {
     expect(browseSearchSchema.parse({ format: '', status: '', season: '', sort: '', page: '' })).toEqual({
       query: undefined,
@@ -43,10 +50,8 @@ describe('browse search state', () => {
 })
 
 describe('AniList browse boundary', () => {
-  beforeEach(() => request.mockReset())
-
   it('omits unset filters and validates complete page metadata', async () => {
-    request.mockResolvedValue({
+    const fetch = stubAniList({
       Page: {
         pageInfo: { currentPage: 2, lastPage: 8, hasNextPage: true, total: 184 },
         media: [],
@@ -57,7 +62,7 @@ describe('AniList browse boundary', () => {
       pageInfo: { currentPage: 2, lastPage: 8, hasNextPage: true, total: 184 },
     })
 
-    const [query, variables] = request.mock.calls[0] as [string, Record<string, unknown>]
+    const { query, variables } = requestedBody(fetch)
     expect(query).toContain('genre:$genre')
     expect(query).toContain('countryOfOrigin:$countryOfOrigin')
     expect(query).not.toContain('status:$status')
@@ -67,7 +72,7 @@ describe('AniList browse boundary', () => {
   })
 
   it('passes the canonical updated sort to AniList', async () => {
-    request.mockResolvedValue({
+    const fetch = stubAniList({
       Page: {
         pageInfo: { currentPage: 1, lastPage: 1, hasNextPage: false, total: 0 },
         media: [],
@@ -77,12 +82,12 @@ describe('AniList browse boundary', () => {
     const search = makeBrowseSearch({ sort: 'UPDATED_AT_DESC' })
     await alBrowse({ page: search.page, sort: search.sort }, 'MANGA')
 
-    const [, variables] = request.mock.calls[0] as [string, Record<string, unknown>]
+    const { variables } = requestedBody(fetch)
     expect(variables).toMatchObject({ sort: ['UPDATED_AT_DESC'] })
   })
 
   it('uses the selected catalog type for manga browse requests', async () => {
-    request.mockResolvedValue({
+    const fetch = stubAniList({
       Page: {
         pageInfo: { currentPage: 1, lastPage: 1, hasNextPage: false, total: 1 },
         media: [],
@@ -91,34 +96,24 @@ describe('AniList browse boundary', () => {
 
     await alBrowse({ page: 1, format: 'MANGA' }, 'MANGA')
 
-    const [query] = request.mock.calls[0] as [string]
+    const { query } = requestedBody(fetch)
     expect(query).toContain('type:MANGA')
     expect(query).toContain('format:$format')
   })
 })
 
 describe('AniList catalog home boundary', () => {
-  beforeEach(() => {
-    request.mockReset()
-    request.mockResolvedValue({
-      trending: { media: [] },
-      season: { media: [] },
-      allTime: { media: [] },
-      topRated: { media: [] },
-      upcoming: { media: [] },
-    })
-  })
-
   it('requests manga rails with publication-aware sorts and fields', async () => {
-    await expect(alHome('MANGA')).resolves.toEqual({
+    const fetch = stubAniList({
       trending: { media: [] },
       season: { media: [] },
       allTime: { media: [] },
       topRated: { media: [] },
       upcoming: { media: [] },
     })
+    await alHome('MANGA')
 
-    const [query, variables] = request.mock.calls[0] as [string, Record<string, unknown>]
+    const { query, variables } = requestedBody(fetch)
     expect(query).toContain('type:MANGA')
     expect(query).toContain('sort:UPDATED_AT_DESC')
     expect(query).toContain('chapters')

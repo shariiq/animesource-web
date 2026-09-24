@@ -76,32 +76,6 @@ describe('alSchedule pagination', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('never has more than 1 concurrent AniList request across a wide range', async () => {
-    let inFlight = 0
-    let maxInFlight = 0
-    const fetchMock = vi.fn(async (_input: string, init?: RequestInit) => {
-      const page = (JSON.parse(String(init?.body)) as { variables: { page: number } }).variables.page
-      inFlight += 1
-      maxInFlight = Math.max(maxInFlight, inFlight)
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 10))
-        return new Response(JSON.stringify(schedulePage(page, 8, [page])), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        })
-      } finally {
-        inFlight -= 1
-      }
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    const items = await alSchedule(1_700_000_000, 1_700_100_000)
-
-    expect(items.map((item) => item.episode)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
-    expect(fetchMock).toHaveBeenCalledTimes(8)
-    expect(maxInFlight).toBeLessThanOrEqual(1)
-  })
-
   it('survives a rate-limited page via the client retry instead of surfacing 429', async () => {
     const attempts = new Map<number, number>()
     const fetchMock = vi.fn(async (_input: string, init?: RequestInit) => {

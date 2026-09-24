@@ -1009,6 +1009,9 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
               <div><dt>Esc</dt><dd>Close panels, show controls</dd></div>
             </dl>
             <p class="manga-reader-sheet-note">Progress and reader preferences are saved privately on this device.</p>
+            <Show when={session.settingsSaveStatus()}>
+              {(status) => <p class="manga-reader-sheet-note" role="status">{status() === 'saving' ? 'Saving reader settings…' : 'Reader settings saved on this device.'}</p>}
+            </Show>
           </div>
         </aside>
       </Show>

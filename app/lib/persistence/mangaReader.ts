@@ -64,6 +64,7 @@ export interface MangaReaderPersistence {
   getDefaults(): Promise<MangaReaderSettings>
   list(): Promise<MangaReaderRecord[]>
   save(record: MangaReaderRecord): Promise<void>
+  saveSettings(record: MangaReaderRecord): Promise<MangaReaderRecord>
   saveDefaults(settings: MangaReaderSettings): Promise<void>
   remove(anilistId: number): Promise<void>
 }
@@ -88,6 +89,20 @@ export const mangaReaderData: MangaReaderPersistence = {
   save: async (record) => {
     await indexedDbStore.write(recordKey(record.anilistId), 1, record, recordDocument)
   },
+  saveSettings: (record) => indexedDbStore.update(recordKey(record.anilistId), 1, recordDocument, (current) => {
+    // Settings may finish after a chapter switch; merge them transactionally so
+    // a delayed preference write cannot roll the last-read chapter backward.
+    const base = current ?? record
+    return {
+      ...base,
+      layout: record.layout,
+      direction: record.direction,
+      fit: record.fit,
+      background: record.background,
+      gap: record.gap,
+      updatedAt: record.updatedAt,
+    }
+  }),
   saveDefaults: (settings) => indexedDbStore.write(DEFAULTS_KEY, 1, settings, settingsDocument),
   remove: (anilistId) => indexedDbStore.remove(recordKey(anilistId)),
 }

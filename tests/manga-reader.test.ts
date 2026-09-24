@@ -136,6 +136,7 @@ describe('manga reader ordering', () => {
 describe('manga reader source matching', () => {
   function sessionWithResults(results: (sourceId: string) => AniSourceManga[], defaults: MangaReaderSettings = DEFAULT_MANGA_READER_SETTINGS) {
     const searches: string[] = []
+    const savedRecords: MangaReaderRecord[] = []
     const session = createMangaReaderSession({
       manga,
       routeChapterNumber: () => 'start',
@@ -145,7 +146,8 @@ describe('manga reader source matching', () => {
         get: async () => null,
         getDefaults: async () => defaults,
         list: async () => [],
-        save: async () => undefined,
+        save: async (record) => { savedRecords.push(record) },
+        saveSettings: async (record) => { savedRecords.push(record); return record },
         saveDefaults: async () => undefined,
         remove: async () => undefined,
       },
@@ -166,7 +168,7 @@ describe('manga reader source matching', () => {
         mangaPages: async () => [{ index: 0, url: 'page-1', page_url: '' }],
       },
     })
-    return { searches, session }
+    return { searches, savedRecords, session }
   }
 
   it('tries the next source before opening the picker', async () => {
@@ -188,6 +190,17 @@ describe('manga reader source matching', () => {
     expect(session.selectedSource()).toBe('source-b')
     expect(session.stage()).toBe('match-empty')
     expect(session.error()).toBeNull()
+  })
+
+  it('keeps a preference changed before settings hydrate and persists it with the first chapter record', async () => {
+    const { savedRecords, session } = sessionWithResults(() => [mangaCandidate])
+    const initialization = session.initialize()
+
+    session.setGap('none')
+    await initialization
+
+    expect(session.gap()).toBe('none')
+    expect(savedRecords.at(-1)?.gap).toBe('none')
   })
 
   it('applies global reader defaults when a manga has no saved settings', async () => {
@@ -240,6 +253,7 @@ describe('manga reader source matching', () => {
           getDefaults: async () => DEFAULT_MANGA_READER_SETTINGS,
           list: async () => (stored ? [stored] : []),
           save: async (record) => { stored = record },
+          saveSettings: async (record) => { stored = record; return record },
           saveDefaults: async () => undefined,
           remove: async () => undefined,
         },
@@ -300,5 +314,35 @@ describe('manga reader persistence', () => {
 
     await expect(mangaReaderData.getDefaults()).resolves.toEqual(settings)
     await expect(mangaReaderData.list()).resolves.toEqual([record])
+  })
+
+  it('merges a delayed preference save without rolling chapter progress back', async () => {
+    const lastRead: MangaReaderRecord = {
+      anilistId: 42,
+      title: 'Signal',
+      cover: '',
+      sourceId: 'source',
+      sourceName: 'Source',
+      mangaId: 'signal-manga',
+      mangaUrl: '',
+      chapterId: 'chapter-2',
+      chapterNumber: 2,
+      chapterTitle: 'Chapter 2',
+      pageIndex: 6,
+      pageCount: 10,
+      completed: false,
+      ...DEFAULT_MANGA_READER_SETTINGS,
+      updatedAt: 20,
+    }
+    const staleSettingsRecord = { ...lastRead, chapterId: 'chapter-1', chapterNumber: 1, pageIndex: 2, gap: 'none' as const, updatedAt: 30 }
+
+    await mangaReaderData.save(lastRead)
+    await mangaReaderData.saveSettings(staleSettingsRecord)
+
+    await expect(mangaReaderData.get(42)).resolves.toMatchObject({
+      chapterId: 'chapter-2',
+      pageIndex: 6,
+      gap: 'none',
+    })
   })
 })

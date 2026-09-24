@@ -73,6 +73,43 @@ export interface StoreReplacement {
   writes: readonly StoreWrite[]
 }
 
+function updateTransaction<T>(
+  db: IDBDatabase,
+  key: string,
+  version: number,
+  schema: z.ZodType<Versioned<T>>,
+  updateValue: (value: T | null) => T,
+): Promise<T> {
+  const tx = db.transaction(STORE, 'readwrite')
+  const completion = transactionToPromise(tx)
+  const store = tx.objectStore(STORE)
+  const request = store.get(key)
+  let result: { value: T } | null = null
+  let updateError: Error | null = null
+  request.onerror = () => tx.abort()
+  request.onsuccess = () => {
+    const raw = request.result
+    const existing = raw !== undefined ? schema.safeParse(raw) : null
+    const current = existing?.success ? existing.data.data : null
+    try {
+      const updated = updateValue(current)
+      const validated = schema.safeParse({ v: version, data: updated })
+      if (!validated.success) throw new Error('Cannot persist an invalid viewer record.')
+      result = { value: updated }
+      store.put(validated.data, key)
+    } catch (cause) {
+      updateError = cause instanceof Error ? cause : new Error('Failed to update the viewer record.')
+      tx.abort()
+    }
+  }
+  return completion.then(() => {
+    if (result === null) throw new Error('The viewer record update did not complete.')
+    return result.value
+  }, (cause: unknown) => {
+    throw updateError ?? cause
+  })
+}
+
 function replaceTransaction(db: IDBDatabase, replacement: StoreReplacement, documents: readonly { key: string; value: unknown }[]): Promise<void> {
   const tx = db.transaction(STORE, 'readwrite')
   const completion = transactionToPromise(tx)
@@ -133,24 +170,14 @@ export const indexedDbStore: KeyValueStore = {
     if (dbConnection) return writeTransaction(dbConnection, key, parsed.data)
     return openDb().then((db) => writeTransaction(db, key, parsed.data))
   },
-  async update<T>(
+  update<T>(
     key: string,
     version: number,
     schema: z.ZodType<Versioned<T>>,
     updateValue: (value: T | null) => T,
   ) {
-    const db = await openDb()
-    const tx = db.transaction(STORE, 'readwrite')
-    const store = tx.objectStore(STORE)
-    const raw = await requestToPromise(store.get(key) as IDBRequest<unknown>)
-    const existing = raw !== undefined ? schema.safeParse(raw) : null
-    const current = existing && existing.success ? existing.data.data : null
-    const updated = updateValue(current)
-    const validated = schema.safeParse({ v: version, data: updated })
-    if (!validated.success) throw new Error('Cannot persist an invalid viewer record.')
-    store.put(validated.data, key)
-    await transactionToPromise(tx)
-    return updated
+    if (dbConnection) return updateTransaction(dbConnection, key, version, schema, updateValue)
+    return openDb().then((db) => updateTransaction(db, key, version, schema, updateValue))
   },
   async replace(replacement) {
     const documents = replacement.writes.map((write) => {

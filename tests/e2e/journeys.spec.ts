@@ -60,6 +60,11 @@ test.describe("high-density mobile Reader", () => {
     const settings = page.getByRole("dialog", { name: "Reader settings" });
     await settings.getByRole("button", { name: "None", exact: true }).click();
     await expect(page.locator(".manga-reader-shell")).toHaveAttribute("data-gap", "none");
+    const placeholderHeights = await page.locator(".manga-reader-frame").evaluateAll((frames) =>
+      frames.filter((frame) => !frame.querySelector("img")).map((frame) => frame.getBoundingClientRect().height),
+    );
+    expect(placeholderHeights.length).toBeGreaterThan(0);
+    expect(Math.max(...placeholderHeights)).toBeLessThanOrEqual(302);
     await settings.getByRole("button", { name: "Close settings" }).click();
 
     const scroll = page.locator(".manga-reader-scroll");
@@ -117,7 +122,7 @@ test.describe("high-density mobile Reader", () => {
   });
 });
 
-test("manga reader restores settings after an immediate reload", async ({ page }) => {
+test("manga reader restores settings after autosave completes and the page reloads", async ({ page }) => {
   await page.goto("/manga/1/read/1?source=test");
   await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
 
@@ -128,6 +133,7 @@ test("manga reader restores settings after an immediate reload", async ({ page }
   await settings.getByRole("button", { name: "Original", exact: true }).click();
   await settings.getByRole("button", { name: "Paper", exact: true }).click();
   await settings.getByRole("button", { name: "Roomy", exact: true }).click();
+  await expect(settings.getByRole("status")).toHaveText("Reader settings saved on this device.");
 
   await page.reload();
   await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();

@@ -279,7 +279,8 @@
     overflow: hidden;
     background: var(--mr-frame);
     content-visibility: auto;
-    contain-intrinsic-size: auto 1200px;
+    /* Avoid reserving a full page of blank space before an offscreen image is measured. */
+    contain-intrinsic-size: auto 240px;
   }
 
   .manga-reader-shell[data-gap='none'] .manga-reader-frame:not(.is-paged) {

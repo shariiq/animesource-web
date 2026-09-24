@@ -83,8 +83,8 @@ export interface MangaReaderSession {
   selectedSourceName: Accessor<string>
   matchedManga: Accessor<AniSourceManga | null>
   pickerCandidates: Accessor<RankedCandidate<AniSourceManga>[]>
-  chapters: Accessor<MangaChapter[]>
-  selectedChapter: Accessor<MangaChapter | null>
+  chapters: Accessor<ReaderChapter[]>
+  selectedChapter: Accessor<ReaderChapter | null>
   pages: Accessor<ChapterPage[]>
   currentPage: Accessor<number>
   layout: Accessor<MangaReaderLayout>
@@ -123,18 +123,84 @@ const START_CHAPTER_TOKEN = 'start'
 const LATEST_CHAPTER_TOKEN = 'latest'
 const CONTINUE_CHAPTER_TOKEN = 'continue'
 
-const SOURCE_CHAPTER_NUMBER_PATTERN = /\b(?:chapter|chap\.?|ch\.?|episode|ep\.?)\s*#?\s*(\d+(?:\.\d+)?)/i
+export type ReaderChapter = MangaChapter & { numberOrigin: 'source' | 'title' | 'url' | 'position' }
 
-function chapterNumberFromSource(chapter: MangaChapter): number {
-  if (Number.isFinite(chapter.number) && chapter.number !== 0) return chapter.number
-  const match = `${chapter.title} ${chapter.url}`.match(SOURCE_CHAPTER_NUMBER_PATTERN)
-  const inferred = match?.[1] ? Number(match[1]) : NaN
-  return Number.isFinite(inferred) ? inferred : chapter.number
+const SOURCE_CHAPTER_NUMBER_PATTERN = /^(?:[[(]\s*)?(?:vol(?:ume)?\.?\s*\d+(?:\.\d+)?\s*[-:·]?\s*)?(?:chapter|chap\.?|ch\.?|episode|ep\.?|battle|act|part|round)\s*[#№.: -]*\s*(\d+(?:\.\d+)?)(?![\d.])/i
+
+function titleChapterNumber(title: string): number | null {
+  const match = title.trim().match(SOURCE_CHAPTER_NUMBER_PATTERN)
+  if (!match?.[1]) return null
+  const number = Number(match[1])
+  return Number.isFinite(number) ? number : null
 }
 
-export function normalizeChapters(chapters: readonly MangaChapter[]): MangaChapter[] {
-  return chapters
-    .map((chapter, index) => ({ chapter: { ...chapter, number: chapterNumberFromSource(chapter) }, index }))
+export function chapterDisplayNumber(chapter: Pick<MangaChapter, 'number' | 'title'>): string | null {
+  return chapter.number === 0 && titleChapterNumber(chapter.title) !== 0 ? null : String(chapter.number)
+}
+
+function chapterNumberFromSource(chapter: MangaChapter, repeatedSourceNumbers: ReadonlySet<number>): { number: number; origin: ReaderChapter['numberOrigin'] } | null {
+  const fromTitle = titleChapterNumber(chapter.title)
+  // Some Sources repeat a nonzero placeholder across different Chapters; an explicit title can disambiguate those.
+  if (Number.isFinite(chapter.number) && chapter.number !== 0 && !(repeatedSourceNumbers.has(chapter.number) && fromTitle !== null && fromTitle !== chapter.number)) {
+    return { number: chapter.number, origin: 'source' }
+  }
+  if (fromTitle !== null) return { number: fromTitle, origin: 'title' }
+  // Only the final URL segment can describe a Chapter; the manga path often contains unrelated numbers.
+  const segment = chapter.url.split(/[?#]/, 1)[0]?.replace(/\/$/, '').split('/').at(-1) ?? ''
+  const fromUrl = titleChapterNumber(decodeURIComponentSafe(segment.replace(/[-_]+/g, ' ')))
+  return fromUrl === null ? null : { number: fromUrl, origin: 'url' }
+}
+
+function decodeURIComponentSafe(value: string): string {
+  try { return decodeURIComponent(value) } catch { return value }
+}
+
+export function normalizeChapters(chapters: readonly MangaChapter[]): ReaderChapter[] {
+  const sourceCounts = new Map<number, number>()
+  for (const chapter of chapters) {
+    if (chapter.number !== 0) sourceCounts.set(chapter.number, (sourceCounts.get(chapter.number) ?? 0) + 1)
+  }
+  const repeatedSourceNumbers = new Set([...sourceCounts].filter(([, count]) => count > 1).map(([number]) => number))
+  const extracted = chapters.map((chapter, index) => ({ chapter, index, number: chapterNumberFromSource(chapter, repeatedSourceNumbers) }))
+  const known = extracted.filter((entry) => entry.number !== null)
+  const first = known[0]
+  const last = known.at(-1)
+  const firstNumber = first?.number?.number
+  const lastNumber = last?.number?.number
+  const firstDate = chapters[0]?.released_at
+  const lastDate = chapters.at(-1)?.released_at
+  // Source lists usually run newest-first; use trustworthy labels or distinct release dates to detect oldest-first lists.
+  const descending = firstNumber !== undefined && lastNumber !== undefined && first?.index !== last?.index && firstNumber !== lastNumber
+    ? firstNumber > lastNumber
+    : firstNumber === 1 && first?.index === 0
+      ? false
+      : firstNumber === chapters.length && first?.index === 0
+        ? true
+        : firstDate && lastDate && firstDate !== lastDate
+          ? firstDate > lastDate
+          : true
+  const availablePositions = new Set(Array.from({ length: chapters.length }, (_, index) => index + 1))
+  // Position numbers are a last resort. Avoid claiming an installment number already supplied by the Source.
+  for (const entry of known) {
+    if (entry.number) availablePositions.delete(entry.number.number)
+  }
+  return extracted
+    .map(({ chapter, index, number }) => {
+      let fallback = 0
+      if (!number) {
+        const preferred = descending ? chapters.length - index : index + 1
+        fallback = preferred
+        if (!availablePositions.has(fallback)) {
+          const positions = descending ? [...availablePositions].reverse() : [...availablePositions]
+          fallback = positions.reduce((nearest, position) => Math.abs(position - preferred) < Math.abs(nearest - preferred) ? position : nearest, positions[0] ?? preferred)
+        }
+        availablePositions.delete(fallback)
+      }
+      return {
+        chapter: { ...chapter, number: number?.number ?? fallback, numberOrigin: number?.origin ?? 'position' } satisfies ReaderChapter,
+        index,
+      }
+    })
     .sort((left, right) => {
       const numberOrder = left.chapter.number - right.chapter.number
       return Number.isFinite(numberOrder) && numberOrder !== 0 ? numberOrder : left.index - right.index
@@ -158,13 +224,22 @@ export function chapterNeighbors(chapters: readonly MangaChapter[], chapterId: s
 }
 
 export function chapterIdForNumber(chapters: readonly MangaChapter[], chapterNumber: string): string | null {
+  if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(chapterNumber)) return null
   const requested = Number(chapterNumber)
   if (!Number.isFinite(requested)) return null
-  return chapters.find((chapter) => chapter.number === requested)?.id ?? null
+  const matches = chapters.filter((chapter) => chapter.number === requested && ('numberOrigin' in chapter ? chapter.numberOrigin !== 'position' : chapterDisplayNumber(chapter) !== null))
+  return matches.length === 1 ? matches[0]?.id ?? null : null
 }
 
 export function chapterIdForRoute(chapters: readonly MangaChapter[], routeValue: string): string | null {
+  if (routeValue.startsWith('id:')) return chapters.find((chapter) => chapter.id === routeValue.slice(3))?.id ?? null
   return chapterIdForNumber(chapters, routeValue) ?? chapters.find((chapter) => chapter.id === routeValue)?.id ?? null
+}
+
+export function chapterRouteValue(chapters: readonly MangaChapter[], chapter: MangaChapter): string {
+  const number = chapterDisplayNumber(chapter)
+  // A position or a repeated number is not a stable identity; only the Source Chapter ID is.
+  return number !== null && (!('numberOrigin' in chapter) || chapter.numberOrigin !== 'position') && chapterIdForNumber(chapters, number) === chapter.id ? number : `id:${chapter.id}`
 }
 
 export function resolveStartChapterId(
@@ -185,7 +260,7 @@ function isSpecialChapterToken(value: string): boolean {
 }
 
 function isLegacyZeroStartRoute(chapters: readonly MangaChapter[], value: string): boolean {
-  return value === '0' && !chapters.some((chapter) => chapter.number === 0)
+  return value === '0' && chapterIdForNumber(chapters, value) === null
 }
 
 function describeError(error: unknown, operation: MangaReaderError['operation']): MangaReaderError {
@@ -222,7 +297,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   const [selectedSource, setSelectedSource] = createSignal('')
   const [matchedManga, setMatchedManga] = createSignal<AniSourceManga | null>(null)
   const [pickerCandidates, setPickerCandidates] = createSignal<RankedCandidate<AniSourceManga>[]>([])
-  const [chapters, setChapters] = createSignal<MangaChapter[]>([])
+  const [chapters, setChapters] = createSignal<ReaderChapter[]>([])
   const [selectedChapterId, setSelectedChapterId] = createSignal<string | null>(null)
   const [pages, setPages] = createSignal<ChapterPage[]>([])
   const [currentPage, setCurrentPage] = createSignal(0)
@@ -480,7 +555,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       // Start the write before route replacement; a remount must not cancel the
       // chapter's starting position before it reaches the persistence adapter.
       const save = persistRecord(recordBase(current, resumeIndex, false))
-      if (replaceRoute) await options.navigateToChapter(String(current.number), source, true)
+       if (replaceRoute) await options.navigateToChapter(chapterRouteValue(chapters(), current), source, true)
       if (!isCurrent(request)) return
       await save
       void prefetchNextChapter()

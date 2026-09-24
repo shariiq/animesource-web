@@ -5,6 +5,7 @@ import {
   Show,
   Switch,
   createEffect,
+  createMemo,
   createSignal,
   onCleanup,
   onMount,
@@ -16,6 +17,7 @@ import type { AniListDetail } from '../../data/anilist/types'
 import { titleOf } from '../../lib/format'
 import type { ChapterPage, MangaChapter } from '../../data/anisource/schema'
 import {
+  chapterDisplayNumber,
   createMangaReaderSession,
   pageSource,
   type MangaReaderBackground,
@@ -93,8 +95,12 @@ function formatChapterDate(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? '' : chapterDateFormatter.format(date)
 }
 
-function formatChapterNumber(value: number | null | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) ? String(value) : '—'
+function formatChapterNumber(chapter: MangaChapter | null | undefined): string {
+  return chapter ? chapterDisplayNumber(chapter) ?? '—' : '—'
+}
+
+function chapterHeading(chapter: MangaChapter | null | undefined): string {
+  return chapter && chapterDisplayNumber(chapter) !== null ? `Chapter ${formatChapterNumber(chapter)}` : 'Unnumbered chapter'
 }
 
 export function MangaReaderPage(props: MangaReaderPageProps) {
@@ -139,7 +145,7 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
   const reading = () => session.stage() === 'pages-ready' || session.stage() === 'empty'
   const chapterLabel = () => {
     const chapter = session.selectedChapter()
-    return chapter ? `Chapter ${formatChapterNumber(chapter.number)}` : 'Manga reader'
+    return chapter ? chapterHeading(chapter) : 'Manga reader'
   }
   const chapterTitle = () => session.selectedChapter()?.title || 'Choose a chapter to begin'
   const pageLabel = () => {
@@ -160,10 +166,11 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     return session.layout() === 'double' && current + 1 < count ? [current, current + 1] : [current]
   }
   const orderedChapters = () => [...session.chapters()].reverse()
+  const currentChapterIndex = createMemo(() => session.chapters().findIndex((chapter) => chapter.id === session.selectedChapter()?.id))
   const filteredChapters = () => {
     const query = chapterFilter().trim().toLowerCase()
     if (!query) return orderedChapters()
-    return orderedChapters().filter((chapter) => `${chapter.number} ${chapter.title}`.toLowerCase().includes(query))
+    return orderedChapters().filter((chapter) => `${chapterDisplayNumber(chapter) ?? ''} ${chapter.title}`.toLowerCase().includes(query))
   }
 
 
@@ -361,7 +368,7 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
   createEffect(() => {
     const chapter = session.selectedChapter()
     if (typeof document !== 'undefined') {
-      document.title = chapter ? `Chapter ${formatChapterNumber(chapter.number)} · ${title()} — AniSource` : `${title()} — Manga reader — AniSource`
+      document.title = chapter ? `${chapterHeading(chapter)} · ${title()} — AniSource` : `${title()} — Manga reader — AniSource`
     }
   })
   onCleanup(() => {
@@ -721,10 +728,10 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
               <For each={session.sources()}>{(source) => <option value={source.id}>{source.name}</option>}</For>
             </select>
           </label>
-          <button class="manga-reader-action" type="button" aria-expanded={chapterSheetOpen()} aria-controls="manga-reader-chapter-sheet" onClick={openChapterSheet}>
+          <button class="manga-reader-action" type="button" aria-label="Chapters" aria-expanded={chapterSheetOpen()} aria-controls="manga-reader-chapter-sheet" onClick={openChapterSheet}>
             <ReaderIcon d={ICONS.chapters} /><span>Chapters</span>
           </button>
-          <button class="manga-reader-action" type="button" aria-expanded={settingsSheetOpen()} aria-controls="manga-reader-settings-sheet" onClick={openSettingsSheet}>
+          <button class="manga-reader-action" type="button" aria-label="Settings" aria-expanded={settingsSheetOpen()} aria-controls="manga-reader-settings-sheet" onClick={openSettingsSheet}>
             <ReaderIcon d={ICONS.settings} /><span>Settings</span>
           </button>
           <button class="manga-reader-action is-icon" type="button" aria-label={fullscreen() ? 'Exit fullscreen' : 'Enter fullscreen'} onClick={() => { void toggleFullscreen() }}>
@@ -773,9 +780,9 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
               <span class="manga-reader-kicker">{session.chapters().length} chapters · {session.selectedSourceName()}</span>
               <h2 id="manga-reader-index-title">Choose where to begin.</h2>
               <div class="manga-reader-index-grid" role="list">
-                <For each={session.chapters()}>
-                  {(chapter) => (
-                    <ChapterButton chapter={chapter} currentId={session.selectedChapter()?.id} currentNumber={session.selectedChapter()?.number} onChoose={chooseChapter} />
+                 <For each={session.chapters()}>
+                   {(chapter, index) => (
+                     <ChapterButton chapter={chapter} currentId={session.selectedChapter()?.id} isEarlier={currentChapterIndex() >= 0 && index() < currentChapterIndex()} onChoose={chooseChapter} />
                   )}
                 </For>
               </div>
@@ -961,7 +968,7 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
           <div class="manga-reader-sheet-list" role="list">
             <For each={filteredChapters()} fallback={<p class="manga-reader-panel-empty">No chapters match that filter.</p>}>
               {(chapter) => (
-                <ChapterButton chapter={chapter} currentId={session.selectedChapter()?.id} currentNumber={session.selectedChapter()?.number} onChoose={chooseChapter} />
+                 <ChapterButton chapter={chapter} currentId={session.selectedChapter()?.id} isEarlier={currentChapterIndex() >= 0 && session.chapters().indexOf(chapter) < currentChapterIndex()} onChoose={chooseChapter} />
               )}
             </For>
           </div>
@@ -1042,14 +1049,9 @@ function SegmentGroup<T extends string>(props: { label: string; options: { value
   )
 }
 
-function ChapterButton(props: { chapter: MangaChapter; currentId: string | undefined; currentNumber: number | undefined; onChoose: (chapter: MangaChapter) => Promise<void> }) {
+function ChapterButton(props: { chapter: MangaChapter; currentId: string | undefined; isEarlier: boolean; onChoose: (chapter: MangaChapter) => Promise<void> }) {
   const isCurrent = () => props.chapter.id === props.currentId
-  const isEarlier = () =>
-    !isCurrent() &&
-    props.currentNumber !== undefined &&
-    props.chapter.number > 0 &&
-    props.currentNumber > 0 &&
-    props.chapter.number < props.currentNumber
+  const isEarlier = () => !isCurrent() && props.isEarlier
   const date = () => formatChapterDate(props.chapter.released_at)
   return (
     <button
@@ -1060,9 +1062,9 @@ function ChapterButton(props: { chapter: MangaChapter; currentId: string | undef
       aria-current={isCurrent() || undefined}
       onClick={() => { void props.onChoose(props.chapter) }}
     >
-      <span class="manga-reader-chapter-number">{formatChapterNumber(props.chapter.number)}</span>
+      <span class="manga-reader-chapter-number">{formatChapterNumber(props.chapter)}</span>
       <span class="manga-reader-chapter-copy">
-        <strong>{props.chapter.title || `Chapter ${formatChapterNumber(props.chapter.number)}`}</strong>
+        <strong>{props.chapter.title || chapterHeading(props.chapter)}</strong>
         <small>{[date(), props.chapter.scanlator].filter(Boolean).join(' · ') || 'Source chapter'}</small>
       </span>
       <span class="manga-reader-chapter-state" aria-hidden="true">
@@ -1077,14 +1079,14 @@ function ChapterEndCard(props: { session: MangaReaderSession; mangaId: number; o
   const next = () => props.session.nextChapter()
   return (
     <section class="manga-reader-end" classList={{ 'is-overlay': props.overlay ?? false }} aria-label="End of chapter">
-      <span class="manga-reader-kicker">Chapter {formatChapterNumber(chapter()?.number)} complete</span>
+      <span class="manga-reader-kicker">{chapterHeading(chapter())} complete</span>
       <h2>{chapter()?.title || 'End of chapter'}</h2>
       <Show
         when={next()}
         fallback={<p class="manga-reader-end-copy">You're caught up — this is the latest chapter this source has.</p>}
       >
         {(nextChapter) => (
-          <p class="manga-reader-end-copy">Continue to Chapter {formatChapterNumber(nextChapter().number)}{nextChapter().title ? ` · ${nextChapter().title}` : ''}.</p>
+          <p class="manga-reader-end-copy">Continue to {chapterDisplayNumber(nextChapter()) === null ? 'the next chapter' : `Chapter ${formatChapterNumber(nextChapter())}`}{nextChapter().title ? ` · ${nextChapter().title}` : ''}.</p>
         )}
       </Show>
       <div class="manga-reader-end-actions">

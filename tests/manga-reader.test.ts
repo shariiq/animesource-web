@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { chapterIdForNumber, chapterIdForRoute, chapterNeighbors, createMangaReaderSession, normalizeChapters, normalizePages, resolveStartChapterId } from '../app/components/manga/reader/createMangaReaderSession'
+import { chapterDisplayNumber, chapterIdForNumber, chapterIdForRoute, chapterNeighbors, chapterRouteValue, createMangaReaderSession, normalizeChapters, normalizePages, resolveStartChapterId } from '../app/components/manga/reader/createMangaReaderSession'
 import { detailShape } from '../app/data/anilist/schema'
 import type { AniSourceManga, ChapterPage, MangaChapter } from '../app/data/anisource/schema'
 import { DEFAULT_MANGA_READER_SETTINGS, mangaReaderData, type MangaReaderRecord, type MangaReaderSettings } from '../app/lib/persistence/mangaReader'
@@ -77,6 +77,100 @@ describe('manga reader ordering', () => {
     expect(normalizeChapters([latest, first]).map((entry) => [entry.id, entry.number])).toEqual([
       ['c1', 1],
       ['c155', 155],
+    ])
+  })
+
+  it('uses numbered Battle titles when a Source returns zero for every Chapter', () => {
+    const chapters = [570, 2, 1].map((number) => ({
+      ...chapter(`battle-${number}`, 0),
+      title: `Battle ${number}`,
+      url: 'https://source.test/shijou-saikyou-no-deshi-kenichi',
+    }))
+
+    const normalized = normalizeChapters(chapters)
+    expect(normalized.map(({ id, number }) => [id, number])).toEqual([
+      ['battle-1', 1],
+      ['battle-2', 2],
+      ['battle-570', 570],
+    ])
+    expect(chapterIdForRoute(normalized, '570')).toBe('battle-570')
+    expect(chapterNeighbors(normalized, 'battle-2').next?.id).toBe('battle-570')
+  })
+
+  it('does not mistake a number in a Manga title for a Chapter number', () => {
+    const entry = { ...chapter('special', 0), title: '100 Girlfriends special', url: 'https://source.test/100-girlfriends/special' }
+    expect(normalizeChapters([entry])[0]).toMatchObject({ number: 1, numberOrigin: 'position' })
+  })
+
+  it('takes the leading Source installment label before another numbered phrase', () => {
+    const entry = { ...chapter('battle-570', 0), title: 'Battle 570: Chapter 12 begins' }
+    expect(normalizeChapters([entry])[0]?.number).toBe(570)
+  })
+
+  it('does not assign a made-up number from manga metadata or a numbered subtitle', () => {
+    const chapters = normalizeChapters([
+      { ...chapter('special', 0), title: 'Special: Battle 570', url: 'https://source.test/100-girlfriends/special' },
+      { ...chapter('chapter-2', 0), title: 'Chapter 2', url: 'https://source.test/100-girlfriends/chapter-2' },
+    ])
+    expect(chapters.find((entry) => entry.id === 'special')).toMatchObject({ number: 1, numberOrigin: 'position' })
+    expect(chapterRouteValue(chapters, chapters.find((entry) => entry.id === 'special')!)).toBe('id:special')
+    expect(chapterIdForRoute(chapters, 'id:special')).toBe('special')
+    expect(chapterIdForNumber(chapters, '2')).toBe('chapter-2')
+  })
+
+  it('routes duplicate numbers by Chapter ID instead of opening the first Match', () => {
+    const chapters = normalizeChapters([
+      { ...chapter('translation-a', 12), title: 'Chapter 12' },
+      { ...chapter('translation-b', 12), title: 'Chapter 12 (alternate)' },
+    ])
+    expect(chapterIdForNumber(chapters, '12')).toBeNull()
+    expect(chapters.map((entry) => chapterRouteValue(chapters, entry))).toEqual(['id:translation-a', 'id:translation-b'])
+    expect(chapterIdForRoute(chapters, 'id:translation-b')).toBe('translation-b')
+  })
+
+  it('recovers distinct title numbers when a Source repeats the same nonzero placeholder', () => {
+    const chapters = normalizeChapters([
+      { ...chapter('battle-7', 1), title: 'Battle 7' },
+      { ...chapter('battle-8', 1), title: 'Battle 8' },
+    ])
+    expect(chapters.map(({ number, numberOrigin }) => [number, numberOrigin])).toEqual([[7, 'title'], [8, 'title']])
+    expect(chapterIdForRoute(chapters, '8')).toBe('battle-8')
+  })
+
+  it('keeps a real Chapter zero distinct from an unknown number', () => {
+    const chapters = normalizeChapters([
+      { ...chapter('unknown', 0), title: 'Prologue' },
+      { ...chapter('zero', 0), title: 'Chapter 0' },
+    ])
+    expect(chapters.find((entry) => entry.id === 'unknown')).toMatchObject({ number: 2, numberOrigin: 'position' })
+    expect(chapterDisplayNumber(chapters.find((entry) => entry.id === 'zero')!)).toBe('0')
+    expect(chapterIdForRoute(chapters, '0')).toBe('zero')
+    expect(chapterRouteValue(chapters, chapters.find((entry) => entry.id === 'unknown')!)).toBe('id:unknown')
+  })
+
+  it('accepts decimal chapter titles and final URL segments without reading a manga slug', () => {
+    const chapters = normalizeChapters([
+      { ...chapter('fraction', 0), title: 'Chapter 12.5: Interlude' },
+      { ...chapter('from-url', 0), title: 'Extra', url: 'https://source.test/manga-99/chapter-13' },
+    ])
+    expect(chapters.map(({ number }) => number)).toEqual([12.5, 13])
+    expect(chapterIdForRoute(chapters, '12.5')).toBe('fraction')
+  })
+
+  it('numbers unlabelled Chapters from list length in either Source order without making routes ambiguous', () => {
+    const entries = [1, 2, 3].map((index) => ({ ...chapter(`opaque-${index}`, 0), title: 'Untitled', url: 'https://source.test/manga-99/opaque' }))
+    const newestFirst = normalizeChapters(entries)
+    expect(newestFirst.map(({ id, number, numberOrigin }) => [id, number, numberOrigin])).toEqual([
+      ['opaque-3', 1, 'position'], ['opaque-2', 2, 'position'], ['opaque-1', 3, 'position'],
+    ])
+    expect(chapterRouteValue(newestFirst, newestFirst[0]!)).toBe('id:opaque-3')
+    expect(chapterIdForNumber(newestFirst, '1')).toBeNull()
+
+    const oldestFirst = normalizeChapters([
+      { ...entries[0]!, title: 'Chapter 1' }, entries[1]!, entries[2]!,
+    ])
+    expect(oldestFirst.map(({ id, number }) => [id, number])).toEqual([
+      ['opaque-1', 1], ['opaque-2', 2], ['opaque-3', 3],
     ])
   })
 

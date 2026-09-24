@@ -9,7 +9,7 @@ This file holds what the code cannot tell you. When it and the code disagree, th
 Bun only: `bun install --frozen-lockfile`, `bun run <script>`, `bunx <tool>`. Scripts live in `package.json`.
 
 - Iterate with the narrowest check: `bun run typecheck`, `bun run lint`, `bunx vitest run tests/<file>`, `bunx playwright test -g "<title>"`.
-- `bun run verify` is the CI merge gate (lint, typecheck, build, AniSource boundary check, Vitest, mocked Playwright). Run it once on the finished BIG change under `app/`, `scripts/`, or `tests/`, not after every edit. Diagnose failures with the affected check, then get one passing final run. If Playwright's browser is missing, run `bunx playwright install chromium`.
+- `bun run verify` is the CI merge gate (lint, typecheck, build, AniSource boundary check, Vitest, mocked Playwright). Run it once ONLY on a finished BIG change under `app/`, `scripts/`, or `tests/`, not after every edit. Diagnose failures with the affected check, then get one passing final run. If Playwright's browser is missing, run `bunx playwright install chromium`.
 - Docs-only and copy-only changes need `bun run lint`. Markup or behavior changes are not copy-only. Lint does not validate prose or paths, so review those directly.
 - Local checks use mocks and disposable fixtures with no production access. Run them, fix failures your change caused, and rerun without asking. A plain dev server is not mocked.
 - `bun run test:live` hits real AniList/AniSource. Run it only when asked; it never gates a merge.
@@ -46,7 +46,7 @@ Before writing a helper, search for one that already exists (`app/lib/`, `app/da
 
 **Validate at every boundary with Zod:** AniList responses, AniSource responses, and IndexedDB reads. Derive types with `z.infer` rather than declaring the shape twice. A default for missing data needs a contract that permits it.
 
-**Performance.**  NECESSARY. First remove unnecessary requests and serial waits between independent operations. Measure a suspected bottleneck before adding complexity, and don't claim unmeasured speedups. Don't hide latency with broad hover prefetch, another cache, or a second retry loop. Preserve image dimensions and below-the-fold lazy loading.
+**Performance.** NECESSARY. First remove unnecessary requests and serial waits between independent operations. Measure a suspected bottleneck before adding complexity, and don't claim unmeasured speedups. Don't hide latency with broad hover prefetch, another cache, or a second retry loop. Preserve image dimensions and below-the-fold lazy loading.
 
 ## Architecture invariants
 
@@ -68,15 +68,16 @@ Baseline: semantic elements, full keyboard operation, visible focus, labelled co
 
 ## Tests
 
-A test earns its place when it would fail for a bug a user would notice and would still pass after a correct refactor. Before adding one, ask: **what plausible wrong implementation would this reject, and what observable result proves it?** Expected values come from the requirement or an independent fixture, never from the code under test. Write fewer, sharper tests. Zero new tests is the right answer for style, copy, and pure refactors that existing tests already cover; say so in your summary.
+A test earns its place when it would fail for a bug a user would notice and would still pass after a correct refactor. Before adding one, ask: **what plausible wrong implementation would this reject, and what observable result proves it?** Expected values come from the requirement or an independent fixture, never from the code under test, never write tautological tests. Write fewer, sharper tests. Zero new tests is the right answer for style, copy, and pure refactors that existing tests already cover; say so in your summary.
 
-Write tests for:
+Write focused tests for:
 - Every real bug fix: a regression test. Where feasible, confirm it fails for the right reason before the fix. If reproduction is blocked, say so rather than writing a vacuous assertion.
 - Logic with real edge cases: matching and ranking, episode and chapter navigation, snapshot merge and tombstones, persistence migrations, stale-response races, bounded retries.
 - Boundary schemas: malformed required identity is rejected, and documented optional data is handled safely.
 - Transport clients: success, each typed failure branch, retry limits.
 
 Don't write:
+- Tautological Tests
 - Tests that restate the implementation, or assert that a mock returned what you configured it to.
 - Tests of constants, types, or a schema parsing its own fixture.
 - Markup snapshots, prop pass-through, or "callback was called" wiring checks. An interaction assertion is right only when the interaction is the contract: no AniSource request before mount, no write after cancellation, bounded retries.
@@ -84,7 +85,7 @@ Don't write:
 
 Prefer stronger evidence. Not "retry calls a spy" but "a failed load recovers and its content is usable." Not "the mocked Source returns this list" but "Source A resolving after a switch to B cannot overwrite B's state."
 
-Drive the public API the way callers do, and assert observable outcomes: returned values, rendered text and roles, persisted records, navigation. Name each test after the behavior it protects; one behavior per test, with isolated storage and time and no arbitrary sleeps. Vitest lives in `tests/` (jsdom, `tests/setup.ts`). Mocked Playwright journeys live in `tests/e2e/` against `tests/e2e/mock-api.mjs`, using accessible locators and web-first assertions; add one only for a cross-route flow a unit test can't reach. Never weaken or delete a failing test or type to get green: first establish whether the test or the code is wrong.
+Drive the public API the way callers do, and assert observable outcomes: returned values, rendered text and roles, persisted records, navigation. Name each test after the behavior it protects; one behavior per test, with isolated storage and time and no arbitrary sleeps. Vitest lives in `tests/` (jsdom, `tests/setup.ts`). Mocked Playwright journeys live in `tests/e2e/` against `tests/e2e/mock-api.mjs`, using accessible locators and web-first assertions; add one only for a cross-route flow a unit test can't reach. Never weaken or delete a failing test or type to get green unless feature it's testing is genuinely changed by user: first establish whether the test or the code is wrong.
 
 ## Git
 

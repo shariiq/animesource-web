@@ -404,22 +404,39 @@ async function setViewerPreferences(preferences: Omit<ViewerPreferences, 'update
 }
 
 async function getViewerExport(): Promise<ViewerExport> {
-  const tombstones = (await indexedDbStore.read(VIEWER_TOMBSTONES, viewerTombstonesDoc)) ?? []
+  // These records live under independent keys; issuing the reads together
+  // avoids a storage round trip for every field of an export or sync merge.
+  const [
+    tombstones, profile, preferences, favorites, continueItems, playback,
+    playbackPreferences, preferredSource, preferredSourceUpdatedAt, matches, searchHistory,
+  ] = await Promise.all([
+    indexedDbStore.read(VIEWER_TOMBSTONES, viewerTombstonesDoc),
+    getViewerProfile(),
+    getViewerPreferences(),
+    getFavorites(),
+    getContinue(),
+    getPlaybackRecords(),
+    getPlaybackPreferences(),
+    indexedDbStore.read(PREF_SOURCE, prefSourceDoc),
+    indexedDbStore.read(PREF_SOURCE_UPDATED_AT, timestampDoc),
+    getViewerMatches(),
+    browserSearchHistory.get(),
+  ])
   return viewerExportSchema.parse({
     source: 'animesource-viewer',
     version: 1,
     exportedAt: Date.now(),
-    profile: await getViewerProfile(),
-    preferences: await getViewerPreferences(),
-    favorites: await getFavorites(),
-    continue: await getContinue(),
-    playback: await getPlaybackRecords(),
-    playbackPreferences: await getPlaybackPreferences(),
-    preferredSource: await indexedDbStore.read(PREF_SOURCE, prefSourceDoc),
-    preferredSourceUpdatedAt: (await indexedDbStore.read(PREF_SOURCE_UPDATED_AT, timestampDoc)) ?? 0,
-    matches: await getViewerMatches(),
-    searchHistory: await browserSearchHistory.get(),
-    tombstones,
+    profile,
+    preferences,
+    favorites,
+    continue: continueItems,
+    playback,
+    playbackPreferences,
+    preferredSource,
+    preferredSourceUpdatedAt: preferredSourceUpdatedAt ?? 0,
+    matches,
+    searchHistory,
+    tombstones: tombstones ?? [],
   })
 }
 

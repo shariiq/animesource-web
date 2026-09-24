@@ -247,6 +247,31 @@ describe('Watch session', () => {
     expect(persistence.saveMatch).not.toHaveBeenCalled()
   })
 
+  it('searches the requested Source instead of loading a Match saved for another Source', async () => {
+    const { session, api } = sessionParts({
+      source: 'source-b',
+      persistence: {
+        getSavedMatch: vi.fn(async () => ({ sourceId: 'source-a', animeId: 'saved-only-on-a', title: 'Saved Signal' })),
+      },
+      api: {
+        sources: vi.fn(async () => ({
+          sources: [
+            { id: 'source-a', name: 'Source A', base_url: '' },
+            { id: 'source-b', name: 'Source B', base_url: '' },
+          ],
+          count: 2,
+        })),
+      },
+    })
+
+    await session.initialize()
+
+    expect(session.selectedSource()).toBe('source-b')
+    expect(session.matchedAnime()?.id).toBe('signal-42')
+    expect(api.search).toHaveBeenCalledWith('source-b', 'Signal', 1, expect.any(Function), expect.any(AbortSignal))
+    expect(api.episodes).toHaveBeenCalledWith('source-b', 'signal-42', expect.any(Function), expect.any(AbortSignal))
+  })
+
   it('tries the next source when every title variant is empty', async () => {
     const search = vi.fn(async (sourceId: string) => ({
       items: sourceId === 'source-b' ? [candidate()] : [],

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { closeDb } from '../app/lib/persistence/indexedDb'
 import { browserSearchHistory } from '../app/lib/persistence/searchHistory'
 import { browserViewerData, isPlaybackComplete } from '../app/lib/persistence/viewer'
@@ -12,6 +12,19 @@ beforeEach(async () => {
 })
 
 describe('persistence store', () => {
+  it('can recover a storage connection after IndexedDB becomes available', async () => {
+    vi.stubGlobal('indexedDB', undefined)
+    try {
+      await expect(browserViewerData.getFavorites()).rejects.toThrow('IndexedDB is unavailable')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+
+    await browserViewerData.toggleFavorite({ id: 7, title: 'Recovered', cover: '', format: 'TV', averageScore: null })
+    await expect(browserViewerData.getFavorites()).resolves.toEqual([
+      expect.objectContaining({ id: 7, title: 'Recovered' }),
+    ])
+  })
   it('round-trips favorites and toggles them off', async () => {
     const media = { id: 1, title: 'Test Anime', cover: '', format: 'TV', averageScore: 80 }
     await expect(browserViewerData.toggleFavorite(media)).resolves.toBe(true)

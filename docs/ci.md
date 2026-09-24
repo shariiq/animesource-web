@@ -4,15 +4,15 @@ Continuous integration has two independent tracks. They share nothing at runtime
 
 ## Track 1 — `verify` (merge gate)
 
-`.github/workflows/verify.yml` runs on every push and pull request. It is fully deterministic: AniList and AniSource are replaced by `tests/e2e/mock-api.mjs`, including the manga source, chapter, and page responses used by the reader journey. Neither live service is ever contacted. A red run here means the commit is broken and blocks the merge.
+`.github/workflows/verify.yml` runs on pull requests and on pushes to `main`. It is fully deterministic: AniList and AniSource are replaced by `tests/e2e/mock-api.mjs`, including the manga source, chapter, and page responses used by the reader journey. Neither live service is ever contacted. A red run here means the commit is broken and blocks the merge.
 
 Three parallel jobs, Node 22.12.0. Bun and Playwright downloads are cached; Vitest and Playwright run side by side instead of back to back:
 
 - **`static`** — `bun run lint` (ESLint, zero warnings), `bun run typecheck` (strict TS), `bun run build` (Nitro `vercel` preset, emits `.vercel/output/`).
 - **`unit`** — `bun run test` (Vitest, jsdom, mocked transports).
-- **`e2e`** — Playwright Chromium install, `bun run e2e` (mocked Playwright). On failure it uploads `playwright-report/` and `test-results/` (traces, screenshots) as artifacts.
+- **`e2e`** — Playwright Chromium install, `bun run e2e` sharded 2 ways across parallel jobs (the suite is one serial spec file sharing a single mock API, so workers can't parallelize it — each shard boots its own mock API and dev server). On failure each shard uploads `playwright-report/` and `test-results/` (traces, screenshots) as artifacts.
 
-Runs are concurrency-canceled per ref, so a new push supersedes an in-progress run.
+Runs are concurrency-canceled per ref, so a new push supersedes an in-progress run. Pushes to `main` only verify the merged result; PR pushes run exactly once via the `pull_request` event instead of twice (once as `push`, once as `pull_request`).
 
 ## Track 2 — `live smoke` (operational)
 

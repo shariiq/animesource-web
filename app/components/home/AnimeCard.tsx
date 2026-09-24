@@ -17,10 +17,12 @@ export function AnimeCard(props: { anime: AniListMedia; mode?: CatalogMode; rank
     <CatalogLink
       media={props.anime}
       mode={mode()}
-      class="group editorial-row grid min-h-[152px] min-w-0 grid-cols-[76px_minmax(0,1fr)_32px] text-inherit no-underline sm:grid-cols-[112px_minmax(0,1fr)_46px]"
+      class="group editorial-row grid min-w-0 grid-cols-[96px_minmax(0,1fr)_36px] items-stretch text-inherit no-underline sm:grid-cols-[112px_minmax(0,1fr)_46px]"
       style={{ '--accent': accent() }}
     >
-      <div class="relative min-h-[152px] overflow-hidden bg-[var(--accent)] after:pointer-events-none after:absolute after:inset-0 after:shadow-cover-inset">
+      {/* Fixed 2/3 poster ratio: the cover never stretches with the row height,
+          so object-cover has nothing to crop on narrow viewports. */}
+      <div class="relative aspect-[2/3] w-full self-start overflow-hidden bg-[var(--accent)] after:pointer-events-none after:absolute after:inset-0 after:shadow-cover-inset">
         <Show when={props.rank !== undefined}>
           <span class="absolute left-[9px] top-[9px] z-[2] grid h-[27px] min-w-[27px] place-items-center rounded-[6px] border border-[rgb(255_255_255_/_0.3)] bg-[rgb(8_8_12_/_0.78)] px-1 font-mono text-[9px] font-medium text-white backdrop-blur-[8px]">
             {String(props.rank).padStart(2, '0')}
@@ -28,7 +30,7 @@ export function AnimeCard(props: { anime: AniListMedia; mode?: CatalogMode; rank
         </Show>
         <Show when={cover()}>
           <img
-            class="h-full w-full object-cover transition-transform duration-[550ms] ease-fluid group-hover:scale-[1.055]"
+            class="absolute inset-0 h-full w-full object-cover transition-transform duration-[550ms] ease-fluid group-hover:scale-[1.055]"
             src={cover()}
             alt={`${title()} cover`}
             loading="lazy"
@@ -37,7 +39,7 @@ export function AnimeCard(props: { anime: AniListMedia; mode?: CatalogMode; rank
         </Show>
       </div>
 
-      <div class="flex min-w-0 flex-col px-3 pb-[15px] pt-[16px] sm:px-[18px]">
+      <div class="flex min-w-0 flex-col px-3 pb-3 pt-3 sm:px-[18px] sm:pb-[15px] sm:pt-[16px]">
         <div class="flex min-w-0 flex-wrap items-center gap-x-[8px] gap-y-[4px] font-mono text-[9px] font-medium uppercase tracking-[.08em] text-text-muted">
           <Show when={props.anime.status}>
             <span class="inline-flex items-center gap-[5px] font-medium text-emerald"><i class="inline-block size-[5px] rounded-full bg-emerald" />{catalogStatus(mode(), props.anime.status)}</span>
@@ -49,7 +51,7 @@ export function AnimeCard(props: { anime: AniListMedia; mode?: CatalogMode; rank
           </Show>
         </div>
 
-        <h3 class="mb-[4px] mt-[8px] overflow-hidden text-ellipsis whitespace-nowrap text-[16px] font-bold leading-[1.2] tracking-[-.035em]">
+        <h3 class="mb-[4px] mt-[8px] line-clamp-2 overflow-hidden text-[15px] font-bold leading-[1.25] tracking-[-.02em] sm:text-[16px] sm:leading-[1.2] sm:tracking-[-.035em]">
           {title()}
         </h3>
         <Show when={nativeTitle() && nativeTitle() !== title()}>

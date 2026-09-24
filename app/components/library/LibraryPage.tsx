@@ -305,7 +305,7 @@ export function LibraryPage() {
 }
 
 function LibraryStat(props: { label: string; value: number }) {
-  return <div class="min-w-0 rounded-[12px] border border-white/80 bg-white/58 px-2.5 py-3 shadow-[0_12px_30px_-22px_rgb(0_0_0/.4)] sm:px-4"><dt class="mono-signal">{props.label}</dt><dd class="mt-1 font-display text-3xl leading-none sm:text-4xl">{props.value}</dd></div>
+  return <div class="min-w-0 rounded-[12px] border border-white/80 bg-white/58 px-2.5 py-3 tabular-nums shadow-[0_12px_30px_-22px_rgb(0_0_0/.4)] sm:px-4"><dt class="mono-signal">{props.label}</dt><dd class="mt-1 font-display text-2xl leading-none sm:text-4xl">{props.value}</dd></div>
 }
 
 function LibraryLoading() {

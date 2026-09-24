@@ -162,6 +162,9 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
             aria-hidden="true"
           />
           <div class="absolute inset-x-0 top-0 h-[300px] bg-[linear-gradient(90deg,rgb(255_255_255_/_0.92),rgb(250_250_253_/_0.5),rgb(250_250_253_/_0.1)),linear-gradient(0deg,rgb(250_250_253)_4%,transparent_100%)] sm:h-[430px]" aria-hidden="true" />
+          {/* Mobile-only top wash: narrow viewports lose the horizontal fade's
+              protection on the right side, so toolbar text needs its own cover. */}
+          <div class="absolute inset-x-0 top-0 h-[300px] bg-[linear-gradient(180deg,rgb(250_250_253_/_0.8),transparent_55%)] sm:hidden" aria-hidden="true" />
           <div class="relative z-10 flex flex-wrap justify-between gap-x-4 gap-y-1 border-b border-white/50 px-4 py-4 font-mono text-[9px] uppercase tracking-[.1em] text-[#42404b] sm:px-6">
             <Link class="hover:text-black" to="/">← Back to discovery</Link>
             <span>{formatStatus(props.anime.status) || 'Catalog'} · {formatEnum(props.anime.format) || 'Anime'}</span>

@@ -11,7 +11,7 @@ let dbConnection: IDBDatabase | null = null
 function openDb(): Promise<IDBDatabase> {
   if (dbConnection) return Promise.resolve(dbConnection)
   if (dbPromise) return dbPromise
-  dbPromise = new Promise((resolve, reject) => {
+  dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
       reject(new Error('IndexedDB is unavailable on the server.'))
       return
@@ -26,6 +26,11 @@ function openDb(): Promise<IDBDatabase> {
       resolve(request.result)
     }
     request.onerror = () => reject(request.error ?? new Error('Failed to open IndexedDB.'))
+  }).catch((error: unknown) => {
+    // A failed or unavailable database can become available later in the same tab.
+    // Keep concurrent callers on one attempt, but do not cache its rejection forever.
+    dbPromise = null
+    throw error
   })
   return dbPromise
 }

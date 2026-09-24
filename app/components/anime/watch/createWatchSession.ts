@@ -1089,7 +1089,7 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
       setSelectedSource(sourceId)
       await probeHealth(sourceId, operation)
       if (!current(operation)) return
-      await runMatch(sourceId, saved ?? undefined)
+      await runMatch(sourceId, saved?.sourceId === sourceId ? saved : undefined)
     } catch (cause) {
       if (current(operation)) setFailure(cause, 'sources')
     } finally {

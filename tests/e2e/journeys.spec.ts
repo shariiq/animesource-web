@@ -33,6 +33,49 @@ test("continuous reader keeps both progress controls aligned with scrolling", as
 test.describe("high-density mobile Reader", () => {
   test.use({ viewport: { width: 391, height: 844 }, deviceScaleFactor: 3, isMobile: true });
 
+  test("gap none joins short loaded webtoon slices without exposing their frames", async ({ page }) => {
+    await page.route("**/api/anisource/**", async (route) => {
+      const { pathname } = new URL(route.request().url());
+      if (pathname.endsWith("/pages/chapter-1")) {
+        await route.fulfill({ json: Array.from({ length: 12 }, (_, index) => ({
+          index, url: "/api/anisource/short-reader-page.svg", page_url: "",
+        })) });
+      } else if (pathname.endsWith("/short-reader-page.svg")) {
+        await route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="180"><rect width="720" height="180" fill="white"/></svg>' });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await page.goto("/manga/1/read/start?source=test");
+    await expect(page.getByRole("img", { name: "Test Manga, page 1" })).toBeVisible();
+    await page.locator('button[aria-controls="manga-reader-settings-sheet"]').click();
+    const settings = page.getByRole("dialog", { name: "Reader settings" });
+    await settings.getByRole("button", { name: "None", exact: true }).click();
+    await settings.getByRole("button", { name: "Close settings" }).click();
+
+    const scroll = page.locator(".manga-reader-scroll");
+    await scroll.locator('[data-page-index="7"]').scrollIntoViewIfNeeded();
+    await expect.poll(() => scroll.evaluate((element) => [7, 8].map((index) => {
+      const frame = element.querySelector<HTMLElement>(`[data-page-index="${index}"]`);
+      const image = frame?.querySelector<HTMLImageElement>("img");
+      return Boolean(frame?.classList.contains("is-loaded") && image?.complete && image.naturalWidth);
+    }))).toEqual([true, true]);
+
+    const edges = await scroll.evaluate((element) => {
+      const measure = (index: number) => {
+        const frame = element.querySelector<HTMLElement>(`[data-page-index="${index}"]`);
+        const image = frame?.querySelector<HTMLImageElement>("img");
+        if (!frame || !image) throw new Error("Expected adjacent loaded pages");
+        return { frame: frame.getBoundingClientRect().toJSON(), image: image.getBoundingClientRect().toJSON() };
+      };
+      return { previous: measure(7), next: measure(8) };
+    });
+    expect(edges.previous.frame.bottom - edges.previous.image.bottom).toBeLessThanOrEqual(1);
+    expect(edges.next.image.top - edges.next.frame.top).toBeLessThanOrEqual(1);
+    expect(edges.next.image.top).toBeLessThanOrEqual(edges.previous.image.bottom);
+  });
+
   test("gap none leaves no raster seam between pages in a long chapter", async ({ page }) => {
     await page.route("**/api/anisource/**", async (route) => {
       const { pathname } = new URL(route.request().url());

@@ -1,4 +1,4 @@
-import { createSignal, type Accessor } from 'solid-js'
+import { createSignal, untrack, type Accessor } from 'solid-js'
 import { AniSourceError } from '../../../data/anisource/client'
 import type {
   AniSourceManga,
@@ -233,6 +233,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   const scope = createCancellableScope()
   let prefetchController: AbortController | null = null
   let saveTimer: ReturnType<typeof setTimeout> | null = null
+  let progressSaveRevision = 0
   let persistenceWrite: Promise<void> = Promise.resolve()
   let settingsSaveRevision = 0
   let lastFailedOperation: MangaReaderError['operation'] | null = null
@@ -245,12 +246,17 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   const previousChapter = () => neighbors().previous
   const nextChapter = () => neighbors().next
 
-  function cancelActiveRequest(): void {
-    scope.cancelAll()
+  function cancelProgressSave(): void {
+    progressSaveRevision += 1
     if (saveTimer !== null) {
       clearTimeout(saveTimer)
       saveTimer = null
     }
+  }
+
+  function cancelActiveRequest(): void {
+    scope.cancelAll()
+    cancelProgressSave()
   }
 
   function beginRequest(): ScopeOperation {
@@ -345,28 +351,49 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
     }
   }
 
-  async function persistRecord(record: MangaReaderRecord | null): Promise<void> {
-    if (!record) return
+  function recordMatchesSelection(record: MangaReaderRecord): boolean {
+    return selectedSource() === record.sourceId && matchedManga()?.id === record.mangaId && selectedChapterId() === record.chapterId
+  }
+
+  function queueRecordSave(
+    record: MangaReaderRecord,
+    isCurrent: () => boolean,
+    onSaved: () => void,
+    errorRevision?: number,
+  ): Promise<void> {
     const write = persistenceWrite.then(async () => {
+      if (!isCurrent()) return
       try {
         await persistence.save(record)
-        setSavedRecord(record)
+        if (!isCurrent()) return
+        onSaved()
         setPersistenceError(null)
       } catch {
-        setPersistenceError('Reading progress could not be saved on this device.')
+        if (errorRevision === undefined || errorRevision === settingsSaveRevision) {
+          setPersistenceError('Reading progress could not be saved on this device.')
+        }
       }
     })
     persistenceWrite = write
-    await write
+    return write
+  }
+
+  async function persistRecord(record: MangaReaderRecord | null): Promise<void> {
+    if (!record) return
+    await queueRecordSave(record, () => untrack(() => recordMatchesSelection(record)), () => setSavedRecord(record))
   }
 
   function scheduleProgressSave(): void {
     const chapter = selectedChapter()
     if (!chapter) return
     if (saveTimer !== null) clearTimeout(saveTimer)
+    const chapterId = chapter.id
+    const revision = ++progressSaveRevision
     saveTimer = setTimeout(() => {
       saveTimer = null
-      void persistRecord(recordBase(chapter, currentPage(), false))
+      const current = selectedChapter()
+      if (revision !== progressSaveRevision || current?.id !== chapterId) return
+      void persistRecord(recordBase(current, currentPage(), false))
     }, 450)
   }
 
@@ -384,17 +411,19 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
             background: background(),
             gap: gap(),
             updatedAt: Date.now(),
-        }
+          }
         : null
     if (!record) return
     const revision = ++settingsSaveRevision
-    void persistence.save(record).then(() => {
-      if (revision !== settingsSaveRevision) return
-      setSavedRecord(record)
-      setPersistenceError(null)
-    }).catch(() => {
-      if (revision === settingsSaveRevision) setPersistenceError('Reading progress could not be saved on this device.')
-    })
+    void queueRecordSave(
+      record,
+      () => !chapter || untrack(() => recordMatchesSelection(record)),
+      () => {
+        if (revision !== settingsSaveRevision) return
+        setSavedRecord(record)
+      },
+      revision,
+    )
   }
 
   function resolveRouteChapterId(record: MangaReaderRecord | null): string | null {
@@ -410,6 +439,10 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   async function loadPages(chapterId: string, replaceRoute: boolean): Promise<void> {
     const source = selectedSource()
     if (!source) return
+    // Drop any debounced progress write for the previous chapter: the new
+    // chapter persists its own starting position below, and a late write must
+    // not overwrite it (progress belongs to the last-read chapter only).
+    cancelProgressSave()
     const request = beginRequest()
     setSelectedChapterId(chapterId)
     setPages([])
@@ -430,8 +463,14 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
         : 0
       setCurrentPage(resumeIndex)
       setStage('pages-ready')
-      if (replaceRoute) await options.navigateToChapter(String(selectedChapter()!.number), source, true)
-      await persistRecord(recordBase(selectedChapter()!, resumeIndex, false))
+      const current = selectedChapter()
+      if (!current || current.id !== chapterId) return
+      // Start the write before route replacement; a remount must not cancel the
+      // chapter's starting position before it reaches the persistence adapter.
+      const save = persistRecord(recordBase(current, resumeIndex, false))
+      if (replaceRoute) await options.navigateToChapter(String(current.number), source, true)
+      if (!isCurrent(request)) return
+      await save
       void prefetchNextChapter()
     } catch (caught) {
       if (!isCurrent(request)) return
@@ -537,6 +576,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   }
 
   async function initializeSource(sourceId: string, forceSearch: boolean, attemptedSources = new Set<string>()): Promise<void> {
+    cancelProgressSave()
     const record = savedRecord()
     clearPageCache()
     setSelectedSource(sourceId)
@@ -622,6 +662,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
   async function search(query: string): Promise<void> {
     const trimmed = query.trim()
     if (!trimmed || !selectedSource()) return
+    cancelProgressSave()
     await searchSource(selectedSource(), [trimmed, ...titleVariants(options.manga).map((variant) => variant.title)], savedRecord())
   }
 

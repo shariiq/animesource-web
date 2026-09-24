@@ -25,7 +25,7 @@ import {
   type MangaReaderLayout,
   type MangaReaderSession,
 } from './reader/createMangaReaderSession'
-import { createImageLoadQueue, type ImageLoadHandle } from './reader/imageLoadQueue'
+import { createImageLoadQueue, IMAGE_PRELOAD_PRIORITY, type ImageLoadHandle } from './reader/imageLoadQueue'
 
 interface MangaReaderPageProps {
   manga: AniListDetail
@@ -262,7 +262,16 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     const chapterId = session.selectedChapter()?.id ?? null
     if (chapterId === resetChapterId) return
     resetChapterId = chapterId
+    // A new chapter always starts from its own position (page 0 unless this
+    // exact chapter has saved progress). The scroll container is reused across
+    // chapters, so reset it synchronously: otherwise the stale scroll offset
+    // makes progress sync believe the new chapter is already at page 5.
+    restoredChapterId = null
     loadObserver?.disconnect()
+    if (scrollFrame !== null) {
+      cancelAnimationFrame(scrollFrame)
+      scrollFrame = null
+    }
     setPageNodes(new Map())
     setLoadRequested(new Set<number>())
     setFailedPages(new Set<number>())
@@ -272,22 +281,48 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     refreshPromise = null
     preloadedUrls.clear()
     imageLoadQueue.clear()
+    imageLoadQueue.setViewportIndex(session.currentPage())
+    scrollEl?.scrollTo({ top: 0 })
     queueMicrotask(() => {
+      // Keep the container pinned to the top until the new frames mount; the
+      // restore effect scrolls to a saved position when one exists.
+      scrollEl?.scrollTo({ top: 0 })
       setupLoadObserver()
-      syncContinuousProgress()
     })
   })
 
   // Restore the saved reading position once a chapter's pages are on screen.
+  // Each chapter restores at most once; a new chapter resets restoredChapterId
+  // (see the chapter-change effect above) so an unread chapter stays at page 0
+  // instead of inheriting the previous chapter's scroll offset.
   createEffect(() => {
     if (session.stage() !== 'pages-ready' || session.layout() !== 'continuous') return
     const chapterId = session.selectedChapter()?.id ?? null
     const index = session.currentPage()
+    // Subscribe to the mounted frames: the target node may not exist yet when
+    // pages first resolve, and marking it restored before scrolling would lose
+    // the resume position forever.
+    const nodes = pageNodes()
     if (!chapterId || restoredChapterId === chapterId || index <= 0) return
+    const node = nodes.get(index)
+    if (!node) return
     restoredChapterId = chapterId
+    // The resume target jumps the load queue so it paints first.
+    requestPageLoad(index)
+    imageLoadQueue.setViewportIndex(index)
     requestAnimationFrame(() => {
-      pageNodes().get(index)?.scrollIntoView({ block: 'start' })
+      if (session.selectedChapter()?.id !== chapterId) return
+      pageNodes().get(session.currentPage())?.scrollIntoView({ block: 'start' })
     })
+  })
+
+  // Keep image loading viewport-first: whenever the current page moves (scroll
+  // sync, scrubber, keyboard), the landing window is requested immediately and
+  // re-sorted to the front of the queue so a jump to page 150 does not wait
+  // behind sequential early-page loads.
+  createEffect(() => {
+    if (session.stage() !== 'pages-ready' || session.layout() !== 'continuous') return
+    ensureViewportWindow(session.currentPage())
   })
 
   // Mark a chapter complete when its final page is reached.
@@ -381,12 +416,16 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
 
   function syncContinuousProgress(): void {
     if (!scrollEl || session.layout() !== 'continuous' || pageCount() === 0) return
+    const nodes = pageNodes()
+    // Frames mount after pages resolve; with no measurements yet there is
+    // nothing to sync, and defaulting to 0 would clobber a resume position.
+    if (nodes.size === 0) return
     const root = scrollEl.getBoundingClientRect()
     const anchor = root.top + root.height * 0.32
     let activeIndex = 0
     let nearestDistance = Number.POSITIVE_INFINITY
 
-    for (const [index, node] of pageNodes()) {
+    for (const [index, node] of nodes) {
       const page = node.getBoundingClientRect()
       const distance = anchor < page.top ? page.top - anchor : anchor > page.bottom ? anchor - page.bottom : 0
       if (distance < nearestDistance || (distance === nearestDistance && index > activeIndex)) {
@@ -406,6 +445,21 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     })
   }
 
+  function ensureViewportWindow(center: number): void {
+    // A far jump (scrubber, End key, scrollIntoView) must paint where the
+    // viewer landed first: request the landing window immediately and move it
+    // to the front of the image queue instead of waiting for the observer to
+    // drift through every intermediate page.
+    const count = pageCount()
+    if (count === 0) return
+    const clamped = Math.max(0, Math.min(count - 1, Math.trunc(center)))
+    imageLoadQueue.setViewportIndex(clamped)
+    for (let offset = -1; offset <= 3; offset += 1) {
+      const index = clamped + offset
+      if (index >= 0 && index < count) requestPageLoad(index)
+    }
+  }
+
   function setupLoadObserver(): void {
     loadObserver?.disconnect()
     loadObserver = undefined
@@ -418,7 +472,18 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
       }
     }, { root: scrollEl, rootMargin: CONTINUOUS_PRELOAD_MARGIN, threshold: 0 })
     for (const node of pageNodes().values()) loadObserver.observe(node)
-    for (let index = 0; index < Math.min(CONTINUOUS_INITIAL_PAGES, pageCount()); index += 1) requestPageLoad(index)
+    // Start from where the viewer is (a resume position or page 0 for an
+    // unread chapter), not unconditionally from the first image.
+    const center = session.currentPage()
+    const count = pageCount()
+    imageLoadQueue.setViewportIndex(center)
+    for (let offset = -1; offset <= 1; offset += 1) {
+      const index = center + offset
+      if (index >= 0 && index < count) requestPageLoad(index)
+    }
+    if (count > 0 && loadRequested().size === 0) {
+      for (let index = 0; index < Math.min(CONTINUOUS_INITIAL_PAGES, count); index += 1) requestPageLoad(index)
+    }
   }
 
   function preloadImage(url: string): void {
@@ -435,7 +500,7 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
         complete()
       }
       image.src = url
-    })
+    }, { priority: IMAGE_PRELOAD_PRIORITY })
   }
 
   function registerPage(node: HTMLElement, index: number): void {
@@ -576,14 +641,21 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
 
   function handleScrubInput(event: InputEvent & { currentTarget: HTMLInputElement }): void {
     setPastEnd(false)
-    session.setPage(Number(event.currentTarget.value))
+    const index = Number(event.currentTarget.value)
+    session.setPage(index)
+    // In continuous mode the scrubber is a far jump: paint the landing window
+    // first instead of letting sequential early pages hold the queue.
+    if (!isPaged()) ensureViewportWindow(index)
     revealChrome()
   }
 
   function handleScrubChange(event: Event & { currentTarget: HTMLInputElement }): void {
     if (isPaged()) return
     const index = Number(event.currentTarget.value)
-    pageNodes().get(index)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    // Instant jump (not smooth): animating through 150 intermediate pages
+    // would flood the queue with sequential loads instead of the landing page.
+    ensureViewportWindow(index)
+    pageNodes().get(index)?.scrollIntoView({ block: 'start' })
   }
 
   // Re-arm the chrome auto-hide whenever the reading stage or sheets change.
@@ -1058,7 +1130,9 @@ function ReaderPageFrame(props: {
     loadKey = nextKey
     setLoaded(false)
     setArmed(false)
-    if (nextKey) loadHandle = props.loadQueue.enqueue(() => setArmed(true))
+    // Viewport-indexed so a far jump re-sorts this page ahead of sequential
+    // early pages instead of waiting behind them.
+    if (nextKey) loadHandle = props.loadQueue.enqueue(() => setArmed(true), { index: props.index })
   })
 
   onCleanup(() => loadHandle?.cancel())

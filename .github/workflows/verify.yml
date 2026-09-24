@@ -1,7 +1,12 @@
 name: Verify
 
 on:
+  # PR pushes run once via pull_request. Branch pushes without a PR run
+  # nothing; post-merge main pushes verify the result. Listing both events
+  # unfiltered runs the whole suite twice per PR push (once as "push", once
+  # as "pull_request"), doubling minutes with the browser job the costliest.
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -73,6 +78,14 @@ jobs:
     name: Browser tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The suite is a single serial spec file (tests share one mock API whose
+    # failure flag one journey toggles), so extra workers cannot parallelize
+    # it. Sharding splits the file across jobs that each boot their own mock
+    # API and dev server, roughly halving wall time instead.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -97,12 +110,14 @@ jobs:
       - name: Install Chromium and system dependencies
         run: bunx playwright install --with-deps chromium
       - name: Run mocked Playwright suite
-        run: bun run e2e
+        # --workers=1 keeps every test in the shard serial against its own
+        # mock API; the fail-AniList journey toggles server-global state.
+        run: bun run e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }} --workers=1
       - name: Upload browser failure artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-failure-${{ github.run_attempt }}
+          name: playwright-failure-shard-${{ matrix.shard }}-${{ github.run_attempt }}
           path: |
             playwright-report/
             test-results/

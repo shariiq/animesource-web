@@ -183,6 +183,35 @@ describe("Rail", () => {
 });
 
 describe("discovery metadata", () => {
+  it("matches the background color to the selected featured anime and clears it on exit", async () => {
+    const background = document.createElement("div");
+    background.className = "app-background";
+    document.body.append(background);
+    const first = media({
+      id: 1,
+      title: { romaji: "Blue signal", english: null, native: null },
+      bannerImage: "https://cdn.test/blue.jpg",
+      coverImage: { extraLarge: null, large: "https://cdn.test/blue-cover.jpg", medium: null, color: "#1abbd6" },
+    });
+    const second = media({
+      id: 2,
+      title: { romaji: "Amber signal", english: null, native: null },
+      bannerImage: "https://cdn.test/amber.jpg",
+      coverImage: { extraLarge: null, large: "https://cdn.test/amber-cover.jpg", medium: null, color: "#e4ae35" },
+    });
+    const { unmount } = render(() => <HeroCarousel items={[first, second]} />);
+
+    try {
+      await waitFor(() => expect(background.style.getPropertyValue("--featured-color")).toBe("#1abbd6"));
+      fireEvent.click(screen.getByRole("tab", { name: "Show Amber signal" }));
+      await waitFor(() => expect(background.style.getPropertyValue("--featured-color")).toBe("#e4ae35"));
+      unmount();
+      expect(background.style.getPropertyValue("--featured-color")).toBe("");
+    } finally {
+      background.remove();
+    }
+  });
+
   it("does not call airing, upcoming, hiatus or cancelled anime finished when no next episode is scheduled", () => {
     const items = [
       media({ id: 1, status: "RELEASING", bannerImage: "https://cdn.test/banner.jpg" }),

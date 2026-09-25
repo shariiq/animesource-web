@@ -31,7 +31,7 @@ const media = (id, title, type = "ANIME") => ({
     extraLarge: POSTER_URL,
     large: POSTER_URL,
     medium: null,
-    color: null,
+    color: type === "MANGA" ? "#1abbd6" : "#e4ae35",
   },
   bannerImage: null,
   averageScore: 80,

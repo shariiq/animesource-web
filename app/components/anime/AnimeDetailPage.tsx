@@ -1,11 +1,12 @@
 /* eslint-disable solid/no-innerhtml -- renderDescription sanitizes and escapes AniList text before this component renders it. */
-import { createMemo, createSignal, For, onMount, Show } from 'solid-js'
+import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js'
 import type { JSX } from 'solid-js'
 import { Link, useNavigate } from '@tanstack/solid-router'
 import type { AniListDetail } from '../../data/anilist/types'
 import { formatAniDate, formatCompactNumber, formatEnum, formatRank, formatScore, formatSeason, formatStatus, renderDescription, titleOf } from '../../lib/format'
 import { BROWSE_SEASONS, makeBrowseSearch, type BrowseSeason } from '../../lib/browse'
 import { FAVORITE_STATUSES } from '../../lib/library'
+import { syncAtmosphereColor } from '../../lib/atmosphere'
 import type { FavoriteStatus } from '../../lib/persistence/schema'
 import { viewerData } from '../../lib/persistence/active'
 import { CharacterRail } from './detail/CharacterRail'
@@ -97,6 +98,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
   const poster = createMemo(() => props.anime.coverImage?.extraLarge || props.anime.coverImage?.large || '')
   const banner = createMemo(() => props.anime.bannerImage || poster())
   const accent = createMemo(() => props.anime.coverImage?.color || '#7665e8')
+  createEffect(() => syncAtmosphereColor(props.anime.coverImage?.color))
   const titles = createMemo(() => getDetailTitles(props.anime))
   const studios = createMemo(() => getStudios(props.anime))
   const staff = createMemo(() => getStaffMembers(props.anime))

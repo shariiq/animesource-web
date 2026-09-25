@@ -1,8 +1,9 @@
-import { createMemo, createSignal, onCleanup, onMount, For, Show } from 'solid-js'
+import { createEffect, createMemo, createSignal, onCleanup, onMount, For, Show } from 'solid-js'
 import { Link } from '@tanstack/solid-router'
 import type { AniListMedia } from '../../data/anilist/types'
 import { formatCompactNumber, formatEnum, formatScore, titleOf } from '../../lib/format'
 import { catalogCopy, catalogCountLabel, catalogFormat, catalogStatus, type CatalogMode } from '../../lib/catalog'
+import { syncAtmosphereColor } from '../../lib/atmosphere'
 import { SectionHeading } from '../ui/SectionHeading'
 import { CatalogLink } from './CatalogLink'
 
@@ -22,6 +23,7 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
     return list.length ? list[activeIndex() % list.length] : undefined
   })
   const accent = () => active()?.coverImage?.color ?? '#6a5af9'
+  createEffect(() => syncAtmosphereColor(active()?.coverImage?.color))
   const titleParts = createMemo(() => {
     const title = titleOf(active())
     const match = title.match(/^(.+?)(\s*[:—-]\s*)(.+)$/)

@@ -164,11 +164,15 @@ test("tablet navigation stays in the header instead of covering content", async 
 
 test("mobile detail pages show the anime or manga identity before the cover", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const { route, title } of [{ route: "/anime/1", title: "Test Anime" }, { route: "/manga/1", title: "Test Manga" }]) {
+  for (const { route, title, color } of [
+    { route: "/anime/1", title: "Test Anime", color: "#e4ae35" },
+    { route: "/manga/1", title: "Test Manga", color: "#1abbd6" },
+  ]) {
     await page.goto(route);
     const heading = page.getByRole("heading", { name: title, exact: true });
     await expect(heading).toBeVisible();
     expect((await heading.boundingBox())?.y).toBeLessThan(844);
+    await expect.poll(() => page.locator(".app-background").evaluate((element) => (element as HTMLElement).style.getPropertyValue("--featured-color"))).toBe(color);
   }
 });
 
@@ -242,4 +246,4 @@ test("document policy exposes no API origin in ticketed mode", async ({ page }) 
   expect(policy).toContain("http://127.0.0.1:3101");
   // Default ticketed mode exposes no API origin to the browser.
   expect(policy).not.toContain("anisource");
-});
+});

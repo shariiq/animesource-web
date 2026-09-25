@@ -60,7 +60,7 @@ The current application is a **working anime discovery/watch and manga discovery
 - `[x]` Typed, versioned, Zod-validated IndexedDB persistence for favorites, continue-watching records, preferred source, and saved source matches.
 - `[x]` Typed, versioned, Zod-validated IndexedDB persistence for manga source matches, chapter/page position, layout, direction, and completion.
 - `[x]` Focused Vitest coverage and mocked vertical-slice Playwright coverage.
-- `[x]` Shared paper/ink/frosted material system, responsive route compositions, semantic controls, visible focus behavior, reduced-motion guidance, and updated design documentation.
+- `[x]` Shared UI components, responsive route layouts, semantic controls, visible focus behavior, and reduced-motion support.
 
 ### Partial or missing today
 
@@ -351,7 +351,6 @@ These are intentional sequencing decisions, not forgotten tasks:
 - **AniList genre artwork:** The current AniList genre collection returns names, not artwork. Do not invent genre imagery or add an unlicensed artwork source until there is a real source and a product decision.
 - **Multiple AniSource adapters:** The current transport seam is valuable for tests. Do not build a broader provider abstraction until a second materially different Source implementation is real.
 - **Community features:** Do not add comments, ratings, reviews, or social lists before identity, moderation, privacy, reporting, and deletion are designed.
-- **Large visual redesigns:** Prefer product capability, data-model, and reliability work while the current approved paper/ink/frosted system is coherent.
 - **Broad snapshot suites:** Prefer focused tests at module interfaces and real regression cases over snapshots that make visual change expensive without proving behavior.
 - **Skip-intro/outro:** AniSource currently exposes no reliable timing metadata. Do not render guessed markers; revisit this item when the upstream contract supports verified timings.
 

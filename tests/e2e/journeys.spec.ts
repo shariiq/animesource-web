@@ -331,16 +331,16 @@ test("an expired stream link exhausts recovery, then surfaces retry", async ({ p
   await page.goto("/anime/1/watch/next");
   await page.getByRole("button", { name: "Episode 1: Pilot" }).click();
   await page.getByRole("button", { name: "Broken server" }).click();
-  // The manifest is gone: the player reports the expired ticket, the session
-  // silently re-resolves within its recovery budget, and only then does the
-  // last-resort fallback request go out. The error banner that follows is
-  // terminal, so it is safe to assert once the fallback has been attempted.
+  // The manifest is gone: the player reports the expired ticket and the session
+  // silently re-resolves within its recovery budget. Expiry is per-ticket, so
+  // no origin overflow is consulted; the error banner that follows is terminal.
+  const fallbackRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/anisource/fallback")) fallbackRequests.push(request.url());
+  });
   await expect(page.locator(".player media-player")).toBeVisible();
-  await page.waitForResponse(
-    (response) => response.url().includes("/api/anisource/fallback"),
-    { timeout: 60_000 },
-  );
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("alert")).toBeVisible({ timeout: 60_000 });
+  expect(fallbackRequests).toEqual([]);
 });
 
 test("caption selection persists across reloads and renders cues", async ({ page }) => {

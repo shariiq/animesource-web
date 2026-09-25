@@ -12,7 +12,7 @@ import {
   type Accessor,
 } from 'solid-js'
 import { Link } from '@tanstack/solid-router'
-import { anisourceClient } from '../../data/anisource/client'
+import { ANISOURCE_OVERFLOW_BASE, ANISOURCE_PROXY_BASE, createAniSourceClient, warmOverflowOrigin } from '../../data/anisource/client'
 import type { AniListDetail } from '../../data/anilist/types'
 import { titleOf } from '../../lib/format'
 import type { ChapterPage, MangaChapter } from '../../data/anisource/schema'
@@ -38,6 +38,12 @@ interface MangaReaderPageProps {
 
 const CHROME_HIDE_DELAY_MS = 2_600
 const IMAGE_LOAD_CONCURRENCY = 2
+/**
+ * Overflow-capable gateway client, mirroring the Watch page: the primary
+ * origin serves until measured latency or origin-health failures move a
+ * session to the overflow deployment under `/fallback`.
+ */
+const readerApi = createAniSourceClient({ baseUrl: ANISOURCE_PROXY_BASE, overflowBaseUrl: ANISOURCE_OVERFLOW_BASE })
 const CONTINUOUS_INITIAL_PAGES = 2
 const CONTINUOUS_PRELOAD_MARGIN = '1400px 0px'
 const PAGED_PRELOAD_AHEAD = 3
@@ -132,7 +138,7 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
     manga: props.manga,
     routeChapterNumber: props.routeChapterNumber,
     sourceSearchParam: props.sourceSearchParam,
-    api: anisourceClient,
+    api: readerApi,
     navigateToChapter: props.navigateToChapter,
   })
 
@@ -177,6 +183,7 @@ export function MangaReaderPage(props: MangaReaderPageProps) {
 
   onMount(() => {
     void session.initialize()
+    warmOverflowOrigin()
 
     const previousHtmlOverflow = document.documentElement.style.overflow
     const previousBodyOverflow = document.body.style.overflow

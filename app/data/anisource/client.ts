@@ -1,6 +1,16 @@
 import { z } from 'zod'
 import { normalizeApiUrl } from '../../config/api'
 import {
+  createOriginRoutingState,
+  isFailFastPath,
+  isSwitchableFailure,
+  otherOrigin,
+  pickOrigin,
+  recordOriginCall,
+  type OriginRoutingState,
+  type RoutingOrigin,
+} from '../../lib/source-session/originRouting'
+import {
   healthResponseSchema,
   chapterPageSchema,
   mangaChapterSchema,
@@ -20,6 +30,30 @@ import {
 } from './schema'
 
 export const ANISOURCE_PROXY_BASE = '/api/anisource'
+
+/** Same-origin gateway prefix of the overflow deployment. */
+export const ANISOURCE_OVERFLOW_BASE = '/api/anisource/fallback'
+
+/** At most one overflow warm per browser tab per window: warming is best-effort upkeep, not tracking. */
+const OVERFLOW_WARM_THROTTLE_MS = 5 * 60_000
+let lastOverflowWarmAt = 0
+
+/**
+ * Best-effort wake-up for a sleeping overflow deployment, fired once per
+ * streaming-page visit. Same-origin gateway call, so no upstream host or
+ * credential enters the browser bundle; failures are swallowed because a
+ * cold origin is handled honestly by the routing policy when it matters.
+ * Call only from a mounted session (`onMount`); never from loaders or
+ * shared layouts.
+ */
+export function warmOverflowOrigin(now: number = Date.now()): void {
+  if (now - lastOverflowWarmAt < OVERFLOW_WARM_THROTTLE_MS) return
+  lastOverflowWarmAt = now
+  // A bare client on purpose: the warm-up is upkeep, not user traffic, so it
+  // must not pollute the routed client's latency statistics.
+  const warm = createAniSourceClient({ baseUrl: ANISOURCE_OVERFLOW_BASE })
+  void warm.health().catch(() => undefined)
+}
 
 /** A slow first response beyond this delay is surfaced as a probable cold start. */
 export const AS_COLD_START_DELAY_MS = 4_500
@@ -91,7 +125,16 @@ const defaultTransport: AniSourceTransport = {
 
 export interface AniSourceClientOptions {
   baseUrl?: string
+  /**
+   * Same-origin gateway prefix of the overflow deployment (e.g.
+   * `/api/anisource/fallback`). When set, switchable origin-health failures
+   * get one bounded alternate attempt there; everything else behaves exactly
+   * as a single-origin client.
+   */
+  overflowBaseUrl?: string
   fetchTimeoutMs?: number
+  /** Clock for routing windows; defaults to Date.now. Tests inject fake time. */
+  clock?: () => number
   transport?: Partial<AniSourceTransport>
 }
 
@@ -105,6 +148,10 @@ export type AniSourceCatalog = 'anime' | 'manga'
 export function createAniSourceClient(options: AniSourceClientOptions = {}) {
   const transport: AniSourceTransport = { ...defaultTransport, ...options.transport }
   const baseUrl = normalizeApiUrl(options.baseUrl ?? ANISOURCE_PROXY_BASE)
+  const overflowUrl = options.overflowBaseUrl ? normalizeApiUrl(options.overflowBaseUrl) : null
+  const routed = overflowUrl !== null && overflowUrl !== baseUrl
+  const routing: OriginRoutingState | null = routed ? createOriginRoutingState() : null
+  const clock = options.clock ?? (() => Date.now())
   const timeoutMs = options.fetchTimeoutMs ?? AS_FETCH_TIMEOUT_MS
 
   async function request<T>(
@@ -115,23 +162,38 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
   ): Promise<T> {
     if (!baseUrl) throw new AniSourceError('AniSource base URL is not configured.', 'invalid')
 
-    const controller = new AbortController()
     let callerAborted = signal?.aborted ?? false
+    let attemptController: AbortController | null = null
     const abortFromCaller = () => {
       callerAborted = true
-      controller.abort()
+      attemptController?.abort()
     }
     if (signal) {
-      if (signal.aborted) controller.abort()
+      if (signal.aborted) callerAborted = true
       else signal.addEventListener('abort', abortFromCaller, { once: true })
     }
-    const timeout = transport.setTimeout(() => controller.abort(), timeoutMs)
-    const slowTimer = onSlow ? transport.setTimeout(onSlow, AS_COLD_START_DELAY_MS) : null
-    try {
-      const response = await transport.fetch(baseUrl + path, {
-        signal: controller.signal,
-        headers: { Accept: 'application/json' },
-      })
+
+    async function fetchAndParse(url: string, attemptSignal: AbortSignal): Promise<T> {
+      let response: Response
+      try {
+        response = await transport.fetch(url, {
+          signal: attemptSignal,
+          headers: { Accept: 'application/json' },
+        })
+      } catch (error) {
+        if (error instanceof AniSourceError) throw error
+        if (error instanceof Error && error.name === 'AbortError') {
+          if (callerAborted) throw new AniSourceError('The streaming request was cancelled.', 'cancelled')
+          throw new AniSourceError(
+            'The streaming backend took too long to respond. It may still be waking up — try again in a moment.',
+            'timeout',
+          )
+        }
+        throw new AniSourceError(
+          "Couldn't reach the streaming backend. Check your connection, or it may be waking up from sleep.",
+          'network',
+        )
+      }
 
       if (!response.ok) {
         let detail = ''
@@ -169,22 +231,58 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
         )
       }
       return parsed.data
-    } catch (error) {
-      if (error instanceof AniSourceError) throw error
-      if (error instanceof Error && error.name === 'AbortError') {
-        if (callerAborted) throw new AniSourceError('The streaming request was cancelled.', 'cancelled')
-        throw new AniSourceError(
-          'The streaming backend took too long to respond. It may still be waking up — try again in a moment.',
-          'timeout',
-        )
+    }
+
+    try {
+      const skipAlternate = routing ? isFailFastPath(routing, clock()) : false
+      const first = routing ? pickOrigin(routing, clock()) : 'primary'
+      const order: RoutingOrigin[] = routing ? [first, otherOrigin(first)] : ['primary']
+      const overflowBase = overflowUrl ?? baseUrl
+      for (const [attempt, origin] of order.entries()) {
+        if (callerAborted || signal?.aborted) {
+          throw new AniSourceError('The streaming request was cancelled.', 'cancelled')
+        }
+        const base = origin === 'primary' ? baseUrl : overflowBase
+        let slowFired = false
+        attemptController = new AbortController()
+        if (callerAborted) attemptController.abort()
+        const timeout = transport.setTimeout(() => attemptController?.abort(), timeoutMs)
+        const slowTimer = onSlow || routing
+          ? transport.setTimeout(() => {
+            slowFired = true
+            onSlow?.()
+          }, AS_COLD_START_DELAY_MS)
+          : null
+        try {
+          const result = await fetchAndParse(base + path, attemptController.signal)
+          if (routing) {
+            recordOriginCall(routing, { origin, ok: true, slow: slowFired, kind: null, aborted: false }, clock())
+          }
+          return result
+        } catch (error) {
+          const aborted = callerAborted || signal?.aborted || false
+          const kind = error instanceof AniSourceError ? error.kind : null
+          const status = error instanceof AniSourceError ? error.status : undefined
+          if (routing) {
+            recordOriginCall(routing, { origin, ok: false, slow: slowFired, kind, status, aborted }, clock())
+          }
+          const mayAlternate = routing !== null &&
+            attempt === 0 &&
+            !aborted &&
+            !skipAlternate &&
+            error instanceof AniSourceError &&
+            isSwitchableFailure(error.kind, error.status)
+          if (!mayAlternate) throw error
+          // The policy already moved `active` to the alternate origin; the
+          // next iteration serves the single bounded retry there.
+        } finally {
+          transport.clearTimeout(timeout)
+          if (slowTimer !== null) transport.clearTimeout(slowTimer)
+        }
       }
-      throw new AniSourceError(
-        "Couldn't reach the streaming backend. Check your connection, or it may be waking up from sleep.",
-        'network',
-      )
+      // Unreachable: every iteration returns or throws.
+      throw new AniSourceError('The AniSource request could not be completed.', 'network')
     } finally {
-      transport.clearTimeout(timeout)
-      if (slowTimer !== null) transport.clearTimeout(slowTimer)
       signal?.removeEventListener('abort', abortFromCaller)
     }
   }

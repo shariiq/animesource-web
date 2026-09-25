@@ -7,7 +7,7 @@ import {
   Switch,
 } from 'solid-js'
 import { Link, useLocation, useNavigate, useParams } from '@tanstack/solid-router'
-import { anisourceClient, createAniSourceClient } from '../../data/anisource/client'
+import { ANISOURCE_OVERFLOW_BASE, ANISOURCE_PROXY_BASE, createAniSourceClient, warmOverflowOrigin } from '../../data/anisource/client'
 import type { AniListDetail } from '../../data/anilist/types'
 import { titleVariants } from '../../data/matching'
 import { viewerData } from '../../lib/persistence/active'
@@ -22,14 +22,14 @@ import { ServerPicker } from './watch/ServerPicker'
 import { LazyPlayer } from './watch/LazyPlayer'
 import { MatchPicker } from './watch/MatchPicker'
 
-const watchApi: WatchSourceClient = anisourceClient
-const watchPersistence: WatchPersistence = viewerData
 /**
- * Last-resort origin, resolved through the same gateway under `/fallback`.
- * The session warms it after the first expired link and only serves streams
- * from it once the primary recovery budget is exhausted.
+ * Overflow-capable gateway client: the primary origin serves until measured
+ * latency or origin-health failures move a session to the overflow
+ * deployment, which shares the same gateway under `/fallback`. Media tickets
+ * stay origin-bound either way, so no session state changes on a switch.
  */
-const fallbackApi: WatchSourceClient = createAniSourceClient({ baseUrl: '/api/anisource/fallback' })
+const watchApi: WatchSourceClient = createAniSourceClient({ baseUrl: ANISOURCE_PROXY_BASE, overflowBaseUrl: ANISOURCE_OVERFLOW_BASE })
+const watchPersistence: WatchPersistence = viewerData
 
 /**
  * Client-only streaming flow. AniList detail data is passed from the route
@@ -55,7 +55,6 @@ export function WatchPage(props: { anime: AniListDetail }) {
     fromSchedule,
     api: watchApi,
     persistence: watchPersistence,
-    fallbackApi,
     navigateToEpisode: async (episodeId, sourceId) => {
       await navigate({
         to: '/anime/$animeId/watch/$episodeId',
@@ -70,6 +69,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
 
   onMount(() => {
     void session.initialize()
+    warmOverflowOrigin()
   })
   onCleanup(session.dispose)
 

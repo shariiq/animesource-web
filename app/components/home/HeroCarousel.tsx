@@ -12,7 +12,9 @@ const MAX_SLIDES = 6
 export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode }) {
   const mode = () => props.mode ?? 'ANIME'
   const copy = () => catalogCopy[mode()]
-  const slides = () => props.items.filter((media) => media.bannerImage || media.coverImage?.extraLarge).slice(0, MAX_SLIDES)
+  // Memoized: the unfiltered prop list is re-filtered on every slide change,
+  // timer tick, and tab render otherwise (filter + slice per accessor call).
+  const slides = createMemo(() => props.items.filter((media) => media.bannerImage || media.coverImage?.extraLarge).slice(0, MAX_SLIDES))
   const [activeIndex, setActiveIndex] = createSignal(0)
   const [paused, setPaused] = createSignal(false)
   const active = createMemo(() => {
@@ -44,9 +46,21 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
   })
   let timer: ReturnType<typeof setInterval> | undefined
 
+  const prefersReducedMotion = () =>
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
   const restart = () => {
     clearInterval(timer)
+    // Reduced-motion viewers get a static hero: autoplay is the motion being
+    // reduced, and manual tabs remain fully operable.
+    if (prefersReducedMotion()) return
     timer = setInterval(() => {
+      // A hidden tab must not advance (or restart) the carousel: without this
+      // guard the slide changes while nobody watches and the viewer returns
+      // to an unexpected headline.
+      if (typeof document !== 'undefined' && document.hidden) return
       if (!paused() && slides().length > 1) setActiveIndex((index) => (index + 1) % slides().length)
     }, SLIDE_INTERVAL_MS)
   }
@@ -91,9 +105,12 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
                   classList={{ 'opacity-100': index() === activeIndex(), 'opacity-0': index() !== activeIndex() }}
                   src={image(media)}
                   alt=""
+                  aria-hidden="true"
                   loading={index() === activeIndex() ? 'eager' : 'lazy'}
                   fetchpriority={index() === activeIndex() ? 'high' : 'low'}
                   decoding="async"
+                  draggable={false}
+                  sizes="100vw"
                 />
               )}
             </For>

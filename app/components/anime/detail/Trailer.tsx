@@ -16,6 +16,7 @@ export function Trailer(props: { trailer: { id: string; site?: string | null; th
           <iframe
             title="Trailer"
             src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(props.trailer?.id ?? '')}?autoplay=1&rel=0`}
+            loading="lazy"
             allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
             allowfullscreen
           />
@@ -23,7 +24,7 @@ export function Trailer(props: { trailer: { id: string; site?: string | null; th
           <Show when={props.trailer?.thumbnail} fallback={<button type="button" onClick={() => setPlaying(true)} aria-label="Play trailer">▶</button>}>
             <button type="button" onClick={() => setPlaying(true)} aria-label="Play trailer">
               <Show when={props.trailer?.thumbnail}>
-                <img src={props.trailer?.thumbnail ?? ''} alt="" loading="lazy" />
+                <img src={props.trailer?.thumbnail ?? ''} alt="" loading="lazy" decoding="async" />
               </Show>
               <span class="trailer-play">▶</span>
             </button>

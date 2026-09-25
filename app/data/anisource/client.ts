@@ -143,13 +143,15 @@ export interface AniSourceClientOptions {
 export type AniSourceCatalog = 'anime' | 'manga'
 
 /**
- * True for the operations whose responses mint media-byte URLs (segment and
- * playlist capabilities, reader images). Identifiers are encoded before they
- * reach here, so a literal `/streams/` or `/pages/` segment can only be the
- * operation itself.
+ * True for the operations whose responses mint video-byte URLs (segment and
+ * playlist capabilities). Video is bulk bandwidth, so it prefers the
+ * overflow deployment; manga pages stay on primary because small,
+ * latency-sensitive images suffer more from a sleepy origin than they cost
+ * in bytes. Identifiers are encoded before they reach here, so a literal
+ * `/streams/` segment can only be the operation itself.
  */
-export function isMediaResolvingPath(path: string): boolean {
-  return path.includes('/streams/') || path.includes('/pages/')
+export function isVideoResolvingPath(path: string): boolean {
+  return path.includes('/streams/')
 }
 
 /**
@@ -161,11 +163,11 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
   const baseUrl = normalizeApiUrl(options.baseUrl ?? ANISOURCE_PROXY_BASE)
   const overflowUrl = options.overflowBaseUrl ? normalizeApiUrl(options.overflowBaseUrl) : null
   const routed = overflowUrl !== null && overflowUrl !== baseUrl
-  // Catalog metadata stays on primary; operations that mint media-byte URLs
-  // (streams, manga pages) prefer overflow so video bandwidth leaves the
-  // primary deployment. Each class converges independently.
+  // Catalog metadata and manga pages stay on primary; video operations
+  // prefer overflow so bulk bandwidth leaves the primary deployment. Each
+  // class converges independently.
   const catalogRouting: OriginRoutingState | null = routed ? createOriginRoutingState('primary') : null
-  const mediaRouting: OriginRoutingState | null = routed ? createOriginRoutingState('overflow') : null
+  const videoRouting: OriginRoutingState | null = routed ? createOriginRoutingState('overflow') : null
   const clock = options.clock ?? (() => Date.now())
   const timeoutMs = options.fetchTimeoutMs ?? AS_FETCH_TIMEOUT_MS
 
@@ -253,8 +255,8 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
 
     try {
       let routing: OriginRoutingState | null = null
-      if (routed && mediaRouting && catalogRouting) {
-        routing = isMediaResolvingPath(path) ? mediaRouting : catalogRouting
+      if (routed && videoRouting && catalogRouting) {
+        routing = isVideoResolvingPath(path) ? videoRouting : catalogRouting
       }
       const skipAlternate = routing ? isFailFastPath(routing, clock()) : false
       const first = routing ? pickOrigin(routing, clock()) : 'primary'

@@ -47,10 +47,10 @@ The website server streams signed images, captions, and video bytes so the brows
 ## Fallback origin
 
 `ANISOURCE_FALLBACK_BASE` points at a second API deployment that acts as the
-overflow origin (see ADR 0005): catalog operations serve from the primary
-origin while media-resolving operations (streams, manga pages) prefer the
-overflow deployment, keeping video bandwidth off primary. Either class moves
-on measured latency or origin-health failures.
+overflow origin (see ADR 0005): catalog operations and manga pages serve
+from the primary origin while video operations (streams) prefer the
+overflow deployment, keeping bulk video bandwidth off primary. Either class
+moves on measured latency or origin-health failures.
 Media tickets stay origin-bound either way, so a switch never disturbs
 in-flight playback or reading. Without the variable the shared default in
 `config/api-urls.json` applies; set it empty to disable the overflow

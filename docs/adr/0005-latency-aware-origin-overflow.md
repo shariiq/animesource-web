@@ -24,8 +24,11 @@ never per request.
    state. Watch and Reader sessions pass the overflow client through their
    existing `api` option unchanged.
 2. Learn only from real outcomes: the existing cold-start signal marks slow
-   calls, and only origin-health failures (timeout, network, 502/503/504)
-   switch origins. Expired tickets, rejected routes, throttling,
+   calls, and only origin-health failures switch origins — timeouts,
+   dropped connections, and 502/503/504 responses, including 5xx the
+   gateway labels `invalid` (unparseable upstream means the origin answered
+   with garbage, not that the request was wrong). Expired tickets,
+   rejected routes, throttling,
    credential outages, and cancellations never switch — rate limits apply
    per session regardless of origin, and both deployments share one
    service token (a shared-token outage homes traffic to primary).
@@ -41,10 +44,11 @@ never per request.
    re-extracts, so the fallback re-extract added only deployment diversity
    at the cost of a second code path. The content-source `fallbackSource`
    picker is unrelated and stays.
-5. Prefer per operation class, not per deployment: catalog metadata stays on
-   primary while operations that mint media-byte URLs (streams, manga
-   reader pages) prefer overflow, keeping video bandwidth off the primary
-   deployment. Each class converges its own routing state with identical
+5. Prefer per operation class, not per deployment: catalog metadata and
+   manga pages stay on primary while video operations (streams) prefer
+   overflow, keeping bulk video bandwidth off the primary deployment
+   without subjecting small latency-sensitive images to a sleepy origin.
+   Each class converges its own routing state with identical
    mechanics; the exiled preferred origin of either class is probed back
    on the same window.
 

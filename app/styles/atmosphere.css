@@ -5,13 +5,15 @@
   overflow: hidden;
   pointer-events: none;
   background:
-    radial-gradient(120% 90% at 78% -8%, rgb(255 255 255) 0 18%, transparent 62%),
-    radial-gradient(circle at 30% 8%, rgb(253 253 255) 0 22%, transparent 60%),
-    linear-gradient(178deg, #fbfbfe 0%, #f4f4fa 46%, #f8f7fb 78%, #fdfdfe 100%);
+    linear-gradient(180deg, rgb(255 255 255 / .9) 0%, rgb(255 255 255 / 0) 30%),
+    linear-gradient(0deg, rgb(222 222 228 / .55) 0%, rgb(222 222 228 / 0) 24%),
+    #f2f2f4;
 }
 
-/* Deep ink masses: the stark-contrast counterweight that makes the glass
-   read as optically thick material instead of a white wash. */
+/* Deep ink masses: the stark-contrast counterweight that keeps paper from
+   washing out. Two monochrome masses only — the old multi-blob aurora field
+   is gone, so depth comes from shadow and tooth the way Nothing's dark
+   product voids anchor their light canvas. */
 @utility atmospheric-ink {
   position: absolute;
   width: 58vw;
@@ -38,11 +40,6 @@
   animation: atmosphere-drift 42s var(--ease) infinite alternate-reverse;
 }
 
-/* The paper field carries its own depth from ink and light alone. The old
-   aurora blooms (plum, violet, mint, orange) were retired: four colored
-   gradients drifting behind every route is what made the background read as
-   generic SaaS atmosphere instead of paper. */
-
 @utility atmospheric-light {
   position: absolute;
   width: 50vw;
@@ -62,24 +59,25 @@
   z-index: 1;
   inset: 0;
   pointer-events: none;
-  opacity: .5;
-  background-image: radial-gradient(rgb(6 6 9 / .16) 1px, transparent 1.4px);
-  background-size: 26px 26px;
+  opacity: .42;
+  background-image: radial-gradient(rgb(6 6 9 / .14) 1px, transparent 1.3px);
+  background-size: 24px 24px;
   -webkit-mask-image: radial-gradient(120% 100% at 50% 40%, transparent 30%, rgb(0 0 0 / .55) 78%, rgb(0 0 0) 100%);
   mask-image: radial-gradient(120% 100% at 50% 40%, transparent 30%, rgb(0 0 0 / .55) 78%, rgb(0 0 0) 100%);
 }
 
+/* Paper tooth: one fine fractal-grain tile at whisper opacity over the whole
+   document. This is the texture Nothing gets from print-like grain — no
+   multiply blending, no speckle layer, just tooth. */
 @utility film-grain {
   position: fixed;
   z-index: 50;
   inset: 0;
   pointer-events: none;
-  opacity: .34;
-  mix-blend-mode: multiply;
+  opacity: .55;
   background-image:
-    radial-gradient(rgb(0 0 0 / .12) .55px, transparent .7px),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.07'/%3E%3C/svg%3E");
-  background-size: 6px 6px, 180px 180px;
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.06'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
 }
 
 @keyframes atmosphere-drift {
@@ -87,9 +85,8 @@
   to { transform: translate3d(-4vw, 3vw, 0) scale(1.06); }
 }
 
-/* Small viewports paint the same field with fewer, softer layers: full-size
-   blurs this large stall scrolling on mobile GPUs, so the two smallest
-   blooms retire and the survivors halve their blur. */
+/* Small viewports paint the same field softer: full-size blurs this large
+   stall scrolling on mobile GPUs. */
 @media (max-width: 780px) {
   .atmospheric-ink,
   .atmospheric-depth,
@@ -100,6 +97,6 @@
 
   .atmospheric-ink { opacity: .36; }
   .atmospheric-depth { opacity: .32; }
-  .dot-grid { opacity: .32; }
-  .film-grain { opacity: .2; }
+  .dot-grid { opacity: .28; }
+  .film-grain { opacity: .35; }
 }

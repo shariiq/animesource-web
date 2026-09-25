@@ -11,7 +11,7 @@ AnimeSource uses Tailwind CSS v4 through the official `@tailwindcss/vite` plugin
 The accepted visual language is a **stark editorial and liquid-glass material system** characterized by:
 
 - **Maximum stark minimalist contrast**: E.g. Crisp ink (`--ink: #09090b`) against luminous paper (`--paper: #f8f8fa`) and canvas (`#fafafd`), anchored by razor-sharp hairlines and high-contrast typography.
-- **Liquid glass depth and exceptional polish**: Heavy optical refraction through frosted glass (`backdrop-filter: blur(54px) saturate(180%)`), white specular edge highlights (`inset 0 1.5px rgb(255 255 255)`), layered ambient shadows (`--shadow-glass`), and tactile multi-layer atmospheric depth with subtle static film grain.
+- **Papery matte surfaces, glass only where it earns it**: Opaque paper fills (`--surface-panel: #fcfcfd`), ink hairlines, and soft diffused shadow carry every component. Backdrop refraction survives only on small floating signatures — the compact header shell, the mobile tab bar, image-led chips — never on page panels, rows, cards, or controls.
 - **British industrial minimalism (inspired by nothing.tech)**: Transparent structural layers, raw monospace signal instrumentation (`DM Mono`), dot-matrix precision, and stark monochromatic discipline punctuated by deliberate accent pops.
 - **High-density, super-responsive components (inspired by comick.dev and MangaDex)**: Dense, beautifully articulated catalog metadata, fluid multi-rail discovery, comprehensive character/staff/relation graphs, instantaneous client-side search, and frictionless responsive layouts from mobile (390px) to ultra-wide desktop.
 - **Niche semantic accent coloring**: Purposeful, vibrant accent roles (`violet`, `plum`, `mint`, `acid`, `orange`, `emerald` etc ) used with surgical restraint rather than overwhelming full-screen tints.
@@ -96,23 +96,23 @@ The font fallbacks in `theme.css` are required: Georgia for display, `system-ui`
 
 ## Liquid glass, material, and depth
 
-The liquid-glass effect is a defining identity layer, not a generic blur preset. It creates the impression of optically thick, luminous material through coordinated translucency, backdrop refraction, saturation, white edge speculars, nested surface opacity, ambient shadow, and the atmospheric color field visible behind it. Blur alone is insufficient.
+Glass is a signature accent, not the default material. Components read as matte paper — opaque fills, ink hairlines, soft shadow — because frosted-everything is what makes interfaces read as generic SaaS. The header shell, floating tab bar, and chips over artwork keep their refraction; everything a viewer reads (panels, rows, cards, fields, rails) is paper.
 
-Glass remains materially credible because foreground content is extremely sharp: ink typography, hairlines, icons, and controls preserve maximum contrast while the field behind them diffuses. Nested surfaces must establish a clear optical hierarchy rather than stacking indistinguishable translucent rectangles. Depth comes from translucency, edge light, and restrained shadow rather than chrome bevels or heavy gradients.
+Paper stays credible because the canvas behind it has tooth: a flat `#f2f2f4` field, one fine fractal-grain tile, and the dot-matrix registration layer. Depth comes from hairlines and restrained shadow rather than translucency.
 
 ### Surface tokens
 
-- `--surface-panel: rgb(255 255 255 / .64)` — general translucent panels.
-- `--surface-control: rgb(255 255 255 / .78)` — higher-opacity interactive controls.
-- `--surface-soft: rgb(255 255 255 / .48)` — quiet rows and nested surfaces.
+- `--surface-panel: #fcfcfd` — opaque panel fill.
+- `--surface-control: #ffffff` — opaque interactive controls.
+- `--surface-soft: #f4f4f6` — quiet rows and nested surfaces.
 - `--shadow-panel: 0 28px 80px -50px rgb(0 0 0 / .35)` — restrained panel lift.
-- `--shadow-glass: 0 38px 110px -40px rgb(0 0 0 / .38), inset 0 1.5px rgb(255 255 255)` — large frosted shell depth and top-edge light.
+- `--shadow-glass: 0 38px 110px -40px rgb(0 0 0 / .38), inset 0 1.5px rgb(255 255 255)` — header shell and floating signatures only.
 
 ### Surface recipes
 
-- `frosted-shell` is the large foreground container: a `26px` shell radius, high-opacity white edge, translucent fill, `blur(54px) saturate(180%)`, and `--shadow-glass`.
-- `material-panel` is the nested panel: a `22px` radius, `--surface-panel`, `blur(40px) saturate(170%)`, restrained lift, and a fine inset white highlight.
-- `editorial-row` is a low-depth repeating item. It uses `--surface-soft`, a bottom hairline, and only a small hover lift.
+- `frosted-shell` is the compact header signature: high-opacity white edge, translucent fill, `blur(64px) saturate(200%)`, and `--shadow-glass`. It is the exception, not the rule.
+- `material-panel` is the paper panel: a `22px` radius, opaque `--surface-panel`, ink hairline, restrained lift, and a fine inset white highlight. No backdrop blur.
+- `editorial-row` is a low-depth repeating item on `--surface-soft` grey with a bottom hairline, lifting to white on hover.
 - Image-led surfaces may use a localized scrim or more opaque nested surface to protect text. Do not dim or wash the entire artwork when a local treatment is sufficient.
 
 Material effects are progressive enhancement. Content order, contrast, and separation must remain understandable when backdrop filtering is unavailable.
@@ -136,12 +136,12 @@ Do not override standard control heights (e.g. `h-9` or `h-8`) with ad-hoc utili
 
 ## Atmospheric composition
 
-The background is an application-wide field, not content and not a per-route hero treatment:
+The background is a flat paper canvas with tooth, not content and not a per-route hero treatment:
 
-- `app-background` supplies the fixed luminous radial paper field.
-- `atmospheric-ink` creates the large dark upper-right depth field.
-- `atmospheric-depth` anchors the lower composition.
-- `film-grain` combines a fine radial speckle and embedded SVG fractal turbulence at `0.36` opacity with `mix-blend-mode: multiply`.
+- `app-background` supplies the fixed `#f2f2f4` field with a whisper of top light.
+- `atmospheric-ink` and `atmospheric-depth` are the only two monochrome shadow masses keeping the paper from washing out.
+- `film-grain` is a single fine fractal-grain tile at whisper opacity — tooth, not speckle.
+- `dot-grid` keeps the dot-matrix registration layer at the viewport edges.
 
 Every atmospheric layer is fixed or absolutely positioned, static, decorative, `pointer-events: none`, and placed behind or above content only as intended by its recipe. Grain must never intercept input, animate, or become an excuse for insufficient text contrast.
 

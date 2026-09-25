@@ -1,7 +1,6 @@
-/* AnimeSource voice over the Vidstack default video layout. The layout owns
-   transport, menus, sliders, gestures, and captions; these tokens dress it
-   in the editorial material system (paper brand, Manrope UI, DM Mono
-   instrumentation, liquid-glass menus).
+/* AnimeSource-specific Vidstack styling. The layout owns transport, menus,
+   sliders, gestures, and captions; these tokens map the app's theme values to
+   those controls.
    Tokens live on `:root`, not on the player stage: open menus portal into a
    top-level container under `body`, outside the player subtree, so scoped
    tokens would never reach them. Every token below is in Vidstack's

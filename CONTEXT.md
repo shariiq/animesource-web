@@ -2,12 +2,6 @@
 
 A web platform combining AniList discovery and catalog metadata with on-demand anime streaming and manga reading through AniSource providers.
 
-## Visual system
-
-AnimeSource uses the accepted **stark editorial and liquid-glass material system** documented in [ADR 0001](docs/adr/0001-editorial-material-system.md). Its identity is maximum minimalist ink/paper contrast, optically deep frosted glass and atmospheric blur, exceptional micro-level polish, restrained niche accent colors, and British industrial precision inspired by nothing.tech. Its detailed, high-density, super-responsive catalog components take product-quality cues from comick.dev and MangaDex without copying their branding, markup, or exact UI.
-
-`app/styles/theme.css` owns semantic color, typography, radius, control, motion, and shadow tokens; `atmosphere.css` owns the fixed background fields and static grain; `recipes.css` owns shared shells, panels, controls, fields, rows, search, card, and detail treatments. Route styles own responsive composition without redefining the shared material language. Instrument Serif is the display voice, Manrope is the body/interface voice, and DM Mono supplies the technical metadata and status instrumentation. Historical Y2K/Frutiger-Aero research and static previews are not production specifications or content sources.
-
 ## Language
 
 ### Discovery & Catalog

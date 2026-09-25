@@ -1,166 +1,90 @@
-﻿@utility app-background {
+@property --featured-color {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #a5aaa5;
+}
+
+.app-background {
+  --featured-vivid: oklch(from var(--featured-color) .82 .16 h);
+  --featured-counter: oklch(from var(--featured-color) .73 .085 calc(h + 145));
   position: fixed;
   z-index: 0;
   inset: 0;
   overflow: hidden;
+  isolation: isolate;
   pointer-events: none;
+  background: #f8f5ec;
+  transition: --featured-color 1200ms ease-in-out;
+}
+
+.atmosphere-cloud {
+  position: absolute;
+  inset: -8%;
+}
+
+.atmosphere-cloud--warm {
   background:
-    radial-gradient(120% 90% at 78% -8%, rgb(255 255 255) 0 18%, transparent 62%),
-    radial-gradient(circle at 30% 8%, rgb(253 253 255) 0 22%, transparent 60%),
-    linear-gradient(178deg, #fbfbfe 0%, #f4f4fa 46%, #f8f7fb 78%, #fdfdfe 100%);
+    radial-gradient(ellipse 70% 108% at -8% 28%, var(--featured-vivid) 0 51%, color-mix(in oklch, var(--featured-vivid) 70%, #fff8e9) 57%, transparent 67%),
+    radial-gradient(ellipse 57% 78% at 17% 112%, color-mix(in oklch, var(--featured-vivid) 78%, #fff2df) 0 48%, transparent 69%);
+  animation: atmosphere-warm-drift 38s ease-in-out infinite alternate;
 }
 
-/* Deep ink masses: the stark-contrast counterweight that makes the glass
-   read as optically thick material instead of a white wash. */
-@utility atmospheric-ink {
+.atmosphere-cloud--cool {
+  background:
+    radial-gradient(ellipse 73% 99% at 112% 105%, var(--featured-counter) 0 44%, color-mix(in oklch, var(--featured-counter) 55%, #f6f3ea) 57%, transparent 70%),
+    radial-gradient(ellipse 38% 46% at 106% 66%, color-mix(in oklch, var(--featured-vivid) 43%, transparent) 0 37%, transparent 73%);
+  animation: atmosphere-cool-drift 34s ease-in-out infinite alternate;
+}
+
+.atmosphere-cloud--pearl {
+  background:
+    radial-gradient(ellipse 55% 96% at 112% -10%, #fffdf4 0 48%, rgb(255 253 244 / .9) 57%, transparent 69%),
+    radial-gradient(ellipse 52% 60% at 52% 111%, rgb(255 253 247 / .6) 0 38%, transparent 69%);
+  animation: atmosphere-pearl-drift 41s ease-in-out infinite alternate;
+}
+
+.atmosphere-gloss {
   position: absolute;
-  width: 58vw;
-  height: 54vw;
-  right: -20vw;
-  top: -38vw;
-  border-radius: 50%;
-  opacity: .95;
-  filter: blur(74px);
-  background: radial-gradient(circle at 46% 56%, #06060c 0 16%, #1b1b28 34%, rgb(28 28 42 / .62) 52%, transparent 74%);
-  animation: atmosphere-drift 34s var(--ease) infinite alternate;
-}
-
-@utility atmospheric-depth {
-  position: absolute;
-  width: 60vw;
-  height: 50vw;
-  bottom: -28vw;
-  left: 2vw;
-  border-radius: 50%;
-  opacity: .88;
-  filter: blur(78px);
-  background: radial-gradient(circle at 48% 36%, #0d1020 0 20%, rgb(38 44 66 / .7) 42%, transparent 72%);
-  animation: atmosphere-drift 42s var(--ease) infinite alternate-reverse;
-}
-
-/* Aurora blooms: the niche semantic palette diffusing through the field so
-   frosted surfaces refract colour, not just light. */
-@utility atmospheric-bloom {
-  position: absolute;
-  width: 42vw;
-  height: 46vw;
-  top: 6vw;
-  left: 0;
-  border-radius: 50%;
-  opacity: .9;
-  filter: blur(92px);
-  background: radial-gradient(circle, rgb(224 132 178 / .8), rgb(180 122 162 / .34) 50%, transparent 76%);
-  animation: atmosphere-float 28s ease-in-out infinite alternate;
-}
-
-@utility atmospheric-violet {
-  position: absolute;
-  width: 40vw;
-  height: 40vw;
-  right: 4vw;
-  bottom: -14vw;
-  border-radius: 50%;
-  opacity: .62;
-  filter: blur(88px);
-  background: radial-gradient(circle, rgb(106 90 249 / .55), rgb(106 90 249 / .14) 56%, transparent 78%);
-  animation: atmosphere-float 36s ease-in-out infinite alternate-reverse;
-}
-
-@utility atmospheric-mint {
-  position: absolute;
-  width: 34vw;
-  height: 30vw;
-  left: 24vw;
-  bottom: 4vw;
-  border-radius: 50%;
-  opacity: .5;
-  filter: blur(84px);
-  background: radial-gradient(circle, rgb(74 220 164 / .5), rgb(142 240 193 / .16) 55%, transparent 78%);
-  animation: atmosphere-drift 30s ease-in-out infinite alternate;
-}
-
-@utility atmospheric-orange {
-  position: absolute;
-  width: 26vw;
-  height: 30vw;
-  right: 26vw;
-  top: -8vw;
-  border-radius: 50%;
-  opacity: .44;
-  filter: blur(80px);
-  background: radial-gradient(circle, rgb(255 106 77 / .5), rgb(255 158 122 / .16) 54%, transparent 78%);
-  animation: atmosphere-float 24s ease-in-out infinite alternate-reverse;
-}
-
-@utility atmospheric-light {
-  position: absolute;
-  width: 50vw;
-  height: 34vw;
-  left: 18vw;
-  top: -18vw;
-  border-radius: 50%;
-  opacity: .95;
-  filter: blur(82px);
-  background: radial-gradient(circle, rgb(255 255 255 / .98), rgb(255 255 255 / .22) 58%, transparent 80%);
-}
-
-/* British industrial registration layer: a dot-matrix field, denser near the
-   viewport edges and dissolving toward the reading column. */
-@utility dot-grid {
-  position: fixed;
-  z-index: 1;
   inset: 0;
-  pointer-events: none;
-  opacity: .5;
-  background-image: radial-gradient(rgb(6 6 9 / .16) 1px, transparent 1.4px);
-  background-size: 26px 26px;
-  -webkit-mask-image: radial-gradient(120% 100% at 50% 40%, transparent 30%, rgb(0 0 0 / .55) 78%, rgb(0 0 0) 100%);
-  mask-image: radial-gradient(120% 100% at 50% 40%, transparent 30%, rgb(0 0 0 / .55) 78%, rgb(0 0 0) 100%);
+  background: rgb(255 255 255 / .04);
+  backdrop-filter: blur(45px) saturate(1.2);
+  -webkit-backdrop-filter: blur(45px) saturate(1.2);
 }
 
-@utility film-grain {
-  position: fixed;
-  z-index: 50;
-  inset: 0;
-  pointer-events: none;
-  opacity: .34;
-  mix-blend-mode: multiply;
-  background-image:
-    radial-gradient(rgb(0 0 0 / .12) .55px, transparent .7px),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.07'/%3E%3C/svg%3E");
-  background-size: 6px 6px, 180px 180px;
+@keyframes atmosphere-warm-drift {
+  from { transform: translate3d(-2vw, 0, 0) scale(1); }
+  to { transform: translate3d(3vw, 1vh, 0) scale(1.035); }
 }
 
-@keyframes atmosphere-drift {
-  from { transform: translate3d(0, 0, 0) scale(1); }
-  to { transform: translate3d(-4vw, 3vw, 0) scale(1.06); }
+@keyframes atmosphere-cool-drift {
+  from { transform: translate3d(2vw, 2vh, 0) scale(1.02); }
+  to { transform: translate3d(-3vw, -2vh, 0) scale(.99); }
 }
 
-@keyframes atmosphere-float {
-  from { transform: translate3d(0, 0, 0); }
-  to { transform: translate3d(3vw, -2.4vw, 0); }
+@keyframes atmosphere-pearl-drift {
+  from { transform: translate3d(2vw, -1vh, 0) scale(1); }
+  to { transform: translate3d(-2vw, 2vh, 0) scale(1.025); }
 }
 
-/* Small viewports paint the same field with fewer, softer layers: full-size
-   blurs this large stall scrolling on mobile GPUs, so the two smallest
-   blooms retire and the survivors halve their blur. */
 @media (max-width: 780px) {
-  .atmospheric-ink,
-  .atmospheric-depth,
-  .atmospheric-bloom,
-  .atmospheric-violet,
-  .atmospheric-light {
-    filter: blur(48px);
-    opacity: .6;
+  .atmosphere-cloud,
+  .atmosphere-gloss { inset: -20% -50%; }
+
+  .atmosphere-cloud--warm {
+    background: radial-gradient(ellipse 100% 90% at 6% 36%, var(--featured-vivid) 0 49%, color-mix(in oklch, var(--featured-vivid) 65%, #fff8e9) 56%, transparent 66%);
   }
 
-  .atmospheric-ink { opacity: .36; }
-  .atmospheric-depth { opacity: .32; }
-  .dot-grid { opacity: .32; }
-  .film-grain { opacity: .2; }
-
-  .atmospheric-mint,
-  .atmospheric-orange {
-    display: none;
+  .atmosphere-cloud--cool {
+    background: radial-gradient(ellipse 88% 85% at 105% 110%, var(--featured-counter) 0 47%, color-mix(in oklch, var(--featured-counter) 55%, #f4f3ec) 56%, transparent 68%);
   }
+
+  .atmosphere-cloud--pearl {
+    background: radial-gradient(ellipse 52% 86% at 112% 13%, #fffdf4 0 46%, rgb(255 253 244 / .9) 61%, transparent 77%);
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-background { transition: none; }
+  .atmosphere-cloud { animation: none; }
 }

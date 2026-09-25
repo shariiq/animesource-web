@@ -1,11 +1,12 @@
 /* eslint-disable solid/no-innerhtml -- renderDescription escapes AniList text before rendering it. */
-import { createMemo, createSignal, For, onMount, Show } from 'solid-js'
+import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js'
 import { Link, useNavigate } from '@tanstack/solid-router'
 import type { AniListDetail } from '../../data/anilist/types'
 import { catalogLibraryStatus, catalogStatus } from '../../lib/catalog'
 import { makeBrowseSearch } from '../../lib/browse'
 import { formatAniDate, formatCompactNumber, formatEnum, formatRank, formatScore, renderDescription, titleOf } from '../../lib/format'
 import { FAVORITE_STATUSES } from '../../lib/library'
+import { syncAtmosphereColor } from '../../lib/atmosphere'
 import type { FavoriteStatus } from '../../lib/persistence/schema'
 import { viewerData } from '../../lib/persistence/active'
 import { CharacterRail } from '../anime/detail/CharacterRail'
@@ -100,6 +101,7 @@ export function MangaDetailPage(props: { manga: AniListDetail }) {
   const poster = createMemo(() => props.manga.coverImage?.extraLarge || props.manga.coverImage?.large || '')
   const banner = createMemo(() => props.manga.bannerImage || poster())
   const accent = createMemo(() => props.manga.coverImage?.color || '#7665e8')
+  createEffect(() => syncAtmosphereColor(props.manga.coverImage?.color))
   const titles = createMemo(() => getDetailTitles(props.manga))
   const detailTags = createMemo(() => getDetailTags(props.manga))
   const detailLinks = createMemo(() => getDetailLinks(props.manga))

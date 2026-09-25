@@ -62,8 +62,6 @@ These are load-bearing. Each has a reason, so apply the reason to cases the rule
 
 ## UI
 
-Visuals follow `docs/adr/0001-editorial-material-system.md`: tokens from `app/styles/theme.css`, shared treatments in `app/styles/recipes.css`, composition in route styles. When a design calls for an exact value that has no token, add a token. comick.dev, MangaDex, and nothing.tech are direction references only; never copy their markup or copy.
-
 Baseline: semantic elements, full keyboard operation, visible focus, labelled controls, `prefers-reduced-motion`.
 
 When a change alters layout, visuals, or interaction, check it once in a browser at desktop width and once at about 390px, exercising the changed controls and navigation and any loading, empty, or error states it introduces. A screenshot alone is not enough, and passing tests do not establish visual quality. Logic-only changes inside a component skip this.

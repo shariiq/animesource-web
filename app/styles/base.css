@@ -4,7 +4,7 @@
   html {
     scroll-behavior: smooth;
     scroll-padding-bottom: var(--mobile-tabbar-clearance);
-    background: #fafafd;
+    background: #f7f4eb;
   }
 
   body {
@@ -14,7 +14,7 @@
     /* clip (not hidden) so position:sticky headers keep sticking while any
        horizontal overflow stays out of the scroll container. */
     overflow-x: clip;
-    background: #fafafd;
+    background: #f7f4eb;
     color: var(--text-primary);
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;

@@ -33,14 +33,14 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - name: Restore Bun install cache
+      - name: Restore node_modules cache
+        id: node-modules-cache
         uses: actions/cache@v4
         with:
-          path: ~/.bun/install/cache
-          key: bun-install-${{ runner.os }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-install-${{ runner.os }}-${{ env.BUN_VERSION }}-
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
       - name: Lint
         run: bun run lint
@@ -62,14 +62,14 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - name: Restore Bun install cache
+      - name: Restore node_modules cache
+        id: node-modules-cache
         uses: actions/cache@v4
         with:
-          path: ~/.bun/install/cache
-          key: bun-install-${{ runner.os }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-install-${{ runner.os }}-${{ env.BUN_VERSION }}-
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
       - name: Run Vitest suite
         run: bun run test
@@ -78,37 +78,45 @@ jobs:
     name: Browser tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Runs inside the official Playwright image, which ships Chromium and
+    # all its OS-level dependencies preinstalled at a pinned version. This
+    # replaces the old "download browser + apt-get install deps" steps,
+    # which cost real time every run even with the binary cache warm —
+    # system package installation isn't cacheable on ephemeral runners.
+    # The image tag must match the @playwright/test version pinned in
+    # bun.lock (1.63.0 here), or the runner and browser will disagree.
+    # Pinned literally: the `env` context is not allowed in `container.image`.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-jammy
     # The suite is a single serial spec file (tests share one mock API whose
     # failure flag one journey toggles), so extra workers cannot parallelize
     # it. Sharding splits the file across jobs that each boot their own mock
-    # API and dev server, roughly halving wall time instead.
+    # API and dev server, cutting wall time roughly proportionally instead.
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+      # The Playwright image is minimal and ships no `unzip`, which
+      # oven-sh/setup-bun needs to extract its download. One tiny package —
+      # still far cheaper than the old full browser toolchain install.
+      - name: Install unzip for Bun setup
+        run: apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - name: Restore Bun install cache
+      - name: Restore node_modules cache
+        id: node-modules-cache
         uses: actions/cache@v4
         with:
-          path: ~/.bun/install/cache
-          key: bun-install-${{ runner.os }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-install-${{ runner.os }}-${{ env.BUN_VERSION }}-
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock') }}
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
-      - name: Restore Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-      - name: Install Chromium and system dependencies
-        run: bunx playwright install --with-deps chromium
       - name: Run mocked Playwright suite
         # --workers=1 keeps every test in the shard serial against its own
         # mock API; the fail-AniList journey toggles server-global state.

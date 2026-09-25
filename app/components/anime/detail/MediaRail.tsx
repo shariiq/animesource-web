@@ -21,7 +21,6 @@ export function MediaRail(props: { heading: string; items: MediaRailItem[] }) {
       <section class="detail-section" aria-labelledby={`media-rail-${props.heading}`}>
         <div class="detail-section-heading">
           <h2 id={`media-rail-${props.heading}`}>{props.heading}</h2>
-          <p>{props.heading === 'Relations' ? 'Franchise continuity' : 'Based on AniList ratings'}</p>
         </div>
         <div class="detail-media-grid" role="list">
           <For each={props.items}>

@@ -5,6 +5,9 @@ import { AniListError } from './data/anilist/client'
 
 const PERSISTED_QUERY_CACHE_KEY = 'animesource:anilist-query-cache:v1'
 const MAX_PERSISTED_QUERIES = 40
+/** Upper bound for the serialized cache so burst navigation never throws a
+ * quota error or blocks the main thread stringifying megabytes of rails. */
+const MAX_PERSISTED_BYTES = 800_000
 
 function restoreQueryCache(queryClient: QueryClient) {
   if (typeof window === 'undefined') return
@@ -27,7 +30,16 @@ function persistQueryCache(queryClient: QueryClient) {
     })
     dehydrated.queries.sort((left, right) => right.state.dataUpdatedAt - left.state.dataUpdatedAt)
     dehydrated.queries = dehydrated.queries.slice(0, MAX_PERSISTED_QUERIES)
-    window.localStorage.setItem(PERSISTED_QUERY_CACHE_KEY, JSON.stringify(dehydrated))
+    // Home rails are the heaviest entries: shrink the tail until the payload
+    // fits the byte budget instead of failing the write (or a later read) on
+    // quota-constrained browsers. At least the freshest entries survive.
+    let serialized = JSON.stringify(dehydrated)
+    while (serialized.length > MAX_PERSISTED_BYTES && dehydrated.queries.length > 10) {
+      dehydrated.queries = dehydrated.queries.slice(0, Math.max(10, Math.floor(dehydrated.queries.length / 2)))
+      serialized = JSON.stringify(dehydrated)
+    }
+    if (serialized.length > MAX_PERSISTED_BYTES) return
+    window.localStorage.setItem(PERSISTED_QUERY_CACHE_KEY, serialized)
   } catch {
     // Storage is an optimization. Private browsing and quota failures must not
     // affect route loading or playback.

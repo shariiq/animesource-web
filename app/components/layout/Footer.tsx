@@ -7,7 +7,6 @@ export function Footer() {
           ANIMESOURCE · editorial catalog
         </p>
         <p>AniList metadata / streams resolved only on request.</p>
-        <p class="flex items-center gap-[7px]"><i class="inline-block size-[5px] rounded-full bg-violet shadow-[0_0_8px_rgb(106_90_249/.6)]" />Liquid glass system v2</p>
       </div>
     </footer>
   )

@@ -69,10 +69,10 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
                 explore={mode() === 'ANIME' ? makeBrowseSearch({ sort: 'POPULARITY_DESC', season: season.season, year: season.year }) : makeBrowseSearch({ sort: 'UPDATED_AT_DESC' })}
               />
               <section class="section" aria-labelledby="collection-heading">
-                <SectionHeading id="collection-heading" title={copy().collectionTitle} description={copy().collectionDescription} />
+                <SectionHeading id="collection-heading" title={copy().collectionTitle} />
                 <div class="material-panel overflow-hidden">
                   <div class="flex min-h-[58px] flex-wrap items-center justify-between gap-4 border-b border-line px-5 py-3 sm:px-6">
-                    <strong class="text-[13px] tracking-[-.02em]">{copy().collectionPulse} <span class="ml-2 font-mono text-[9px] font-normal uppercase tracking-[.08em] text-quiet">{collectionItems().length} {copy().collectionItemsLabel}</span></strong>
+                    <strong class="text-[13px] tracking-[-.02em]"><span class="font-mono text-[9px] font-normal uppercase tracking-[.08em] text-quiet">{collectionItems().length} {copy().collectionItemsLabel}</span></strong>
                     <div class="flex gap-[6px]" aria-label={`${copy().singular} collection filter`}>
                       <CollectionFilterButton current={collectionFilter} setCurrent={setCollectionFilter} value="all" label="All" />
                       <CollectionFilterButton current={collectionFilter} setCurrent={setCollectionFilter} value="airing" label={copy().activeFilter} />
@@ -102,7 +102,7 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
                 </div>
               </section>
               <section class="home-deferred-section section" aria-labelledby="season-heading">
-                <SectionHeading id="season-heading" title={copy().seasonalTitle} description={copy().seasonalDescription} />
+                <SectionHeading id="season-heading" title={copy().seasonalTitle} />
                 <div class="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
                   <AnimeColumn mode={mode()} title={copy().columnTrending} items={data.trending.media} search={makeBrowseSearch({ sort: 'TRENDING_DESC' })} />
                   <AnimeColumn mode={mode()} title={copy().columnSecond} items={data.season.media} search={makeBrowseSearch(mode() === 'ANIME' ? { sort: 'POPULARITY_DESC', season: season.season, year: season.year } : { sort: 'UPDATED_AT_DESC' })} />
@@ -111,7 +111,7 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
                 <div class="mt-5"><AnimeColumn mode={mode()} title={copy().columnFourth} items={data.upcoming.media} search={makeBrowseSearch(mode() === 'ANIME' ? { sort: 'POPULARITY_DESC', status: 'NOT_YET_RELEASED', season: nextSeason.season, year: nextSeason.year } : { sort: 'START_DATE_DESC', status: 'NOT_YET_RELEASED' })} /></div>
               </section>
               <section class="home-deferred-section section" aria-labelledby="genre-heading">
-                <SectionHeading id="genre-heading" title={copy().genreLabel} description={copy().genreDescription} />
+                <SectionHeading id="genre-heading" title={copy().genreLabel} />
                 <GenreNav mode={mode()} />
               </section>
             </>}

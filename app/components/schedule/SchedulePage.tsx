@@ -29,6 +29,15 @@ const STATUS_LABELS: Record<string, string> = {
   HIATUS: 'On Hiatus',
 }
 
+// Hoisted: constructing an Intl.DateTimeFormat costs ~ms, and these run per
+// render (day headings, row times) plus every 30s countdown tick across a
+// week of rows. Module-scope instances are locale-current at load and reused.
+const dateLabelFormatter = new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
+const weekDayFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
+const weekEndFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+const dayHeadingFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+const rowTimeFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
+
 export function SchedulePage(props: { search: Accessor<ScheduleSearch> }) {
   const navigate = useNavigate()
   const [savedIds, setSavedIds] = createSignal<ReadonlySet<number>>(new Set())
@@ -72,21 +81,19 @@ export function SchedulePage(props: { search: Accessor<ScheduleSearch> }) {
     void navigate({ to: '/schedule', search: { ...search(), ...changes } })
   }
   const move = (direction: -1 | 1) => updateSearch({ date: shiftedDateKey(dateKey(), search().view, direction) })
-  const dateLabel = () => new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric', year: 'numeric' }).format(dateFromKey(dateKey()))
+  const dateLabel = () => dateLabelFormatter.format(dateFromKey(dateKey()))
   const weekLabel = () => {
     const first = range().start
     const last = new Date(range().end)
     last.setDate(last.getDate() - 1)
-    return `${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(first)} – ${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(last)}`
+    return `${weekDayFormatter.format(first)} – ${weekEndFormatter.format(last)}`
   }
 
   return (
     <PageShell class="schedule-page">
       <header class="schedule-masthead">
         <div class="schedule-masthead-copy">
-          <p class="schedule-kicker">Release calendar / AniList airing data</p>
           <h1>What’s airing.</h1>
-          <p>Track upcoming episodes in your local time. Filter to anime saved on this device.</p>
         </div>
         <nav class="schedule-period-nav" aria-label="Schedule period">
           <button class="schedule-period-button" type="button" onClick={() => move(-1)} aria-label="Previous period">← Previous</button>
@@ -153,7 +160,7 @@ export function SchedulePage(props: { search: Accessor<ScheduleSearch> }) {
               <Show when={items().length > 0} fallback={<ScheduleLoadingSkeleton />}>
                 <div class="schedule-days" classList={{ 'is-retuning': schedule.isFetching }} aria-busy={schedule.isFetching}>
                   <For each={[...grouped().entries()]}>{([day, dayItems]) => <section class="schedule-day" aria-labelledby={`schedule-${day}`}>
-                    <div class="schedule-day-heading"><h3 id={`schedule-${day}`}>{new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(dateFromKey(day))}</h3><span class="mono-signal">{dayItems.length} {dayItems.length === 1 ? 'release' : 'releases'}</span></div>
+                    <div class="schedule-day-heading"><h3 id={`schedule-${day}`}>{dayHeadingFormatter.format(dateFromKey(day))}</h3><span class="mono-signal">{dayItems.length} {dayItems.length === 1 ? 'release' : 'releases'}</span></div>
                     <div class="schedule-day-items">
                       <For each={dayItems}>{(item) => <ScheduleRow item={item} now={now()} saved={item.media?.id !== undefined && savedIds().has(item.media.id)} />}</For>
                     </div>
@@ -193,7 +200,7 @@ function ScheduleRow(props: { item: AniListScheduleItem; now: number; saved: boo
         <Show when={animeId()} fallback={<h4 class="schedule-row-title">{title()}</h4>}>
           {(id) => <Link class="schedule-row-title" to="/anime/$animeId" params={{ animeId: String(id()) }}>{title()}</Link>}
         </Show>
-        <p class="schedule-row-time">{new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(props.item.airingAt * 1000))}</p>
+        <p class="schedule-row-time">{rowTimeFormatter.format(new Date(props.item.airingAt * 1000))}</p>
       </div>
       <div class="schedule-row-action">
         <strong>{countdownLabel(props.item.airingAt, props.now)}</strong>

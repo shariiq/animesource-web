@@ -201,9 +201,7 @@ export function LibraryPage() {
     <PageShell class="library-page">
       <header class="frosted-shell grid gap-7 px-6 py-8 sm:px-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
         <div>
-          <p class="mono-signal">Personal archive / {copy().singular} saved on this device</p>
-          <h1 class="mt-3 max-w-4xl font-display text-6xl leading-[.88] tracking-[-.04em] sm:text-8xl">Your {copy().singular} library.</h1>
-          <p class="mt-5 max-w-2xl text-sm leading-6 text-text-secondary">{mode() === 'ANIME' ? 'Review saved anime, track watch progress, and return to the episode you left.' : 'Review saved manga, track reading progress, and return to the chapter you left.'}</p>
+          <h1 class="max-w-4xl font-display text-6xl leading-[.88] tracking-[-.04em] sm:text-8xl">Your {copy().singular} library.</h1>
         </div>
         <dl class="grid grid-cols-3 gap-2 text-center sm:gap-3 sm:text-right">
           <LibraryStat label="Saved" value={counts().all} />

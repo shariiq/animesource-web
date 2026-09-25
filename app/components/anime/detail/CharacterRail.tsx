@@ -14,7 +14,6 @@ export function CharacterRail(props: { detail: AniListDetail; mode?: CatalogMode
       <section class="detail-section" aria-labelledby="characters-heading">
         <div class="detail-section-heading">
           <h2 id="characters-heading">Characters</h2>
-          <p>{mode() === 'MANGA' ? 'Character index' : 'Cast and Japanese voice actors'}</p>
         </div>
         <div class="detail-identity-rail">
           <For each={characters()}>

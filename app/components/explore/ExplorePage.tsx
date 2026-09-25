@@ -126,13 +126,12 @@ export function ExplorePage(props: { search: Accessor<BrowseSearch> }) {
     <section class="explore-page" aria-labelledby="explore-title">
       <header class="explore-masthead">
         <div class="explore-masthead-copy">
-          <p class="explore-kicker">{catalogNameTitle()} catalog / browse and filter</p>
           <h1 id="explore-title">{title()}</h1>
-          <p class="explore-summary">
-            <Show when={filters().length > 0} fallback={mode() === 'MANGA' ? <>Browse manga by title, genre, or status.</> : <>Browse anime by title, genre, season, or status.</>}>
+          <Show when={filters().length > 0}>
+            <p class="explore-summary">
               {filters().length} active {filters().length === 1 ? 'filter' : 'filters'} shape these results.
-            </Show>
-          </p>
+            </p>
+          </Show>
         </div>
         <div class="explore-catalog-stat" aria-live="polite">
           <span>Catalog size</span>

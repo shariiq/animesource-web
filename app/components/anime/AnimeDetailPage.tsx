@@ -23,7 +23,6 @@ function MetadataPill(props: { children: JSX.Element; accent?: boolean }) {
 
 function TagGroup(props: { heading: string; tags: ReturnType<typeof getDetailTags>['themes'] }) {
   return <div>
-    <p class="detail-kicker">AniList category</p>
     <h3 class="detail-subheading mt-1">{props.heading}</h3>
     <div class="mt-4 flex flex-wrap gap-2">
       <For each={props.tags}>
@@ -147,7 +146,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
   return (
     <PageShell>
       <section aria-labelledby="anime-title">
-        <SectionHeading title="Anime Details" description="AniList metadata / streaming access / episode information" />
+        <SectionHeading title="Anime Details" />
         <article class="relative isolate overflow-hidden rounded-[26px] border border-white/80 bg-white/54 shadow-glass backdrop-blur-[54px]" style={{ '--accent': accent() }}>
           <Show when={banner()}>
             <div
@@ -282,7 +281,6 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
         <section class="detail-section" aria-labelledby="themes-tags-heading">
           <div class="detail-section-heading">
             <h2 id="themes-tags-heading">Themes & tags</h2>
-            <p>Informative AniList metadata</p>
           </div>
           <div class="detail-panel grid gap-5 p-5 sm:grid-cols-2">
             <Show when={detailTags().themes.length > 0}>
@@ -299,7 +297,6 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
         <section class="detail-section" aria-labelledby="external-links-heading">
           <div class="detail-section-heading">
             <h2 id="external-links-heading">External links</h2>
-            <p>Verified resources from AniList</p>
           </div>
           <div class="detail-panel grid gap-2 p-4 sm:grid-cols-2 lg:grid-cols-3">
             <For each={detailLinks()}>

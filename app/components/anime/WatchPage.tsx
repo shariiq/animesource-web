@@ -88,9 +88,6 @@ export function WatchPage(props: { anime: AniListDetail }) {
           >
             ← Back to details
           </Link>
-          <p class="mt-8 font-mono text-[10px] uppercase tracking-[.18em] text-[#4f4e57]">
-            Watch anime / choose an episode
-          </p>
           <h1
             id="watch-title"
             class="mt-2 max-w-4xl break-words font-display text-[clamp(40px,11vw,96px)] leading-[.88] tracking-[-.03em] [overflow-wrap:anywhere]"

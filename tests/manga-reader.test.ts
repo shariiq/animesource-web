@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { chapterDisplayNumber, chapterIdForNumber, chapterIdForRoute, chapterNeighbors, chapterRouteValue, createMangaReaderSession, normalizeChapters, normalizePages, resolveStartChapterId } from '../app/components/manga/reader/createMangaReaderSession'
 import { detailShape } from '../app/data/anilist/schema'
 import type { AniSourceManga, ChapterPage, MangaChapter } from '../app/data/anisource/schema'
-import { DEFAULT_MANGA_READER_SETTINGS, mangaReaderData, type MangaReaderRecord, type MangaReaderSettings } from '../app/lib/persistence/mangaReader'
+import { DEFAULT_MANGA_READER_SETTINGS, mangaReaderData, resolveMangaReaderDefaults, type MangaReaderRecord, type MangaReaderSettings } from '../app/lib/persistence/mangaReader'
 import { closeDb } from '../app/lib/persistence/indexedDb'
 
 const chapter = (id: string, number: number): MangaChapter => ({
@@ -228,11 +228,11 @@ describe('manga reader ordering', () => {
 })
 
 describe('manga reader source matching', () => {
-  function sessionWithResults(results: (sourceId: string) => AniSourceManga[], defaults: MangaReaderSettings = DEFAULT_MANGA_READER_SETTINGS) {
+  function sessionWithResults(results: (sourceId: string) => AniSourceManga[], defaults: MangaReaderSettings = DEFAULT_MANGA_READER_SETTINGS, mangaDetail = manga) {
     const searches: string[] = []
     const savedRecords: MangaReaderRecord[] = []
     const session = createMangaReaderSession({
-      manga,
+      manga: mangaDetail,
       routeChapterNumber: () => 'start',
       sourceSearchParam: () => undefined,
       navigateToChapter: async () => undefined,
@@ -312,6 +312,96 @@ describe('manga reader source matching', () => {
     expect(session.direction()).toBe('ltr')
     expect(session.fit()).toBe('fit-screen')
     expect(session.background()).toBe('paper')
+    expect(session.gap()).toBe('large')
+  })
+
+  it.each([
+    ['KR', 'continuous', 'none'],
+    ['CN', 'continuous', 'none'],
+    ['kr', 'continuous', 'none'],
+    ['JP', 'paged', 'large'],
+    ['TW', 'paged', 'large'],
+    [null, 'paged', 'large'],
+  ] as const)('resolves %s origin to layout %s and gap %s without touching other settings', (origin, layout, gap) => {
+    const base: MangaReaderSettings = {
+      layout: 'paged',
+      direction: 'ltr',
+      fit: 'fit-screen',
+      background: 'paper',
+      gap: 'large',
+    }
+
+    expect(resolveMangaReaderDefaults(origin, base)).toEqual({ ...base, layout, gap })
+  })
+
+  it('starts KR and CN titles seamless while JP keeps the global gap', async () => {
+    const mangaFor = (countryOfOrigin: string | null) => ({ ...manga, countryOfOrigin })
+    const globalDefaults: MangaReaderSettings = { ...DEFAULT_MANGA_READER_SETTINGS }
+
+    const korean = sessionWithResults(() => [mangaCandidate], globalDefaults, mangaFor('KR'))
+    await korean.session.initialize()
+    expect(korean.session.layout()).toBe('continuous')
+    expect(korean.session.gap()).toBe('none')
+
+    const chinese = sessionWithResults(() => [mangaCandidate], globalDefaults, mangaFor('CN'))
+    await chinese.session.initialize()
+    expect(chinese.session.layout()).toBe('continuous')
+    expect(chinese.session.gap()).toBe('none')
+
+    const japanese = sessionWithResults(() => [mangaCandidate], globalDefaults, mangaFor('JP'))
+    await japanese.session.initialize()
+    expect(japanese.session.layout()).toBe('continuous')
+    expect(japanese.session.gap()).toBe('small')
+  })
+
+  it('lets a saved manga record win over the KR seamless default', async () => {
+    const stored: MangaReaderRecord = {
+      anilistId: 42,
+      title: 'Signal',
+      cover: '',
+      sourceId: 'source-a',
+      sourceName: 'Source A',
+      mangaId: 'signal-manga',
+      mangaUrl: '',
+      chapterId: 'c1',
+      chapterNumber: 1,
+      chapterTitle: 'Chapter 1',
+      pageIndex: 0,
+      pageCount: 10,
+      completed: false,
+      layout: 'paged',
+      direction: 'ltr',
+      fit: 'fit-screen',
+      background: 'paper',
+      gap: 'large',
+      updatedAt: 1,
+    }
+    const koreanManga = { ...manga, countryOfOrigin: 'KR' as const }
+    const session = createMangaReaderSession({
+      manga: koreanManga,
+      routeChapterNumber: () => '1',
+      sourceSearchParam: () => undefined,
+      navigateToChapter: async () => undefined,
+      persistence: {
+        get: async () => stored,
+        getDefaults: async () => DEFAULT_MANGA_READER_SETTINGS,
+        list: async () => [stored],
+        save: async () => undefined,
+        saveSettings: async (record) => record,
+        saveDefaults: async () => undefined,
+        remove: async () => undefined,
+      },
+      api: {
+        mangaSources: async () => ({ sources: [{ id: 'source-a', name: 'Source A', base_url: '' }], count: 1 }),
+        mangaSearch: async () => ({ items: [mangaCandidate], page: 1, has_next: false, total_returned: 1 }),
+        mangaChapters: async () => [chapter('c1', 1)],
+        mangaPages: async () => [{ index: 0, url: 'page-1', page_url: '' }],
+      },
+    })
+
+    await session.initialize()
+
+    expect(session.layout()).toBe('paged')
     expect(session.gap()).toBe('large')
   })
 

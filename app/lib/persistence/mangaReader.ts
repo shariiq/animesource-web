@@ -36,6 +36,35 @@ export const DEFAULT_MANGA_READER_SETTINGS: MangaReaderSettings = {
   gap: 'small',
 }
 
+/**
+ * Origins where long-strip webtoon reading dominates. AniList exposes no
+ * explicit webtoon flag (manga `format` is only MANGA/NOVEL/ONE_SHOT), so
+ * `countryOfOrigin` is the only synchronous catalog signal available at
+ * reader init. KR/CN start seamless; JP and everything else keeps the
+ * paged gap default.
+ */
+const SEAMLESS_ORIGINS: ReadonlySet<string> = new Set(['KR', 'CN'])
+
+export function isSeamlessReaderOrigin(countryOfOrigin: string | null | undefined): boolean {
+  if (!countryOfOrigin) return false
+  return SEAMLESS_ORIGINS.has(countryOfOrigin.trim().toUpperCase())
+}
+
+/**
+ * Origin-aware starting settings for a manga with no saved record.
+ * Saved per-manga settings and in-session edits always win; this only
+ * overlays `layout`/`gap` on the global defaults so KR/CN open as a
+ * seamless continuous strip.
+ */
+export function resolveMangaReaderDefaults(
+  countryOfOrigin: string | null | undefined,
+  base: MangaReaderSettings,
+): MangaReaderSettings {
+  if (!isSeamlessReaderOrigin(countryOfOrigin)) return base
+  if (base.layout === 'continuous' && base.gap === 'none') return base
+  return { ...base, layout: 'continuous', gap: 'none' }
+}
+
 export const mangaReaderRecordSchema = z.object({
   anilistId: z.number().int().positive(),
   title: z.string(),

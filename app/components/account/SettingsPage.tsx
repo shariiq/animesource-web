@@ -304,7 +304,7 @@ export function SettingsPage() {
           <div class="mt-7 border-t border-line pt-6">
             <div>
               <p class="mono-signal">Manga reader defaults</p>
-              <p class="mt-2 max-w-xl text-sm leading-6 text-text-secondary">These settings apply when a manga has no saved reader preferences. A manga-specific choice always takes precedence.</p>
+              <p class="mt-2 max-w-xl text-sm leading-6 text-text-secondary">These settings apply when a manga has no saved reader preferences. Korean and Chinese titles start seamless (continuous, no gap) for long-strip reading. A manga-specific choice always takes precedence.</p>
             </div>
             <div class="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               <label class="editorial-field-group text-sm">

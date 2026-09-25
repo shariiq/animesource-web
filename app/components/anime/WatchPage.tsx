@@ -79,7 +79,7 @@ export function WatchPage(props: { anime: AniListDetail }) {
       class="editorial-page !w-[min(100%-28px,1480px)] !px-0 !py-8 sm:!py-10"
       aria-labelledby="watch-title"
     >
-      <header class="grid gap-8 rounded-shell border border-white/75 bg-white/42 p-6 shadow-glass backdrop-blur-[40px] sm:p-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <header class="grid gap-8 rounded-shell border border-black/10 bg-[#fcfcfd] p-6 shadow-glass sm:p-8 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div>
           <Link
             class="font-mono text-[10px] uppercase tracking-[.12em] text-[#42404b] transition hover:text-black"

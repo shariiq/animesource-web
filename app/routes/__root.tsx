@@ -46,7 +46,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
       { title: 'AniSource — Discover & Watch Anime' },
       { name: 'description', content: 'Browse trending, seasonal and top-rated anime with rich AniList metadata, then watch instantly through live-resolved streams.' },
-      { name: 'theme-color', content: '#f2f2f4' },
+      { name: 'theme-color', content: '#e9e9ed' },
       { property: 'og:type', content: 'website' },
       { property: 'og:title', content: 'AniSource — Discover & Watch Anime' },
       { property: 'og:description', content: 'Browse trending, seasonal and top-rated anime with rich AniList metadata, then watch instantly through live-resolved streams.' },
@@ -123,6 +123,7 @@ function RootDocument(props: { children: JSX.Element }) {
           <div class="atmospheric-depth" />
           <div class="atmospheric-light" />
         </div>
+        <div class="paper-grid" aria-hidden="true" />
         <div class="dot-grid" aria-hidden="true" />
         <div class="film-grain" aria-hidden="true" />
         <HeadContent />

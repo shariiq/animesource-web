@@ -9,14 +9,12 @@
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    border: 1px solid rgb(255 255 255 / .9);
+    border: 1px solid rgb(6 6 9 / .12);
     border-radius: var(--radius-shell);
     background:
-      radial-gradient(circle at 78% 18%, color-mix(in srgb, var(--manga-accent, var(--violet)) 14%, transparent), transparent 30%),
-      linear-gradient(165deg, rgb(255 255 255 / .82), rgb(255 255 255 / .54) 48%, rgb(255 255 255 / .68));
+      radial-gradient(circle at 78% 18%, color-mix(in srgb, var(--manga-accent, var(--violet)) 10%, transparent), transparent 30%),
+      #fcfcfd;
     box-shadow: var(--shadow-glass);
-    backdrop-filter: blur(54px) saturate(175%);
-    -webkit-backdrop-filter: blur(54px) saturate(175%);
   }
 
   .manga-detail-shell::after {

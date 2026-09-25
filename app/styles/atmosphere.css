@@ -5,15 +5,30 @@
   overflow: hidden;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgb(255 255 255 / .9) 0%, rgb(255 255 255 / 0) 30%),
-    linear-gradient(0deg, rgb(222 222 228 / .55) 0%, rgb(222 222 228 / 0) 24%),
-    #f2f2f4;
+    linear-gradient(180deg, rgb(255 255 255 / .95) 0%, rgb(255 255 255 / 0) 26%),
+    linear-gradient(0deg, rgb(210 210 218 / .6) 0%, rgb(210 210 218 / 0) 20%),
+    #e9e9ed;
+}
+
+/* Engineering grid: faint 72px hairline graph paper etched across the whole
+   canvas. Uniform and quiet at rest — the eye reads it as paper, not as a
+   gradient wash. */
+@utility paper-grid {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgb(6 6 9 / .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(6 6 9 / .055) 1px, transparent 1px);
+  background-size: 72px 72px;
+  -webkit-mask-image: radial-gradient(130% 110% at 50% 30%, rgb(0 0 0) 55%, transparent 100%);
+  mask-image: radial-gradient(130% 110% at 50% 30%, rgb(0 0 0) 55%, transparent 100%);
 }
 
 /* Deep ink masses: the stark-contrast counterweight that keeps paper from
-   washing out. Two monochrome masses only — the old multi-blob aurora field
-   is gone, so depth comes from shadow and tooth the way Nothing's dark
-   product voids anchor their light canvas. */
+   washing out. Two monochrome masses only — depth comes from shadow and
+   tooth, never from colored aurora. */
 @utility atmospheric-ink {
   position: absolute;
   width: 58vw;
@@ -59,24 +74,23 @@
   z-index: 1;
   inset: 0;
   pointer-events: none;
-  opacity: .42;
-  background-image: radial-gradient(rgb(6 6 9 / .14) 1px, transparent 1.3px);
+  opacity: .5;
+  background-image: radial-gradient(rgb(6 6 9 / .16) 1px, transparent 1.3px);
   background-size: 24px 24px;
   -webkit-mask-image: radial-gradient(120% 100% at 50% 40%, transparent 30%, rgb(0 0 0 / .55) 78%, rgb(0 0 0) 100%);
   mask-image: radial-gradient(120% 100% at 50% 40%, transparent 30%, rgb(0 0 0 / .55) 78%, rgb(0 0 0) 100%);
 }
 
-/* Paper tooth: one fine fractal-grain tile at whisper opacity over the whole
-   document. This is the texture Nothing gets from print-like grain — no
-   multiply blending, no speckle layer, just tooth. */
+/* Paper tooth: fractal grain at a level you can actually see on the flat
+   grey — this is the texture Nothing gets from print. No blend modes. */
 @utility film-grain {
   position: fixed;
   z-index: 50;
   inset: 0;
   pointer-events: none;
-  opacity: .55;
+  opacity: .8;
   background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.06'/%3E%3C/svg%3E");
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.1'/%3E%3C/svg%3E");
   background-size: 160px 160px;
 }
 
@@ -85,8 +99,8 @@
   to { transform: translate3d(-4vw, 3vw, 0) scale(1.06); }
 }
 
-/* Small viewports paint the same field softer: full-size blurs this large
-   stall scrolling on mobile GPUs. */
+/* Small viewports keep the grid and tooth but retire the heavy blurs:
+   full-size blurs this large stall scrolling on mobile GPUs. */
 @media (max-width: 780px) {
   .atmospheric-ink,
   .atmospheric-depth,
@@ -97,6 +111,6 @@
 
   .atmospheric-ink { opacity: .36; }
   .atmospheric-depth { opacity: .32; }
-  .dot-grid { opacity: .28; }
-  .film-grain { opacity: .35; }
+  .dot-grid { opacity: .3; }
+  .film-grain { opacity: .5; }
 }

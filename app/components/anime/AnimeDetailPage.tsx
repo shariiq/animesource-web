@@ -147,7 +147,7 @@ export function AnimeDetailPage(props: { anime: AniListDetail }) {
     <PageShell>
       <section aria-labelledby="anime-title">
         <SectionHeading title="Anime Details" />
-        <article class="relative isolate overflow-hidden rounded-[26px] border border-white/80 bg-white/54 shadow-glass backdrop-blur-[54px]" style={{ '--accent': accent() }}>
+        <article class="relative isolate overflow-hidden rounded-[26px] border border-black/10 bg-[#fcfcfd] shadow-glass" style={{ '--accent': accent() }}>
           <Show when={banner()}>
             <div
               class="absolute inset-x-0 top-0 h-[300px] bg-cover bg-[center_28%] opacity-80 [mask-image:linear-gradient(180deg,black_0%,black_46%,transparent_96%)] sm:h-[430px]"

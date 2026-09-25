@@ -1,116 +1,104 @@
-﻿@utility app-background {
+@utility app-background {
   position: fixed;
   z-index: 0;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgb(255 255 255 / .95) 0%, rgb(255 255 255 / 0) 26%),
-    linear-gradient(0deg, rgb(210 210 218 / .6) 0%, rgb(210 210 218 / 0) 20%),
-    #e9e9ed;
+    radial-gradient(ellipse 65% 66% at 64% 12%, rgb(255 255 255 / .98), transparent 78%),
+    radial-gradient(ellipse 56% 58% at 2% 94%, rgb(180 181 200 / .42), transparent 85%),
+    linear-gradient(135deg, #f8f8fb 0%, #e9e9f0 52%, #f5f5f9 100%);
 }
 
-/* Engineering grid: faint 72px hairline graph paper etched across the whole
-   canvas. Uniform and quiet at rest — the eye reads it as paper, not as a
-   gradient wash. */
+/* A static, irregular glass fold gives the canvas an optical focal point
+   without moving filters or requiring a full-screen backdrop blur. */
+@utility atmospheric-ink {
+  position: absolute;
+  width: clamp(860px, 70vw, 1200px);
+  aspect-ratio: 10 / 9;
+  right: -140px;
+  top: -260px;
+  background: url('../assets/liquid-glass.svg') center / contain no-repeat;
+}
+
+@utility atmospheric-depth {
+  position: absolute;
+  width: min(78vw, 1060px);
+  height: min(80vw, 900px);
+  left: -30vw;
+  bottom: -42vw;
+  border-radius: 47% 53% 62% 38% / 45% 37% 63% 55%;
+  transform: rotate(-24deg);
+  background:
+    radial-gradient(ellipse 39% 42% at 56% 50%, rgb(245 246 255 / .96) 0%, rgb(187 188 211 / .8) 37%, transparent 74%),
+    conic-gradient(from 68deg at 50% 50%, rgb(255 255 255 / .86), rgb(40 41 62 / .72), rgb(227 228 245 / .8), rgb(255 255 255 / .92), rgb(93 94 121 / .7), rgb(255 255 255 / .86));
+  box-shadow: 20px 30px 110px rgb(30 30 54 / .2), inset 20px 28px 45px rgb(255 255 255 / .95), inset -28px -38px 68px rgb(24 25 45 / .32);
+  opacity: .68;
+  filter: blur(19px);
+}
+
+@utility atmospheric-light {
+  position: absolute;
+  width: 70vw;
+  height: 44vw;
+  left: -22vw;
+  top: -27vw;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgb(255 255 255 / .95), rgb(255 255 255 / .48) 52%, transparent 75%);
+  filter: blur(44px);
+}
+
 @utility paper-grid {
   position: fixed;
   z-index: 0;
   inset: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(rgb(6 6 9 / .055) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(6 6 9 / .055) 1px, transparent 1px);
+    linear-gradient(rgb(6 6 9 / .04) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(6 6 9 / .04) 1px, transparent 1px);
   background-size: 72px 72px;
-  -webkit-mask-image: radial-gradient(130% 110% at 50% 30%, rgb(0 0 0) 55%, transparent 100%);
-  mask-image: radial-gradient(130% 110% at 50% 30%, rgb(0 0 0) 55%, transparent 100%);
+  -webkit-mask-image: radial-gradient(100% 95% at 50% 40%, transparent 26%, #000 100%);
+  mask-image: radial-gradient(100% 95% at 50% 40%, transparent 26%, #000 100%);
 }
 
-/* Deep ink masses: the stark-contrast counterweight that keeps paper from
-   washing out. Two monochrome masses only — depth comes from shadow and
-   tooth, never from colored aurora. */
-@utility atmospheric-ink {
-  position: absolute;
-  width: 58vw;
-  height: 54vw;
-  right: -20vw;
-  top: -38vw;
-  border-radius: 50%;
-  opacity: .95;
-  filter: blur(74px);
-  background: radial-gradient(circle at 46% 56%, #06060c 0 16%, #1b1b28 34%, rgb(28 28 42 / .62) 52%, transparent 74%);
-  animation: atmosphere-drift 34s var(--ease) infinite alternate;
-}
-
-@utility atmospheric-depth {
-  position: absolute;
-  width: 60vw;
-  height: 50vw;
-  bottom: -28vw;
-  left: 2vw;
-  border-radius: 50%;
-  opacity: .88;
-  filter: blur(78px);
-  background: radial-gradient(circle at 48% 36%, #0d1020 0 20%, rgb(38 44 66 / .7) 42%, transparent 72%);
-  animation: atmosphere-drift 42s var(--ease) infinite alternate-reverse;
-}
-
-@utility atmospheric-light {
-  position: absolute;
-  width: 50vw;
-  height: 34vw;
-  left: 18vw;
-  top: -18vw;
-  border-radius: 50%;
-  opacity: .95;
-  filter: blur(82px);
-  background: radial-gradient(circle, rgb(255 255 255 / .98), rgb(255 255 255 / .22) 58%, transparent 80%);
-}
-
-/* British industrial registration layer: a dot-matrix field, denser near the
-   viewport edges and dissolving toward the reading column. */
 @utility dot-grid {
   position: fixed;
   z-index: 1;
   inset: 0;
   pointer-events: none;
-  opacity: .5;
-  background-image: radial-gradient(rgb(6 6 9 / .16) 1px, transparent 1.3px);
+  background-image: radial-gradient(rgb(6 6 9 / .18) .8px, transparent 1.2px);
   background-size: 24px 24px;
-  -webkit-mask-image: radial-gradient(120% 100% at 50% 40%, transparent 30%, rgb(0 0 0 / .55) 78%, rgb(0 0 0) 100%);
-  mask-image: radial-gradient(120% 100% at 50% 40%, transparent 30%, rgb(0 0 0 / .55) 78%, rgb(0 0 0) 100%);
+  -webkit-mask-image: radial-gradient(95% 90% at 50% 43%, transparent 43%, rgb(0 0 0 / .5) 82%, #000 100%);
+  mask-image: radial-gradient(95% 90% at 50% 43%, transparent 43%, rgb(0 0 0 / .5) 82%, #000 100%);
 }
 
-/* Paper tooth: fractal grain at a level you can actually see on the flat
-   grey — this is the texture Nothing gets from print. No blend modes. */
 @utility film-grain {
   position: fixed;
   z-index: 50;
   inset: 0;
   pointer-events: none;
-  opacity: .8;
-  background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.1'/%3E%3C/svg%3E");
+  opacity: .62;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.1'/%3E%3C/svg%3E");
   background-size: 160px 160px;
 }
 
-@keyframes atmosphere-drift {
-  from { transform: translate3d(0, 0, 0) scale(1); }
-  to { transform: translate3d(-4vw, 3vw, 0) scale(1.06); }
-}
-
-/* Small viewports keep the grid and tooth but retire the heavy blurs:
-   full-size blurs this large stall scrolling on mobile GPUs. */
 @media (max-width: 780px) {
-  .atmospheric-ink,
-  .atmospheric-depth,
-  .atmospheric-light {
-    filter: blur(48px);
-    opacity: .6;
+  .atmospheric-ink {
+    width: 650px;
+    right: -270px;
+    top: -190px;
+    opacity: .48;
   }
 
-  .atmospheric-ink { opacity: .36; }
-  .atmospheric-depth { opacity: .32; }
-  .dot-grid { opacity: .3; }
-  .film-grain { opacity: .5; }
+  .atmospheric-depth {
+    width: 600px;
+    height: 520px;
+    left: -410px;
+    bottom: -330px;
+    opacity: .45;
+  }
+
+  .atmospheric-light { width: 500px; height: 350px; left: -230px; top: -200px; }
+  .dot-grid { opacity: .55; }
+  .film-grain { opacity: .45; }
 }

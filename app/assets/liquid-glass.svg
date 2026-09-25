@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 900" fill="none">
+  <defs>
+    <radialGradient id="shadow" cx="0" cy="0" r="1" gradientTransform="translate(688 260) rotate(137) scale(530 425)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#363849" stop-opacity=".62"/>
+      <stop offset=".38" stop-color="#656779" stop-opacity=".46"/>
+      <stop offset=".74" stop-color="#a2a4b5" stop-opacity=".25"/>
+      <stop offset="1" stop-color="#d2d4de" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="body" x1="241" y1="173" x2="920" y2="689" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".98"/>
+      <stop offset=".13" stop-color="#d9daf4" stop-opacity=".93"/>
+      <stop offset=".3" stop-color="#7c7e99" stop-opacity=".82"/>
+      <stop offset=".47" stop-color="#34374d" stop-opacity=".85"/>
+      <stop offset=".65" stop-color="#b5b9d9" stop-opacity=".9"/>
+      <stop offset=".79" stop-color="#f4f5fb" stop-opacity=".98"/>
+      <stop offset=".91" stop-color="#a7a7c6" stop-opacity=".75"/>
+      <stop offset="1" stop-color="#fff" stop-opacity=".9"/>
+    </linearGradient>
+    <linearGradient id="face" x1="412" y1="84" x2="763" y2="751" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".9"/>
+      <stop offset=".21" stop-color="#d6d6e5" stop-opacity=".5"/>
+      <stop offset=".46" stop-color="#353449" stop-opacity=".22"/>
+      <stop offset=".69" stop-color="#eeeef6" stop-opacity=".44"/>
+      <stop offset="1" stop-color="#fff" stop-opacity=".8"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="283" y1="402" x2="915" y2="181" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity="0"/>
+      <stop offset=".2" stop-color="#fff" stop-opacity=".94"/>
+      <stop offset=".39" stop-color="#f8faff" stop-opacity=".08"/>
+      <stop offset=".7" stop-color="#e4e1ff" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="glint" x1="502" y1="21" x2="815" y2="718" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".96"/>
+      <stop offset=".27" stop-color="#c8caff" stop-opacity=".4"/>
+      <stop offset=".55" stop-color="#fff" stop-opacity="0"/>
+      <stop offset=".85" stop-color="#fff" stop-opacity=".9"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="haze" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="48"/></filter>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="15"/></filter>
+    <filter id="liquid" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency=".008 .013" numOctaves="2" seed="8" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="20" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+  <ellipse cx="665" cy="307" rx="400" ry="349" fill="url(#shadow)" filter="url(#haze)"/>
+  <path d="M884-134C648-88 370 23 305 194c-72 188 32 382 190 459 142 69 278 5 323-128 43-128-39-241-158-235-87 5-153 73-157 160-4 90 66 147 153 136" stroke="#3c3d55" stroke-opacity=".3" stroke-width="211" stroke-linecap="round" filter="url(#soft)"/>
+  <g filter="url(#liquid)">
+    <path d="M884-134C648-88 370 23 305 194c-72 188 32 382 190 459 142 69 278 5 323-128 43-128-39-241-158-235-87 5-153 73-157 160-4 90 66 147 153 136" stroke="url(#body)" stroke-width="184" stroke-linecap="round"/>
+    <path d="M888-133C664-76 398 28 338 211c-58 178 40 355 177 414 122 53 234-2 273-114 35-100-39-193-138-184-70 6-119 58-120 128-2 65 52 109 118 103" stroke="url(#face)" stroke-width="87" stroke-linecap="round"/>
+  </g>
+  <path d="M847-113C607-39 368 54 323 207c-53 180 55 353 189 413 138 61 245-26 282-125" stroke="url(#rim)" stroke-width="12" stroke-linecap="round" filter="url(#soft)"/>
+  <path d="M861-129C615-41 370 51 326 207c-52 183 62 358 196 414 130 54 231-27 268-122" stroke="url(#glint)" stroke-width="3" stroke-linecap="round"/>
+  <path d="M742-37C480 45 350 136 353 268c3 113 86 221 162 260 94 48 187 2 220-77" stroke="#fff" stroke-opacity=".48" stroke-width="17" stroke-linecap="round" filter="url(#soft)"/>
+  <path d="M748-36C480 47 353 140 356 266c3 111 88 217 160 258 92 49 179 4 214-73" stroke="#fafaff" stroke-opacity=".65" stroke-width="2" stroke-linecap="round"/>
+  <path d="M687 368c76-45 139-14 133 74-4 56-42 111-91 133" stroke="#fff" stroke-opacity=".58" stroke-width="10" stroke-linecap="round" filter="url(#soft)"/>
+  <path d="M471 38c-120 65-196 158-186 270 12 137 94 243 195 281" stroke="#fff" stroke-opacity=".6" stroke-width="2" stroke-linecap="round" filter="url(#soft)"/>
+  <path d="M1001 170C887 181 798 223 751 307" stroke="#fff" stroke-opacity=".72" stroke-width="5" stroke-linecap="round" filter="url(#soft)"/>
+  <ellipse cx="561" cy="427" rx="115" ry="80" transform="rotate(-34 561 427)" fill="#fff" fill-opacity=".22" filter="url(#haze)"/>
+</svg>

@@ -4,6 +4,7 @@ import type { AniListMedia } from '../../data/anilist/types'
 import type { BrowseSearch } from '../../lib/browse'
 import type { CatalogMode } from '../../lib/catalog'
 import { PosterCard } from './PosterCard'
+import { IconArrowLeft, IconArrowRight } from '../ui/icons'
 
 export function Rail(props: { title: string; items: AniListMedia[]; mode?: CatalogMode; explore?: BrowseSearch }) {
   let track: HTMLDivElement | undefined
@@ -37,13 +38,13 @@ export function Rail(props: { title: string; items: AniListMedia[]; mode?: Catal
       <Show when={props.items.length} fallback={<p class="mono-signal mt-4">No titles available.</p>}>
         <div class="rail">
           <Show when={canScroll()}>
-            <button type="button" class="rail-arrow prev" aria-label={`Scroll ${props.title} left`} onClick={() => scroll(-1)}>‹</button>
+            <button type="button" class="rail-arrow prev" aria-label={`Scroll ${props.title} left`} onClick={() => scroll(-1)}><IconArrowLeft /></button>
           </Show>
           <div class="poster-rail" ref={track}>
             <For each={props.items}>{(anime, index) => <PosterCard anime={anime} mode={props.mode} rank={index() + 1} />}</For>
           </div>
           <Show when={canScroll()}>
-            <button type="button" class="rail-arrow next" aria-label={`Scroll ${props.title} right`} onClick={() => scroll(1)}>›</button>
+            <button type="button" class="rail-arrow next" aria-label={`Scroll ${props.title} right`} onClick={() => scroll(1)}><IconArrowRight /></button>
           </Show>
         </div>
       </Show>

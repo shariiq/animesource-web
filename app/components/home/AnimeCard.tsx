@@ -3,6 +3,7 @@ import type { AniListMedia } from '../../data/anilist/types'
 import { formatScore, titleOf, timeUntil } from '../../lib/format'
 import { catalogCountLabel, catalogFormat, catalogStatus, type CatalogMode } from '../../lib/catalog'
 import { CatalogLink } from './CatalogLink'
+import { IconArrowUpRight } from '../ui/icons'
 
 export function AnimeCard(props: { anime: AniListMedia; mode?: CatalogMode; rank?: number }) {
   const mode = () => props.mode ?? 'ANIME'
@@ -83,10 +84,10 @@ export function AnimeCard(props: { anime: AniListMedia; mode?: CatalogMode; rank
       </div>
 
       <span
-        class="flex items-center justify-center border-l border-line text-[18px] text-text-quiet transition-[background,color,transform] duration-200 group-hover:bg-[var(--accent)] group-hover:text-white"
+        class="flex items-center justify-center border-l border-line text-text-quiet transition-[background,color,transform] duration-200 group-hover:bg-[var(--accent)] group-hover:text-white"
         aria-hidden="true"
       >
-        ↗
+        <IconArrowUpRight class="size-5" />
       </span>
     </CatalogLink>
   )

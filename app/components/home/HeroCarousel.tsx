@@ -5,6 +5,7 @@ import { formatCompactNumber, formatEnum, formatScore, titleOf } from '../../lib
 import { catalogCopy, catalogCountLabel, catalogFormat, catalogStatus, type CatalogMode } from '../../lib/catalog'
 import { SectionHeading } from '../ui/SectionHeading'
 import { CatalogLink } from './CatalogLink'
+import { IconPlay } from '../ui/icons'
 
 const SLIDE_INTERVAL_MS = 7000
 const MAX_SLIDES = 6
@@ -175,7 +176,7 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
                         to="/anime/$animeId/watch/$episodeId"
                         params={{ animeId: String(media.id), episodeId: 'next' }}
                       >
-                        ▶ {copy().heroPrimary}
+                        <IconPlay /> {copy().heroPrimary}
                       </Link>
                     </Show>
                   )}

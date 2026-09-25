@@ -6,6 +6,7 @@ import { suggestQuery } from '../../data/options'
 import { makeBrowseSearch } from '../../lib/browse'
 import type { CatalogMode } from '../../lib/catalog'
 import { formatEnum, titleOf } from '../../lib/format'
+import { IconArrowUpRight, IconSearch } from '../ui/icons'
 import {
   groupSuggestions,
   intentForQuery,
@@ -226,7 +227,7 @@ export function SearchSurface(props: { mode?: CatalogMode } = {}) {
               Search {mode().toLowerCase()}
             </label>
             <span class="search-surface-icon" aria-hidden="true">
-              ⌕
+              <IconSearch class="size-[18px]" />
             </span>
             <input
               id={SEARCH_FIELD_ID}
@@ -257,7 +258,7 @@ export function SearchSurface(props: { mode?: CatalogMode } = {}) {
             >
               <span class="search-submit-label">Search</span>
               <span class="search-submit-icon" aria-hidden="true">
-                ↗
+                <IconArrowUpRight class="size-4" />
               </span>
             </button>
           </div>
@@ -287,7 +288,7 @@ export function SearchSurface(props: { mode?: CatalogMode } = {}) {
                       onClick={() => openRecent(item)}
                     >
                       <span>{item.query}</span>
-                      <span aria-hidden="true">↗</span>
+                      <IconArrowUpRight class="size-3.5 shrink-0" />
                     </button>
                   )}
                 </For>

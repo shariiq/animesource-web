@@ -121,10 +121,6 @@ function RootDocument(props: { children: JSX.Element }) {
         <div class="app-background" aria-hidden="true">
           <div class="atmospheric-ink" />
           <div class="atmospheric-depth" />
-          <div class="atmospheric-bloom" />
-          <div class="atmospheric-violet" />
-          <div class="atmospheric-mint" />
-          <div class="atmospheric-orange" />
           <div class="atmospheric-light" />
         </div>
         <div class="dot-grid" aria-hidden="true" />

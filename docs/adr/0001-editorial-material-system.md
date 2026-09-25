@@ -141,7 +141,6 @@ The background is an application-wide field, not content and not a per-route her
 - `app-background` supplies the fixed luminous radial paper field.
 - `atmospheric-ink` creates the large dark upper-right depth field.
 - `atmospheric-depth` anchors the lower composition.
-- `atmospheric-bloom` introduces a soft plum bloom at the left.
 - `film-grain` combines a fine radial speckle and embedded SVG fractal turbulence at `0.36` opacity with `mix-blend-mode: multiply`.
 
 Every atmospheric layer is fixed or absolutely positioned, static, decorative, `pointer-events: none`, and placed behind or above content only as intended by its recipe. Grain must never intercept input, animate, or become an excuse for insufficient text contrast.

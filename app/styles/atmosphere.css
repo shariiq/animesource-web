@@ -38,59 +38,10 @@
   animation: atmosphere-drift 42s var(--ease) infinite alternate-reverse;
 }
 
-/* Aurora blooms: the niche semantic palette diffusing through the field so
-   frosted surfaces refract colour, not just light. */
-@utility atmospheric-bloom {
-  position: absolute;
-  width: 42vw;
-  height: 46vw;
-  top: 6vw;
-  left: 0;
-  border-radius: 50%;
-  opacity: .9;
-  filter: blur(92px);
-  background: radial-gradient(circle, rgb(224 132 178 / .8), rgb(180 122 162 / .34) 50%, transparent 76%);
-  animation: atmosphere-float 28s ease-in-out infinite alternate;
-}
-
-@utility atmospheric-violet {
-  position: absolute;
-  width: 40vw;
-  height: 40vw;
-  right: 4vw;
-  bottom: -14vw;
-  border-radius: 50%;
-  opacity: .62;
-  filter: blur(88px);
-  background: radial-gradient(circle, rgb(106 90 249 / .55), rgb(106 90 249 / .14) 56%, transparent 78%);
-  animation: atmosphere-float 36s ease-in-out infinite alternate-reverse;
-}
-
-@utility atmospheric-mint {
-  position: absolute;
-  width: 34vw;
-  height: 30vw;
-  left: 24vw;
-  bottom: 4vw;
-  border-radius: 50%;
-  opacity: .5;
-  filter: blur(84px);
-  background: radial-gradient(circle, rgb(74 220 164 / .5), rgb(142 240 193 / .16) 55%, transparent 78%);
-  animation: atmosphere-drift 30s ease-in-out infinite alternate;
-}
-
-@utility atmospheric-orange {
-  position: absolute;
-  width: 26vw;
-  height: 30vw;
-  right: 26vw;
-  top: -8vw;
-  border-radius: 50%;
-  opacity: .44;
-  filter: blur(80px);
-  background: radial-gradient(circle, rgb(255 106 77 / .5), rgb(255 158 122 / .16) 54%, transparent 78%);
-  animation: atmosphere-float 24s ease-in-out infinite alternate-reverse;
-}
+/* The paper field carries its own depth from ink and light alone. The old
+   aurora blooms (plum, violet, mint, orange) were retired: four colored
+   gradients drifting behind every route is what made the background read as
+   generic SaaS atmosphere instead of paper. */
 
 @utility atmospheric-light {
   position: absolute;
@@ -136,19 +87,12 @@
   to { transform: translate3d(-4vw, 3vw, 0) scale(1.06); }
 }
 
-@keyframes atmosphere-float {
-  from { transform: translate3d(0, 0, 0); }
-  to { transform: translate3d(3vw, -2.4vw, 0); }
-}
-
 /* Small viewports paint the same field with fewer, softer layers: full-size
    blurs this large stall scrolling on mobile GPUs, so the two smallest
    blooms retire and the survivors halve their blur. */
 @media (max-width: 780px) {
   .atmospheric-ink,
   .atmospheric-depth,
-  .atmospheric-bloom,
-  .atmospheric-violet,
   .atmospheric-light {
     filter: blur(48px);
     opacity: .6;
@@ -158,9 +102,4 @@
   .atmospheric-depth { opacity: .32; }
   .dot-grid { opacity: .32; }
   .film-grain { opacity: .2; }
-
-  .atmospheric-mint,
-  .atmospheric-orange {
-    display: none;
-  }
 }

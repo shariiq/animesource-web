@@ -16,6 +16,7 @@ import { createCancellableScope, type ScopeOperation } from '../../../lib/source
 import {
   DEFAULT_MANGA_READER_SETTINGS,
   mangaReaderData,
+  resolveMangaReaderDefaults,
   type MangaReaderBackground,
   type MangaReaderDirection,
   type MangaReaderFit,
@@ -703,7 +704,7 @@ export function createMangaReaderSession(options: MangaReaderSessionOptions): Ma
       ])
       if (scope.disposed) return
       setSavedRecord(stored)
-      const settings = stored ?? defaults
+      const settings = stored ?? resolveMangaReaderDefaults(options.manga.countryOfOrigin, defaults)
       if (!userEditedSettings.has('layout')) setLayout(settings.layout)
       if (!userEditedSettings.has('direction')) setDirection(settings.direction)
       if (!userEditedSettings.has('fit')) setFit(settings.fit)

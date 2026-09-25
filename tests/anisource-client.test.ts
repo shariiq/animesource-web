@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AniSourceError, createAniSourceClient, loadSubtitle, normalizeSubtitleText, resolveUrl } from '../app/data/anisource/client'
+import { AS_COLD_START_DELAY_MS, AniSourceError, createAniSourceClient, loadSubtitle, normalizeSubtitleText, resolveUrl, warmOverflowOrigin } from '../app/data/anisource/client'
 
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 const transport = (fetch: (input: string, init?: RequestInit) => Promise<Response>) => ({
@@ -240,5 +240,215 @@ describe('AniSource client', () => {
       headers: { Accept: 'text/vtt, text/plain;q=0.9, */*;q=0.1' },
     })
     vi.unstubAllGlobals()
+  })
+
+  describe('overflow routing', () => {
+    const primary = 'https://primary.test'
+    const overflow = 'https://overflow.test'
+    const sources = { sources: [], count: 0 }
+    const routed = (fetch: (input: string, init?: RequestInit) => Promise<Response>, extra: Record<string, unknown> = {}) => createAniSourceClient({
+      baseUrl: primary,
+      overflowBaseUrl: `${overflow}/api/anisource/fallback`,
+      transport: transport(fetch),
+      ...extra,
+    })
+    const timedOut = () => {
+      const error = new Error('aborted')
+      error.name = 'AbortError'
+      throw error
+    }
+
+    it('serves from primary until a switchable failure moves one call to overflow', async () => {
+      const fetch = vi.fn(async (url: string) => {
+        if (url.startsWith(primary)) return response({ detail: 'Origin unavailable' }, 503)
+        return response(sources)
+      })
+      const client = routed(fetch)
+
+      await expect(client.sources()).resolves.toEqual(sources)
+      expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+        `${primary}/api/v1/anime/sources`,
+        `${overflow}/api/anisource/fallback/api/v1/anime/sources`,
+      ])
+
+      // The switch sticks: the next call starts on overflow.
+      client.clearSourceCache()
+      await expect(client.sources()).resolves.toEqual(sources)
+      expect(fetch).toHaveBeenCalledTimes(3)
+      expect(fetch.mock.calls[2]![0]).toBe(`${overflow}/api/anisource/fallback/api/v1/anime/sources`)
+    })
+
+    it('bounds the alternate to a single retry and surfaces the latest error', async () => {
+      const fetch = vi.fn(async () => response({ detail: 'Both down' }, 503))
+      const client = routed(fetch)
+
+      await expect(client.sources()).rejects.toMatchObject({ kind: 'http', status: 503 })
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+
+    it.each([
+      ['expired ticket', 410],
+      ['missing route', 404],
+      ['throttled session', 429],
+      ['unexpected shape', 500],
+    ])('never alternates for %s', async (_label, status) => {
+      const fetch = vi.fn(async () => response({ detail: 'No help elsewhere' }, status))
+      const client = routed(fetch)
+
+      await expect(client.sources()).rejects.toMatchObject({ status })
+      expect(fetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('alternates on timeouts and dropped connections', async () => {
+      const fetch = vi.fn(async (url: string) => {
+        if (url.startsWith(primary)) return timedOut()
+        return response(sources)
+      })
+      const client = routed(fetch)
+      await expect(client.sources()).resolves.toEqual(sources)
+      expect(fetch).toHaveBeenCalledTimes(2)
+
+      const dropped = vi.fn(async (url: string) => {
+        if (url.startsWith(primary)) throw new TypeError('offline')
+        return response(sources)
+      })
+      const retrying = routed(dropped)
+      await expect(retrying.sources()).resolves.toEqual(sources)
+      expect(dropped).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not alternate or record when the caller goes away', async () => {
+      const fetch = vi.fn(async () => response(sources))
+      const client = routed(fetch)
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(client.sources(undefined, controller.signal)).rejects.toMatchObject({ kind: 'cancelled' })
+      expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('ignores a degenerate overflow that matches primary', async () => {
+      const fetch = vi.fn(async () => response({ detail: 'Down' }, 503))
+      const client = createAniSourceClient({ baseUrl: primary, overflowBaseUrl: primary, transport: transport(fetch) })
+
+      await expect(client.sources()).rejects.toMatchObject({ status: 503 })
+      expect(fetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('fast-paths around an outage instead of paying a timeout per call', async () => {
+      let now = 10_000
+      const fetch = vi.fn(async (url: string) => {
+        if (url.startsWith(primary)) return timedOut()
+        return response({ detail: 'Overflow down' }, 503)
+      })
+      const client = routed(fetch, { clock: () => now })
+
+      for (let round = 0; round < 3; round += 1) {
+        await expect(client.sources()).rejects.toMatchObject({ status: 503 })
+        client.clearSourceCache()
+      }
+      expect(fetch.mock.calls.filter(([url]) => (url as string).startsWith(primary))).toHaveLength(3)
+
+      // Primary failed three times inside the window: the next call skips it.
+      await expect(client.sources()).rejects.toMatchObject({ status: 503 })
+      expect(fetch.mock.calls.filter(([url]) => (url as string).startsWith(primary))).toHaveLength(3)
+      expect(fetch).toHaveBeenCalledTimes(7)
+    })
+
+    it('moves slow traffic to a proven overflow after two slow calls', async () => {
+      let primaryCalls = 0
+      let overflowCalls = 0
+      const fetch = vi.fn(async (url: string) => {
+        if (url.startsWith(overflow)) {
+          overflowCalls += 1
+          if (overflowCalls === 2) throw new TypeError('offline')
+          return response(sources)
+        }
+        primaryCalls += 1
+        if (primaryCalls === 1) return timedOut()
+        return response(sources)
+      })
+      const client = createAniSourceClient({
+        baseUrl: primary,
+        overflowBaseUrl: `${overflow}/api/anisource/fallback`,
+        transport: {
+          fetch,
+          setTimeout: vi.fn((callback: () => void, milliseconds?: number) => {
+            if (milliseconds === AS_COLD_START_DELAY_MS) callback()
+            return 1 as unknown as ReturnType<typeof setTimeout>
+          }),
+          clearTimeout: vi.fn(),
+        },
+      })
+
+      // A primary timeout proves overflow through the bounded alternate.
+      await expect(client.sources()).resolves.toEqual(sources)
+      // Overflow degrades once, sending traffic home to primary.
+      client.clearSourceCache()
+      await expect(client.sources()).resolves.toEqual(sources)
+      expect(fetch).toHaveBeenCalledTimes(4)
+
+      // Two slow primary calls move the sticky switch while overflow is warm.
+      client.clearSourceCache()
+      await expect(client.sources()).resolves.toEqual(sources)
+      client.clearSourceCache()
+      await expect(client.sources()).resolves.toEqual(sources)
+      expect(fetch).toHaveBeenCalledTimes(6)
+
+      // Traffic now starts on overflow without touching primary.
+      const last = fetch.mock.calls.at(-1)![0] as string
+      expect(last.startsWith(overflow)).toBe(true)
+      expect(primaryCalls).toBe(3)
+    })
+  })
+
+  describe('overflow warming', () => {
+    const health = {
+      status: 'ok',
+      version: 'test',
+      uptime_seconds: 1,
+      memory_usage_mb: 1,
+      active_sources: 1,
+      cache_stats: {},
+    }
+
+    it('pings fallback health once per visit through the same-origin gateway', async () => {
+      const fetch = vi.fn(async () => response(health))
+      vi.stubGlobal('fetch', fetch)
+
+      warmOverflowOrigin(1_000_000)
+      await vi.waitFor(() => {
+        expect(fetch).toHaveBeenCalledWith('/api/anisource/fallback/health', expect.any(Object))
+      })
+      expect(fetch).toHaveBeenCalledTimes(1)
+      vi.unstubAllGlobals()
+    })
+
+    it('throttles repeat visits and refires after the window', async () => {
+      const fetch = vi.fn(async () => response(health))
+      vi.stubGlobal('fetch', fetch)
+
+      warmOverflowOrigin(2_000_000)
+      warmOverflowOrigin(2_000_001)
+      await vi.waitFor(() => {
+        expect(fetch).toHaveBeenCalledTimes(1)
+      })
+      warmOverflowOrigin(2_000_000 + 5 * 60_000 + 1)
+      await vi.waitFor(() => {
+        expect(fetch).toHaveBeenCalledTimes(2)
+      })
+      vi.unstubAllGlobals()
+    })
+
+    it('stays silent when the overflow origin is unreachable', async () => {
+      const fetch = vi.fn(async () => { throw new TypeError('offline') })
+      vi.stubGlobal('fetch', fetch)
+
+      expect(() => warmOverflowOrigin(3_000_000)).not.toThrow()
+      await vi.waitFor(() => {
+        expect(fetch).toHaveBeenCalledTimes(1)
+      })
+      vi.unstubAllGlobals()
+    })
   })
 })

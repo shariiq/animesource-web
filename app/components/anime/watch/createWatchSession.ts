@@ -147,8 +147,6 @@ export interface WatchSessionOptions {
   navigateToEpisode: (routeToken: string, sourceId?: string) => Promise<void>
   api: WatchSourceClient
   persistence: WatchPersistence
-  /** Origin used to warm and, on exhausted primary recovery, serve streams when the primary deployment fails. */
-  fallbackApi?: WatchSourceClient
 }
 
 export interface WatchSession {
@@ -376,9 +374,6 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
   const streamAttempts = new Map<string, number>()
   /** Silent expired-ticket recoveries per server; reset whenever the viewer picks (or retries) the server. */
   const expiredStreamRefreshes = new Map<string, number>()
-  /** Fallback warm-ups and one-shot fallback recoveries per server. */
-  const warmedFallback = new Set<string>()
-  const fallbackAttempted = new Set<string>()
 
   /** Starts an operation on a fresh generation, aborting everything in flight. */
   const begin = (): ScopeOperation => scope.restart()
@@ -588,8 +583,6 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     const attemptKey = `${sourceId}:${episodeId}:${serverId}`
     if (!preserveExpiryRefreshBudget) {
       expiredStreamRefreshes.delete(attemptKey)
-      warmedFallback.delete(attemptKey)
-      fallbackAttempted.delete(attemptKey)
     }
     const attempt = (streamAttempts.get(attemptKey) ?? 0) + 1
     streamAttempts.set(attemptKey, attempt)
@@ -691,82 +684,6 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
     // A manual in-player retry always starts a fresh attempt: unlike the
     // automatic expired-ticket refresh, it resets the recovery budgets.
     await chooseServer(serverId)
-  }
-
-  const warmFallbackOrigin = (fallback: WatchSourceClient) => {
-    // Best-effort wake-up for a cold fallback deployment (free-tier origins
-    // sleep when idle). Independent of the cancellable scope: its only job is
-    // to be warm if the primary recovery budget runs out later.
-    const health = fallback.health
-    if (!health) return
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 15_000)
-    health(
-      () => undefined,
-      controller.signal,
-    ).catch(() => undefined).finally(() => clearTimeout(timeout))
-  }
-
-  const resolveViaFallback = async (identity: PlaybackIdentity, message: string) => {
-    const fallback = options.fallbackApi
-    if (!fallback) return
-    const { sourceId, episodeId, serverId } = identity
-    const operation = begin()
-    const expiredCause = () => new AniSourceError(message, 'http', 410)
-    setSelectedServer(serverId)
-    setPlaybackIdentity(null)
-    setLoading('streams')
-    setError(null)
-    setWatchError(null)
-
-    try {
-      const result = orderStreams(
-        await fallback.streams(
-          sourceId,
-          episodeId,
-          serverId,
-          () => {
-            if (current(operation)) setSlow(true)
-          },
-          operation.signal,
-        ),
-      )
-      if (
-        !current(operation) ||
-        selectedSource() !== sourceId ||
-        selectedEpisode() !== episodeId ||
-        selectedServer() !== serverId
-      ) {
-        return
-      }
-
-      setStreams(result)
-      if (!result.length) {
-        setFailure(expiredCause(), 'streams', sourceId, serverId)
-        return
-      }
-
-      setHealth(sourceId, 'healthy', null)
-      setPlaybackIdentity({
-        key: `${sourceId}:${episodeId}:${serverId}:${operation.id}`,
-        sourceId,
-        episodeId,
-        serverId,
-      })
-    } catch (cause) {
-      if (!current(operation)) return
-      // The fallback is a last resort: an unconfigured fallback must not
-      // replace the actionable primary expiry, but a reachable fallback that
-      // fails on its own terms reports truthfully.
-      const fallbackCause = cause instanceof AniSourceError && cause.kind === 'misconfigured'
-        ? expiredCause()
-        : cause
-      setStreams([])
-      setFailure(fallbackCause, 'streams', sourceId, serverId)
-    } finally {
-      if (current(operation)) setLoading('')
-      finish(operation)
-    }
   }
 
   const loadEpisodes = async (
@@ -1141,23 +1058,14 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
 
     if (expired) {
       const attemptKey = `${identity.sourceId}:${identity.episodeId}:${identity.serverId}`
-      const fallback = options.fallbackApi
-      if (fallback && !warmedFallback.has(attemptKey)) {
-        warmedFallback.add(attemptKey)
-        warmFallbackOrigin(fallback)
-      }
       const refreshes = expiredStreamRefreshes.get(attemptKey) ?? 0
       // Cap silent recoveries so instantly-expiring links cannot refresh
       // forever; the in-player Retry button resets the budget by re-picking
-      // the server, and each manual pick starts a fresh budget.
+      // the server, and each manual pick starts a fresh budget. Origin
+      // problems underneath take the client's overflow path on their own.
       if (refreshes < MAX_EXPIRED_STREAM_REFRESHES) {
         expiredStreamRefreshes.set(attemptKey, refreshes + 1)
         void chooseServer(identity.serverId, true)
-        return true
-      }
-      if (fallback && !fallbackAttempted.has(attemptKey)) {
-        fallbackAttempted.add(attemptKey)
-        void resolveViaFallback(identity, message)
         return true
       }
       setFailure(new AniSourceError(message, 'http', 410), 'streams', identity.sourceId, identity.serverId)

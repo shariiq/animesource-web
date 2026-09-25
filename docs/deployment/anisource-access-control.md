@@ -45,4 +45,16 @@ The website server streams signed images, captions, and video bytes so the brows
 
 ## Fallback origin
 
-When `ANISOURCE_FALLBACK_BASE` points at a second API deployment, the Watch session uses it as a last resort: the first expired stream link fires a best-effort health ping to wake a sleeping fallback (free-tier origins idle out), and once the primary silent-refresh budget is exhausted the session resolves streams through `/api/anisource/fallback/*` instead of failing. Fallback catalog requests carry the same service token and rate limits; only media tickets are origin-bound, so a fallback ticket never resolves against the primary origin. Without the variable the shared default in `config/api-urls.json` applies; set it empty to disable the fallback entirely, in which case the original expired-link error surfaces as before.
+`ANISOURCE_FALLBACK_BASE` points at a second API deployment that acts as the
+overflow origin (see ADR 0005): the browser client serves from the primary
+origin until measured latency or origin-health failures move a session over.
+Media tickets stay origin-bound either way, so a switch never disturbs
+in-flight playback or reading. Without the variable the shared default in
+`config/api-urls.json` applies; set it empty to disable the overflow
+entirely, in which case origin failures surface without an alternate
+attempt. Catalog requests follow the active origin through the matching
+gateway prefix; media tickets are origin-bound, so an overflow ticket never
+resolves against the primary origin. Mounted Watch and Reader sessions also
+fire one throttled, best-effort warm ping at the overflow health endpoint so
+a sleeping deployment is already waking when overflow is first needed;
+failures stay silent by design.

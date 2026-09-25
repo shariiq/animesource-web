@@ -32,6 +32,9 @@ export default defineConfig({
       env: {
         VITE_ANILIST_API_URL: 'http://127.0.0.1:3101/anilist',
         ANISOURCE_BASE: 'http://127.0.0.1:3101',
+        // Keep overflow traffic hermetic: an unset fallback base would point
+        // the mount-time warm ping at the production Render deployment.
+        ANISOURCE_FALLBACK_BASE: 'http://127.0.0.1:3101',
       },
     },
   ],

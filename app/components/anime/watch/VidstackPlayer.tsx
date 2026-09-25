@@ -38,7 +38,7 @@ interface PlayerTrack {
   isDefault: boolean
 }
 
-const EXPIRED_STATUS_PATTERN = /\b(401|403|404|410)\b/
+const EXPIRED_STATUS_PATTERN = /\b(401|403|410)\b/
 const EXPIRED_MESSAGE = 'This stream link has expired. Refresh this server to request a new stream.'
 const GENERIC_MESSAGE = 'This stream could not be played. Try another server, or open the stream directly.'
 const HEIGHT_PATTERN = /(\d{3,4})\s*p/i
@@ -98,9 +98,9 @@ function isExpiredHlsFailure(data: unknown): boolean {
   if (!data || typeof data !== 'object') return false
   const details = data as { response?: { code?: number } | null; details?: string }
   const status = details.response?.code
-  // 410 is the current expired-capability status; 404 covers API versions
-  // that reported dead media tokens as missing.
-  return status === 401 || status === 403 || status === 404 || status === 410 || /(?:401|403|404|410)/.test(details.details ?? '')
+  // Dead media capabilities always surface as 410: the API and the media
+  // edge return "expired or invalid" (never 404) for unresolvable tokens.
+  return status === 401 || status === 403 || status === 410 || /(?:401|403|410)/.test(details.details ?? '')
 }
 
 function describeFailure(detail: unknown): { message: string; expired: boolean } {
@@ -516,7 +516,7 @@ export function VidstackPlayer(props: WatchPlayerProps) {
       providerAdapter.library = Hls
       providerAdapter.config = { capLevelToPlayerSize: true, maxBufferLength: 60 }
       // Raw hls.js errors arrive per failed attempt, long before Vidstack
-      // escalates the fatal one: expired gateway tickets (401/403/404/410)
+      // escalates the fatal one: expired gateway tickets (401/403/410)
       // route to silent session recovery from the first failure instead of
       // waiting out the library's retry backoff. Non-fatal errors stay with
       // hls.js, which recovers from them on its own.

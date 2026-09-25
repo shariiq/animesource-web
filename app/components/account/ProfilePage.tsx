@@ -92,12 +92,10 @@ export function ProfilePage() {
             <div class="flex items-center gap-4">
               <div class="grid size-14 shrink-0 place-items-center rounded-[18px] border border-white/85 bg-ink font-display text-3xl leading-none text-white shadow-[0_16px_32px_-22px_rgb(0_0_0_/_1)]" aria-hidden="true">{profileInitial()}</div>
               <div>
-                <p class="mono-signal">Viewer profile</p>
                 <p class="mt-1 inline-flex items-center gap-2 rounded-full border border-emerald-700/15 bg-emerald-50/70 px-3 py-1 font-mono text-[9px] uppercase tracking-[.1em] text-emerald-950"><span class="size-1.5 rounded-full bg-emerald-600" aria-hidden="true" />Saved on this device</p>
               </div>
             </div>
             <h1 class="mt-7 max-w-4xl break-words font-display text-5xl leading-[.88] tracking-[-.04em] sm:text-7xl">{profileName()}</h1>
-            <p class="mt-5 max-w-2xl text-sm leading-6 text-text-secondary">Your profile is stored in this browser. Name it now; account sign-in can connect it across devices later.</p>
             <div class="mt-6 flex flex-wrap gap-3">
               <Link class="paper-control px-4 py-3 text-xs" to="/library">Open library</Link>
               <Link class="ink-control px-4 py-3 text-xs" to="/settings">Settings</Link>
@@ -106,7 +104,6 @@ export function ProfilePage() {
 
           <section class="rounded-[18px] border border-white/80 bg-white/48 p-5 shadow-[0_20px_45px_-38px_rgb(0_0_0_/_55)] backdrop-blur-[22px]" aria-label="Profile storage summary">
             <p class="mono-signal">Profile home</p>
-            <p class="mt-3 font-display text-3xl tracking-[-.03em]">Private, present, yours.</p>
             <dl class="mt-5 grid gap-4 border-t border-line pt-4 text-sm">
               <div class="flex items-start justify-between gap-5"><dt class="editorial-label">Storage</dt><dd class="text-right font-medium">This browser</dd></div>
               <div class="flex items-start justify-between gap-5"><dt class="editorial-label">Connection</dt><dd class="text-right font-medium">{connectionLabel()}</dd></div>

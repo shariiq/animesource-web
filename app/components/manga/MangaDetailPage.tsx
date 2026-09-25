@@ -143,7 +143,7 @@ export function MangaDetailPage(props: { manga: AniListDetail }) {
   return (
     <PageShell>
       <section aria-labelledby="manga-title">
-        <SectionHeading title="Manga Details" description="AniList metadata / publication history / reading status" />
+        <SectionHeading title="Manga Details" />
         <article class="manga-detail-shell" style={{ '--manga-accent': accent() }}>
           <Show when={banner()}>
             <div class="manga-detail-banner" style={{ 'background-image': `url("${banner().replaceAll('"', '%22')}")` }} aria-hidden="true" />
@@ -188,7 +188,6 @@ export function MangaDetailPage(props: { manga: AniListDetail }) {
             </div>
 
             <div class="manga-story-column">
-              <p class="manga-detail-overline">MANGA / DETAILS</p>
               <h1 id="manga-title" class="manga-detail-title">{title()}</h1>
               <Show when={props.manga.title?.native && props.manga.title.native !== title()}>
                 <p class="manga-native-title">{props.manga.title?.native}</p>
@@ -208,7 +207,7 @@ export function MangaDetailPage(props: { manga: AniListDetail }) {
 
               <Show when={description()}>
                 <section class="manga-synopsis" aria-labelledby="manga-synopsis-heading">
-                  <div class="manga-synopsis-heading"><p id="manga-synopsis-heading" class="detail-kicker">Synopsis</p><span>ANILIST TEXT</span></div>
+                  <div class="manga-synopsis-heading"><p id="manga-synopsis-heading" class="detail-kicker">Synopsis</p></div>
                   <div class="manga-synopsis-copy" classList={{ 'line-clamp-6': !expanded() }} innerHTML={description()} />
                   <button class="manga-read-toggle" type="button" onClick={() => setExpanded((value) => !value)}>{expanded() ? 'Show less' : 'Read full synopsis'} <span aria-hidden="true">↗</span></button>
                 </section>
@@ -246,7 +245,7 @@ export function MangaDetailPage(props: { manga: AniListDetail }) {
 
       <Show when={detailTags().themes.length > 0 || detailTags().tags.length > 0}>
         <section class="detail-section" aria-labelledby="manga-themes-tags-heading">
-          <div class="detail-section-heading"><h2 id="manga-themes-tags-heading">Themes & tags</h2><p>Informative AniList metadata</p></div>
+          <div class="detail-section-heading"><h2 id="manga-themes-tags-heading">Themes & tags</h2></div>
           <div class="detail-panel grid gap-5 p-5 sm:grid-cols-2">
             <Show when={detailTags().themes.length > 0}><MangaTagGroup heading="Themes" tags={detailTags().themes} /></Show>
             <Show when={detailTags().tags.length > 0}><MangaTagGroup heading="Tags" tags={detailTags().tags} /></Show>
@@ -256,14 +255,14 @@ export function MangaDetailPage(props: { manga: AniListDetail }) {
 
       <Show when={detailLinks().length > 0}>
         <section class="detail-section" aria-labelledby="manga-external-links-heading">
-          <div class="detail-section-heading"><h2 id="manga-external-links-heading">External links</h2><p>Verified resources from AniList</p></div>
+          <div class="detail-section-heading"><h2 id="manga-external-links-heading">External links</h2></div>
           <div class="detail-panel grid gap-2 p-4 sm:grid-cols-2 lg:grid-cols-3">
             <For each={detailLinks()}>{(link) => <a class="detail-resource" href={link.url} target="_blank" rel="noopener noreferrer"><div><strong>{link.site}</strong><span>{[link.type ? formatEnum(link.type) : null, link.language].filter(Boolean).join(' · ') || 'External resource'}</span></div></a>}</For>
           </div>
         </section>
       </Show>
 
-      <StaffRail members={staff()} heading="Creators & staff" description="Writers, artists, and contributors" />
+      <StaffRail members={staff()} heading="Creators & staff" />
       <CharacterRail detail={props.manga} mode="MANGA" />
       <MediaRail heading="Relations" items={relations()} />
       <MediaRail heading="You may also like" items={recommendations()} />

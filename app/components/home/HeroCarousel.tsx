@@ -87,7 +87,6 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
         <SectionHeading
           id="featured-heading"
           title={copy().featuredTitle}
-          description={copy().featuredDescription}
         />
         <div class="hero-ambient" aria-hidden="true" />
         <article
@@ -118,10 +117,6 @@ export function HeroCarousel(props: { items: AniListMedia[]; mode?: CatalogMode 
           </div>
 
           <div class="relative z-10 flex min-h-[54px] flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-white/12 bg-black/28 px-4 py-2 font-mono text-[9px] uppercase tracking-[.12em] text-white/78 backdrop-blur-[14px] sm:px-8">
-            <div class="flex items-center gap-[10px]">
-              <i class="size-[6px] rounded-full bg-emerald shadow-[0_0_10px_rgb(0_200_83_/_0.7)]" />
-              <span>{copy().collectionPulse}</span>
-            </div>
             <div class="flex min-w-0 flex-1 items-center justify-start gap-[6px] overflow-x-auto sm:justify-end" role="tablist" aria-label={`Featured ${mode().toLowerCase()}`}>
               <span class="hidden shrink-0 sm:inline">Featured:</span>
               <For each={slides()}>

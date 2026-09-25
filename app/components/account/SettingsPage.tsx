@@ -237,12 +237,10 @@ export function SettingsPage() {
             <div class="flex items-center gap-4">
               <div class="grid size-14 shrink-0 place-items-center rounded-[18px] border border-white/85 bg-ink font-display text-3xl leading-none text-white shadow-[0_16px_32px_-22px_rgb(0_0_0_/_1)]" aria-hidden="true">S</div>
               <div>
-                <p class="mono-signal">Viewer settings</p>
                 <p class="mt-1 inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/62 px-3 py-1 font-mono text-[9px] uppercase tracking-[.1em] text-text-muted"><span class="size-1.5 rounded-full bg-violet" aria-hidden="true" />Local-first controls</p>
               </div>
             </div>
             <h1 class="mt-7 max-w-4xl font-display text-5xl leading-[.88] tracking-[-.04em] sm:text-7xl">Viewer settings.</h1>
-            <p class="mt-5 max-w-2xl text-sm leading-6 text-text-secondary">Set catalog, language, timezone, notification, and manga reader defaults. Preferences are saved in this browser.</p>
             <Link class="paper-control mt-6 inline-flex px-4 py-3 text-xs" to="/profile">View profile</Link>
           </div>
 

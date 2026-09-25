@@ -123,7 +123,6 @@
   .manga-shelf-heading strong { color: var(--ink); font-size: 11px; }
 
   .manga-story-column { min-width: 0; padding-top: 9px; }
-  .manga-detail-overline { margin: 0; color: color-mix(in srgb, var(--manga-accent, var(--violet)) 74%, var(--ink)); font: 500 10px var(--font-mono); letter-spacing: .15em; text-transform: uppercase; }
   .manga-detail-title { max-width: 11ch; margin: 15px 0 0; color: var(--ink); font: 400 clamp(40px, 5.2vw, 106px)/.86 var(--font-display); letter-spacing: -.06em; text-wrap: balance; overflow-wrap: anywhere; }
   .manga-native-title { margin: 14px 0 0; overflow-wrap: anywhere; color: var(--text-secondary); font-size: 13px; letter-spacing: .02em; }
 
@@ -1109,16 +1108,6 @@
   .featured-shell h2 {
     color: var(--ink);
     text-shadow: 0 1px 0 rgb(255 255 255 / .32);
-  }
-
-  .section-heading p {
-    max-width: 46ch;
-    margin: 0;
-    color: var(--text-secondary);
-    font: 500 10px/1.5 var(--font-mono);
-    letter-spacing: .06em;
-    text-align: right;
-    text-transform: uppercase;
   }
 
   .featured-artwork-image {

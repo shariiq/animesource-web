@@ -93,9 +93,7 @@ export function SchedulePage(props: { search: Accessor<ScheduleSearch> }) {
     <PageShell class="schedule-page">
       <header class="schedule-masthead">
         <div class="schedule-masthead-copy">
-          <p class="schedule-kicker">Release calendar / AniList airing data</p>
           <h1>What’s airing.</h1>
-          <p>Track upcoming episodes in your local time. Filter to anime saved on this device.</p>
         </div>
         <nav class="schedule-period-nav" aria-label="Schedule period">
           <button class="schedule-period-button" type="button" onClick={() => move(-1)} aria-label="Previous period">← Previous</button>

@@ -306,36 +306,88 @@ test("home to detail to watch resolves a stream and mounts the player", async ({
   await expect(
     page.getByRole("heading", { name: "Choose a server" }),
   ).toBeVisible();
-  await expect(page.getByLabel("Quality")).toBeVisible();
-  await expect(page.getByLabel("Subtitles")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
+  const player = page.locator(".player");
+  // The controls auto-hide while idle: park the pointer away first so the
+  // hover below definitely fires pointer movement and reveals them.
+  await page.mouse.move(8, 8);
+  await player.hover();
+  await expect(player.locator("media-play-button")).toBeVisible();
+  await expect(player.locator("media-caption-button")).toBeVisible();
+  await expect(player.locator("media-menu-button").first()).toBeVisible();
+  await expect.poll(() =>
+    player
+      .locator("media-player")
+      .evaluate(
+        (element) =>
+          (element as unknown as { qualities?: unknown[] }).qualities?.length,
+      ),
+  ).toBe(2);
   expect(browserRequests.gateway).toBeGreaterThan(0);
   expect(browserRequests.direct).toEqual([]);
 });
 
-test("a screen click enables Space playback control and hidden chrome leaves the picture", async ({ page }) => {
+test("an expired stream link exhausts recovery, then surfaces retry", async ({ page }) => {
+  test.slow();
+  await page.goto("/anime/1/watch/next");
+  await page.getByRole("button", { name: "Episode 1: Pilot" }).click();
+  await page.getByRole("button", { name: "Broken server" }).click();
+  // The manifest is gone: the player reports the expired ticket, the session
+  // silently re-resolves within its recovery budget, and only then does the
+  // last-resort fallback request go out. The error banner that follows is
+  // terminal, so it is safe to assert once the fallback has been attempted.
+  await expect(page.locator(".player media-player")).toBeVisible();
+  await page.waitForResponse(
+    (response) => response.url().includes("/api/anisource/fallback"),
+    { timeout: 60_000 },
+  );
+  await expect(page.getByRole("alert")).toBeVisible();
+});
+
+test("caption selection persists across reloads and renders cues", async ({ page }) => {
   await page.goto("/anime/1/watch/next");
   await page.getByRole("button", { name: "Episode 1: Pilot" }).click();
   await page.getByRole("button", { name: "Test server" }).click();
   const player = page.locator(".player");
-  const video = player.locator("video");
-  await expect(video).toBeVisible();
-  await video.evaluate((element) => {
-    if (!(element instanceof HTMLVideoElement)) throw new Error("Expected a video element");
-    element.dispatchEvent(new Event("canplay"));
-    let paused = true;
-    Object.defineProperty(element, "paused", { configurable: true, get: () => paused });
-    element.play = () => { paused = false; element.dispatchEvent(new Event("play")); return Promise.resolve(); };
-    element.pause = () => { paused = true; element.dispatchEvent(new Event("pause")); };
+  await player.locator("video").waitFor();
+  await page.waitForFunction(() => {
+    const video = document.querySelector(".player video") as HTMLVideoElement;
+    return video && video.readyState >= 2;
   });
-  await player.locator(".player-taplayer").click();
-  await expect(player.locator(".player-screen")).toBeFocused();
-  await page.keyboard.press("Space");
-  await expect(player.getByRole("button", { name: "Play" })).toBeVisible();
-  // The mock stream is not a decodable movie: test the actual CSS independently
-  // of the media error that correctly pins the controls for a real failure.
-  await player.evaluate((element) => { element.dataset.chrome = "hidden"; });
-  await expect.poll(() => player.locator(".player-chrome").evaluate((element) => getComputedStyle(element).visibility)).toBe("hidden");
+  await page.mouse.move(8, 8);
+  await player.hover();
+  await player.locator("media-menu-button").click();
+  await page.getByRole("menuitem", { name: /Captions/ }).click();
+  const english = page.getByRole("menuitemradio", { name: "English" });
+  await expect(english).toBeVisible({ timeout: 8_000 });
+  await english.click();
+
+  // The cue renders while the fixture plays through its caption window.
+  await player.hover();
+  await player.locator("media-play-button").click();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            [...document.querySelectorAll("media-captions [data-part='cue']")].map(
+              (element) => (element.textContent ?? "").trim(),
+            ),
+        ),
+      { timeout: 10_000 },
+    )
+    .toContain("Test subtitle");
+
+  // The choice survives a reload through the persisted playback preferences.
+  await page.reload();
+  await page.getByRole("button", { name: "Episode 1: Pilot" }).click();
+  await page.getByRole("button", { name: "Test server" }).click();
+  await player.locator("video").waitFor();
+  await page.mouse.move(8, 8);
+  await player.hover();
+  await player.locator("media-menu-button").click();
+  await expect(page.getByRole("menuitem", { name: /Captions.*English/ })).toBeVisible({
+    timeout: 10_000,
+  });
 });
 
 test("search to detail to watch mounts the player", async ({ page }) => {

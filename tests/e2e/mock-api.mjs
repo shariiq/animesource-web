@@ -1,4 +1,11 @@
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const FIXTURE_BYTES = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "fixtures", "mock-stream.webm"),
+);
 
 const port = Number(process.env.MOCK_API_PORT ?? 3101);
 
@@ -244,22 +251,36 @@ createServer(async (request, response) => {
     return send(response, 200, [
       { id: "server-1", name: "Test server", type: "SUB" },
       { id: "server-empty", name: "Empty server", type: "SUB" },
+      { id: "server-broken", name: "Broken server", type: "SUB" },
     ]);
   if (url.pathname.includes("/streams/")) {
     // "server-empty" models a server that resolves to no playable streams —
     // the stage must not show the neutral "choose" placeholder for it.
     if (url.searchParams.get("server_id") === "server-empty")
       return send(response, 200, []);
+    // "server-broken" models a server whose manifest is gone, so the player
+    // must route the failure through expired-ticket recovery instead of
+    // spinning forever.
+    if (url.searchParams.get("server_id") === "server-broken")
+      return send(response, 200, [
+        {
+          url: `${HOST}/api/v1/proxy/hls/mock-playlist`,
+          quality: "720p",
+          headers: {},
+          subtitles: [],
+          is_hls: true,
+        },
+      ]);
     return send(response, 200, [
       {
-        url: STREAM_URL,
+        url: `${STREAM_URL}?quality=1080p`,
         quality: "1080p",
         headers: {},
         subtitles: [{ url: SUBTITLE_URL, label: "English", language: "en" }],
         is_hls: false,
       },
       {
-        url: STREAM_URL,
+        url: `${STREAM_URL}?quality=720p`,
         quality: "720p",
         headers: {},
         subtitles: [{ url: SUBTITLE_URL, label: "English", language: "en" }],
@@ -289,9 +310,23 @@ createServer(async (request, response) => {
     response.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400, immutable" });
     return response.end(`<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1080" viewBox="0 0 720 1080"><rect width="720" height="1080" fill="#f2eee6"/><path d="M80 130h560M80 190h420M80 900h560" stroke="#151515" stroke-width="8"/><circle cx="360" cy="520" r="150" fill="#c6b8a0"/><text x="360" y="540" text-anchor="middle" font-family="monospace" font-size="32">MANGA PAGE</text></svg>`);
   }
+  if (url.pathname === "/api/v1/proxy/hls/mock-playlist") {
+    return send(response, 404, { detail: "Not found" });
+  }
   if (url.pathname === "/api/v1/proxy/hls/mock-stream") {
-    response.writeHead(200, { "content-type": "video/mp4", "cache-control": "public, max-age=3600, immutable" });
-    return response.end(Buffer.alloc(1024));
+    // A genuinely decodable fixture (VP8/WebM captured in Chromium) so the
+    // player reaches loaded metadata and shows its transport chrome.
+    response.writeHead(200, {
+      "content-type": "video/webm",
+      "content-length": FIXTURE_BYTES.length,
+      "cache-control": "public, max-age=3600, immutable",
+    });
+    return response.end(FIXTURE_BYTES);
+  }
+  if (url.pathname === "/api/v1/proxy/hls/mock-broken") {
+    // No bytes at all: the media fetch fails outright so the player must
+    // surface its recovery UI instead of spinning forever.
+    return send(response, 404, { detail: "Not found" });
   }
   send(response, 404, { detail: "Not found" });
 }).listen(port, "127.0.0.1", () =>

@@ -9,63 +9,23 @@ const searchMocks = vi.hoisted(() => ({
   suggest: vi.fn(async () => [] as AniListMedia[]),
 }));
 
-const hls = vi.hoisted(() => {
-  type Handler = (...args: any[]) => void;
-  const state = { supported: true };
-  const instances: FakeHls[] = [];
-  class FakeHls {
-    static Events = {
-      ERROR: "hlsError",
-      MANIFEST_PARSED: "manifestParsed",
-      AUDIO_TRACKS_UPDATED: "audioTracksUpdated",
-      AUDIO_TRACK_SWITCHED: "audioTrackSwitched",
-      SUBTITLE_TRACKS_UPDATED: "subtitleTracksUpdated",
-    };
-    static ErrorTypes = {
-      NETWORK_ERROR: "networkError",
-      MEDIA_ERROR: "mediaError",
-    };
-    loadSource = vi.fn();
-    attachMedia = vi.fn();
-    destroy = vi.fn();
-    startLoad = vi.fn();
-    recoverMediaError = vi.fn();
-    subtitleDisplay = false;
-    subtitleTrack = -1;
-    currentLevel = -1;
-    audioTrack = 0;
-    levels: { name?: string; height?: number; bitrate?: number }[] = [];
-    audioTracks: { name?: string; lang?: string }[] = [];
-    subtitleTracks: { id: number; name?: string; lang?: string }[] = [];
-    private handlers = new Map<string, Handler[]>();
-    constructor(...args: unknown[]) {
-      instances.push(this);
-      FakeHls.lastConfig = args[0];
-    }
-    on(event: string, handler: Handler) {
-      this.handlers.set(event, [...(this.handlers.get(event) ?? []), handler]);
-    }
-    emit(event: string, ...args: any[]) {
-      for (const handler of this.handlers.get(event) ?? [])
-        handler(event, ...args);
-    }
-    static isSupported() {
-      return state.supported;
-    }
-    static lastConfig: unknown = null;
-  }
-  return { state, instances, FakeHls };
-});
-const subtitleLoader = vi.hoisted(() => ({
-  load: vi.fn(),
+// Vidstack ships as client-only custom elements: the player defines are
+// dynamically imported after mount, so these module mocks stand in for the
+// browser upgrade while the tests drive the component through real DOM events.
+vi.mock("hls.js", () => ({
+  default: class Hls {
+    static Events = { ERROR: "hlsError" };
+  },
 }));
-
-// jsdom media elements report no native HLS support (canPlayType returns ''),
-// so HLS streams take the dynamic hls.js import path — which this mock controls.
-vi.mock("hls.js", () => ({ default: hls.FakeHls }));
-vi.mock("../app/data/anisource/client", () => ({
-  loadSubtitle: subtitleLoader.load,
+vi.mock("vidstack", () => ({
+  isHLSProvider: (provider: unknown) =>
+    !!provider &&
+    typeof provider === "object" &&
+    "onInstance" in (provider as Record<string, unknown>),
 }));
+vi.mock("vidstack/player", () => ({}));
+vi.mock("vidstack/player/layouts/default", () => ({}));
+vi.mock("vidstack/player/ui", () => ({}));
 
 // Keep these tests independent of a mounted TanStack Router and AniList.
 vi.mock("@tanstack/solid-router", () => ({
@@ -384,330 +344,171 @@ describe("LazyPlayer", () => {
       { url: "https://api.test/subs/en.vtt", label: "English", language: "en" },
     ],
   };
+  const nullPrefs = {
+    quality: null,
+    audioLanguage: null,
+    audioLabel: null,
+    subtitleLanguage: null,
+    subtitleLabel: null,
+  };
+  const identity = {
+    key: "source:episode:server",
+    sourceId: "source",
+    episodeId: "episode",
+    serverId: "server",
+  };
+
+  const playerOf = (container: HTMLElement) =>
+    container.querySelector("media-player")! as HTMLElement & {
+      src?: { src: string; type?: string }[];
+      currentTime: number;
+      duration: number;
+    };
+  const emit = (target: EventTarget, type: string, detail?: unknown) =>
+    target.dispatchEvent(
+      detail === undefined
+        ? new Event(type)
+        : new CustomEvent(type, { detail }),
+    );
 
   beforeEach(() => {
-    hls.state.supported = true;
-    hls.instances.length = 0;
-    (hls.FakeHls as unknown as { lastConfig: unknown }).lastConfig = null;
-    subtitleLoader.load.mockReset();
-    subtitleLoader.load.mockRejectedValue(new Error("subtitle relay not configured"));
-    Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false });
-    Object.defineProperty(document, "fullscreenElement", { configurable: true, value: null });
+    // No subtitle loading happens in the player anymore: tracks are declared
+    // with direct URLs for the player to fetch and parse natively.
   });
 
-  it("plays direct media natively by setting the video source", () => {
+  it("hands the preferred video stream to the player as typed HLS", async () => {
     const { container } = render(() => (
-      <LazyPlayer streams={[direct]} serverName="Test" />
+      <LazyPlayer streams={[hlsStream, audioStream]} serverName="Test" />
     ));
-    const video = container.querySelector("video")!;
-    expect(video).toBeInTheDocument();
-    expect(video.src).toContain("video.mp4");
-    expect(hls.instances).toHaveLength(0);
+    const player = await waitFor(() => {
+      expect(playerOf(container)).toBeInTheDocument();
+      return playerOf(container);
+    });
+    emit(player, "media-player-connect");
+    await waitFor(() =>
+      expect(playerOf(container).src).toHaveLength(1),
+    );
+    expect(playerOf(container).src![0]).toMatchObject({
+      src: hlsStream.url,
+      type: "application/x-mpegurl",
+    });
   });
 
-  it("prefers hls.js over native HLS even when the browser claims it can play HLS", async () => {
-    const canPlayType = vi
-      .spyOn(HTMLMediaElement.prototype, "canPlayType")
-      .mockReturnValue("maybe");
-    const { container } = render(() => <LazyPlayer streams={[hlsStream]} />);
-    await waitFor(() => expect(hls.instances).toHaveLength(1));
-    expect(hls.instances[0]!.loadSource).toHaveBeenCalledWith(hlsStream.url);
-    expect(hls.instances[0]!.attachMedia).toHaveBeenCalled();
-    expect(container.querySelector("video")!.getAttribute("src")).toBeNull();
-    canPlayType.mockRestore();
-  });
-
-  it("uses the HLS manifest for quality and alternate audio selection", async () => {
-    const onPreferencesChange = vi.fn();
-    render(() => (
+  it("opens on the saved quality when the server exposes variants", async () => {
+    const variants = [
+      { ...direct, url: "https://cdn.example/high.mp4", quality: "1080p" },
+      { ...direct, url: "https://cdn.example/low.mp4", quality: "720p" },
+    ];
+    const { container } = render(() => (
       <LazyPlayer
-        streams={[hlsStream]}
-        preferences={{ quality: null, audioLanguage: null, audioLabel: null, subtitleLanguage: null, subtitleLabel: null }}
-        onPreferencesChange={onPreferencesChange}
+        streams={variants}
+        preferences={{ ...nullPrefs, quality: "720p" }}
       />
     ));
-    await waitFor(() => expect(hls.instances).toHaveLength(1));
-    const instance = hls.instances[0]!;
-    instance.levels = [
-      { name: "1080p", height: 1080, bitrate: 6_000_000 },
-      { name: "720p", height: 720, bitrate: 3_000_000 },
-    ];
-    instance.audioTracks = [
-      { name: "English", lang: "en" },
-      { name: "Japanese", lang: "ja" },
-    ];
-    instance.emit("manifestParsed");
-    instance.emit("audioTracksUpdated");
-
-    const quality = await screen.findByLabelText("Quality");
-    const audio = await screen.findByLabelText("Audio");
-    fireEvent.change(quality, { target: { value: "1" } });
-    fireEvent.change(audio, { target: { value: "1" } });
-
-    expect(instance.currentLevel).toBe(1);
-    expect(instance.audioTrack).toBe(1);
-    expect(onPreferencesChange).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      quality: "720p",
-    }));
-    expect(onPreferencesChange).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      quality: null,
-      audioLanguage: "ja",
-      audioLabel: "Japanese",
-    }));
-  });
-
-  it("uses native HLS only when hls.js cannot run in this browser", async () => {
-    hls.state.supported = false;
-    const canPlayType = vi
-      .spyOn(HTMLMediaElement.prototype, "canPlayType")
-      .mockReturnValue("maybe");
-    const { container } = render(() => <LazyPlayer streams={[hlsStream]} />);
-    await waitFor(() =>
-      expect(container.querySelector("video")!.src).toBe(hlsStream.url),
-    );
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    canPlayType.mockRestore();
-  });
-
-  it("explains the limitation without a dead out-of-browser button when neither hls.js nor native HLS can play", async () => {
-    hls.state.supported = false;
-    render(() => <LazyPlayer streams={[hlsStream]} />);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "This browser cannot play HLS streams",
-    );
-    expect(
-      screen.queryByRole("button", { name: /Open stream in a new tab/ }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("retries a fatal network error once before surfacing a failure", async () => {
-    render(() => <LazyPlayer streams={[hlsStream]} />);
-    await waitFor(() => expect(hls.instances).toHaveLength(1));
-    const instance = hls.instances[0]!;
-
-    instance.emit("hlsError", { fatal: true, type: "networkError" });
-    expect(instance.startLoad).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Reconnecting to the stream…",
-    );
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-
-    instance.emit("hlsError", { fatal: true, type: "networkError" });
-    expect(instance.startLoad).toHaveBeenCalledTimes(1);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "This stream could not be played",
-    );
-  });
-
-  it("re-resolves the current server when the in-player retry is used", async () => {
-    const onRetry = vi.fn(async () => undefined);
-    render(() => <LazyPlayer streams={[hlsStream]} onRetry={onRetry} />);
-    await waitFor(() => expect(hls.instances).toHaveLength(1));
-    const instance = hls.instances[0]!;
-
-    instance.emit("hlsError", { fatal: true, type: "networkError" });
-    instance.emit("hlsError", { fatal: true, type: "networkError" });
-    const retry = await screen.findByRole("button", { name: "Retry stream" });
-
-    fireEvent.click(retry);
-
-    expect(onRetry).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Reconnecting to the stream…",
-    );
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("recovers a fatal media error once and ignores non-fatal errors", async () => {
-    render(() => <LazyPlayer streams={[hlsStream]} />);
-    await waitFor(() => expect(hls.instances).toHaveLength(1));
-    const instance = hls.instances[0]!;
-
-    instance.emit("hlsError", { fatal: false, type: "mediaError" });
-    expect(instance.recoverMediaError).not.toHaveBeenCalled();
-
-    instance.emit("hlsError", { fatal: true, type: "mediaError" });
-    expect(instance.recoverMediaError).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("leaves an expired HLS stream to the watch session when it handles recovery", async () => {
-    const identity = { key: "source:episode:server", sourceId: "source", episodeId: "episode", serverId: "server" };
-    const onMediaError = vi.fn(() => true);
-    render(() => <LazyPlayer streams={[hlsStream]} identity={identity} onMediaError={onMediaError} />);
-    await waitFor(() => expect(hls.instances).toHaveLength(1));
-
-    hls.instances[0]!.emit("hlsError", {
-      fatal: true,
-      type: "networkError",
-      details: "manifestLoadError",
-      response: { code: 403 },
+    const player = await waitFor(() => {
+      expect(playerOf(container)).toBeInTheDocument();
+      return playerOf(container);
     });
-
-    expect(onMediaError).toHaveBeenCalledWith(identity, expect.stringContaining("expired"), true);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("treats a 404 segment as an expired link for older API versions", async () => {
-    const identity = { key: "source:episode:server", sourceId: "source", episodeId: "episode", serverId: "server" };
-    const onMediaError = vi.fn(() => true);
-    render(() => <LazyPlayer streams={[hlsStream]} identity={identity} onMediaError={onMediaError} />);
-    await waitFor(() => expect(hls.instances).toHaveLength(1));
-
-    hls.instances[0]!.emit("hlsError", {
-      fatal: true,
-      type: "networkError",
-      details: "fragLoadError",
-      response: { code: 404 },
-    });
-
-    expect(onMediaError).toHaveBeenCalledWith(identity, expect.stringContaining("expired"), true);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("destroys the previous hls.js instance when the quality variant changes", async () => {
-    const variants = [
-      hlsStream,
-      { ...hlsStream, url: "https://api.test/proxy/hls/low", quality: "360p" },
-    ];
-    render(() => <LazyPlayer streams={variants} />);
-    await waitFor(() => expect(hls.instances).toHaveLength(1));
-
-    fireEvent.change(screen.getByLabelText("Quality"), {
-      target: { value: "1" },
-    });
-    await waitFor(() => expect(hls.instances).toHaveLength(2));
-    expect(hls.instances[0]!.destroy).toHaveBeenCalled();
-    expect(hls.instances[1]!.loadSource).toHaveBeenCalledWith(variants[1]!.url);
-  });
-
-  it("keeps standalone audio out of the video stream picker", () => {
-    render(() => <LazyPlayer streams={[hlsStream, audioStream]} />);
-
-    expect(screen.queryByLabelText("Stream")).not.toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "Audio · Japanese" })).not.toBeInTheDocument();
-  });
-
-  it("starts the non-audio stream when the API returns audio first", async () => {
-    render(() => <LazyPlayer streams={[audioStream, hlsStream]} />);
-
-    await waitFor(() => expect(hls.instances).toHaveLength(1));
-    expect(hls.instances[0]!.loadSource).toHaveBeenCalledWith(hlsStream.url);
-  });
-
-  it("destroys the hls.js instance when the player unmounts", async () => {
-    const { unmount } = render(() => <LazyPlayer streams={[hlsStream]} />);
-    await waitFor(() => expect(hls.instances).toHaveLength(1));
-    unmount();
-    expect(hls.instances[0]!.destroy).toHaveBeenCalled();
-  });
-
-  it("exposes external subtitle tracks with an off option and toggles their mode", async () => {
-    const { container } = render(() => <LazyPlayer streams={[subtitled]} />);
-    const select = await screen.findByLabelText("Subtitles");
-    expect(select).toHaveValue("-1");
-
-    const track = container.querySelector("track")!;
-    expect(track.src).toBe(subtitled.subtitles[0]!.url);
-    expect(track.srclang).toBe("en");
-    expect(track.track.mode).toBe("disabled");
-
-    fireEvent.change(select, { target: { value: "0" } });
-    expect(track.track.mode).toBe("showing");
-
-    fireEvent.change(select, { target: { value: "-1" } });
-    expect(track.track.mode).toBe("disabled");
-  });
-
-  it("does not forward provider headers to the subtitle loader", async () => {
-    const headers = {
-      Referer: "https://anikototv.to/",
-      Origin: "https://anikototv.to",
-    };
-    const stream = { ...subtitled, headers };
-    subtitleLoader.load.mockResolvedValue(
-      "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nRelayed caption",
-    );
-
-    const { container } = render(() => <LazyPlayer streams={[stream]} />);
-    expect(container.querySelector("track")?.getAttribute("src")).toBeNull();
-
+    emit(player, "media-player-connect");
     await waitFor(() =>
-      expect(subtitleLoader.load).toHaveBeenCalledWith(stream.subtitles[0]!.url),
+      expect(playerOf(container).src).toHaveLength(2),
     );
-    await waitFor(() =>
-      expect(container.querySelector("track")?.getAttribute("src")).toMatch(/^blob:/),
-    );
+    expect(playerOf(container).src![0]!.src).toContain("low.mp4");
   });
 
-  it("restores the saved subtitle preference when the stream exposes it", async () => {
+  it("exposes external subtitles as tracks with the saved language default", async () => {
     const { container } = render(() => (
       <LazyPlayer
         streams={[subtitled]}
-        preferences={{ quality: null, audioLanguage: null, audioLabel: null, subtitleLanguage: "en", subtitleLabel: "English" }}
+        preferences={{ ...nullPrefs, subtitleLanguage: "en", subtitleLabel: "English" }}
       />
     ));
-    const select = await screen.findByLabelText("Subtitles");
-    expect(select).toHaveValue("0");
-    expect(container.querySelector("track")!.track.mode).toBe("showing");
+    const track = (await waitFor(() => {
+      const found = container.querySelector('track[label="English"]');
+      expect(found).toBeInTheDocument();
+      return found!;
+    })) as HTMLTrackElement;
+    expect(track.srclang).toBe("en");
+    expect(track.default).toBe(true);
+    expect(track.src).toBe(subtitled.subtitles[0]!.url);
+    expect(track.getAttribute("data-type")).toBe("vtt");
   });
 
-  it("adds subtitle tracks the HLS manifest declares and switches them through hls.js", async () => {
-    render(() => <LazyPlayer streams={[hlsStream]} />);
-    await waitFor(() => expect(hls.instances).toHaveLength(1));
-    const instance = hls.instances[0]!;
-    expect(screen.queryByLabelText("Subtitles")).not.toBeInTheDocument();
-
-    instance.subtitleTracks = [{ id: 3, name: "English CC", lang: "en" }];
-    instance.emit("subtitleTracksUpdated");
-
-    const select = await screen.findByLabelText("Subtitles");
-    fireEvent.change(select, { target: { value: "0" } });
-    expect(instance.subtitleTrack).toBe(3);
-    expect(instance.subtitleDisplay).toBe(true);
-  });
-
-  it("hides the quality selector when the server exposes a single variant", () => {
-    render(() => <LazyPlayer streams={[direct]} />);
-    expect(screen.queryByLabelText("Quality")).not.toBeInTheDocument();
-  });
-
-  it("drives play, pause, mute and seek through the custom console", () => {
-    const { container } = render(() => <LazyPlayer streams={[direct]} />);
-    const video = container.querySelector("video")!;
-    const play = vi.spyOn(video, "play").mockResolvedValue();
-    const pause = vi.spyOn(video, "pause").mockImplementation(() => {
-      video.dispatchEvent(new Event("pause"));
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Play" }));
-    expect(play).toHaveBeenCalled();
-    fireEvent.play(video);
-    Object.defineProperty(video, "paused", {
-      configurable: true,
-      value: false,
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
-    expect(pause).toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Mute" }));
-    expect(video.muted).toBe(true);
-    expect(screen.getByRole("button", { name: "Unmute" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+  it("declares each caption format so the player parses it natively", async () => {
+    const multi = {
+      ...hlsStream,
+      subtitles: [
+        { url: "https://api.test/subs/en.srt", label: "English", language: "en" },
+        { url: "https://api.test/subs/jp.ass", label: "Japanese", language: "ja" },
+      ],
+    };
+    const { container } = render(() => <LazyPlayer streams={[multi]} />);
+    await waitFor(() =>
+      expect(container.querySelectorAll("track")).toHaveLength(2),
     );
+    expect(
+      container.querySelector('track[label="English"]')?.getAttribute("data-type"),
+    ).toBe("srt");
+    expect(
+      container.querySelector('track[label="Japanese"]')?.getAttribute("data-type"),
+    ).toBe("ass");
+  });
 
-    Object.defineProperty(video, "duration", {
-      configurable: true,
-      value: 120,
+  it("lists each subtitle language once when variants repeat it", async () => {
+    const variants = [
+      subtitled,
+      { ...subtitled, url: "https://api.test/proxy/hls/low", quality: "360p" },
+    ];
+    const { container } = render(() => <LazyPlayer streams={variants} />);
+    await waitFor(() =>
+      expect(container.querySelectorAll("track")).toHaveLength(1),
+    );
+  });
+
+  it("offers saved progress as a choice instead of applying it", async () => {
+    const { container } = render(() => (
+      <LazyPlayer streams={[direct]} resumeAt={45} />
+    ));
+    const player = await waitFor(() => {
+      expect(playerOf(container)).toBeInTheDocument();
+      return playerOf(container);
     });
-    fireEvent.durationChange(video);
-    fireEvent.input(screen.getByLabelText("Playback position"), {
-      target: { value: "30" },
+    player.currentTime = 0;
+    player.duration = 120;
+    emit(player, "media-player-connect");
+    emit(player, "can-play");
+    expect(player.currentTime).toBe(0);
+    expect(
+      screen.getByRole("dialog", { name: /Continue watching/ }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Continue from 0:45/ }));
+    expect(player.currentTime).toBe(45);
+    expect(
+      screen.queryByRole("dialog", { name: /Continue watching/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("lets the viewer start from the beginning instead of saved progress", async () => {
+    const { container } = render(() => (
+      <LazyPlayer streams={[direct]} resumeAt={45} />
+    ));
+    const player = await waitFor(() => {
+      expect(playerOf(container)).toBeInTheDocument();
+      return playerOf(container);
     });
-    expect(video.currentTime).toBe(30);
-    expect(screen.getByText("0:30")).toBeInTheDocument();
-    expect(screen.getByText("2:00")).toBeInTheDocument();
+    player.currentTime = 0;
+    player.duration = 120;
+    emit(player, "media-player-connect");
+    emit(player, "can-play");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Start from beginning" }),
+    );
+    expect(player.currentTime).toBe(0);
+    expect(
+      screen.queryByRole("dialog", { name: /Continue watching/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("restores playback and throttles progress while flushing lifecycle boundaries", async () => {
@@ -719,225 +520,299 @@ describe("LazyPlayer", () => {
       const { container, unmount } = render(() => (
         <LazyPlayer
           streams={[direct]}
-          resumeAt={45}
+          identity={identity}
           onProgress={onProgress}
           onEnded={onEnded}
         />
       ));
-      const video = container.querySelector("video")!;
-      Object.defineProperty(video, "duration", { configurable: true, value: 120 });
-      fireEvent.loadedMetadata(video);
-      // Saved progress is offered, never applied automatically.
-      expect(video.currentTime).toBe(0);
-      const resumeDialog = screen.getByRole("dialog", { name: /Continue watching/ });
-      expect(resumeDialog).toBeInTheDocument();
+      const player = await waitFor(() => {
+        expect(playerOf(container)).toBeInTheDocument();
+        return playerOf(container);
+      });
+      // waitFor advances fake timers while polling for the async player
+      // boot: re-anchor the clock so the throttle windows below are exact.
+      vi.setSystemTime(0);
+      player.duration = 120;
+      // Progress writes run through a chained queue, so each step settles
+      // the queue without touching the fake clock.
+      const settleWrites = async () => {
+        for (let hop = 0; hop < 10; hop += 1) await Promise.resolve();
+      };
 
-      fireEvent.click(screen.getByRole("button", { name: /Continue from 0:45/ }));
-      expect(video.currentTime).toBe(45);
-      expect(screen.queryByRole("dialog", { name: /Continue watching/ })).not.toBeInTheDocument();
-
-      video.currentTime = 46;
-      fireEvent.timeUpdate(video);
-      expect(onProgress).toHaveBeenLastCalledWith(46, 120);
+      player.currentTime = 46;
+      emit(player, "time-update");
+      await settleWrites();
+      expect(onProgress).toHaveBeenLastCalledWith(identity, 46, 120);
 
       vi.setSystemTime(2000);
-      video.currentTime = 48;
-      fireEvent.timeUpdate(video);
+      player.currentTime = 48;
+      emit(player, "time-update");
+      await settleWrites();
       expect(onProgress).toHaveBeenCalledTimes(1);
 
       vi.setSystemTime(4000);
-      video.currentTime = 50;
-      fireEvent.timeUpdate(video);
-      expect(onProgress).toHaveBeenLastCalledWith(50, 120);
+      player.currentTime = 50;
+      emit(player, "time-update");
+      await settleWrites();
+      expect(onProgress).toHaveBeenLastCalledWith(identity, 50, 120);
 
-      video.currentTime = 51;
-      fireEvent.pause(video);
-      expect(onProgress).toHaveBeenLastCalledWith(51, 120);
+      player.currentTime = 51;
+      emit(player, "pause");
+      await settleWrites();
+      expect(onProgress).toHaveBeenLastCalledWith(identity, 51, 120);
 
-      fireEvent.ended(video);
-      expect(onEnded).toHaveBeenCalledOnce();
+      emit(player, "ended");
+      await settleWrites();
+      expect(onEnded).toHaveBeenCalledWith(identity);
 
-      video.currentTime = 52;
+      player.currentTime = 52;
       unmount();
-      expect(onProgress).toHaveBeenLastCalledWith(52, 120);
+      await settleWrites();
+      expect(onProgress).toHaveBeenLastCalledWith(identity, 52, 120);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("lets the viewer start from the beginning instead of applying saved progress", () => {
-    const { container } = render(() => <LazyPlayer streams={[direct]} resumeAt={45} />);
-    const video = container.querySelector("video")!;
-    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
-    fireEvent.loadedMetadata(video);
-
-    fireEvent.click(screen.getByRole("button", { name: "Start from beginning" }));
-    expect(video.currentTime).toBe(0);
-    expect(screen.queryByRole("dialog", { name: /Continue watching/ })).not.toBeInTheDocument();
-  });
-
-  it("surfaces progress persistence failures in the player", async () => {
-    const failingProgress = () => Promise.reject(new Error("database unavailable"));
-    const { container } = render(() => (
-      <LazyPlayer streams={[direct]} onProgress={failingProgress} />
-    ));
-    const video = container.querySelector("video")!;
-    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
-    fireEvent.loadedMetadata(video);
-    video.currentTime = 10;
-    fireEvent.timeUpdate(video);
-    expect(await screen.findByText(/Playback progress could not be saved/)).toHaveAttribute("role", "status");
-  });
-
-  it("surfaces a media element error as a playable fallback", () => {
-    const { container } = render(() => <LazyPlayer streams={[direct]} />);
-    fireEvent.error(container.querySelector("video")!);
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "This stream could not be played",
-    );
-  });
-
-  it("requests fullscreen from the player surface", async () => {
-    let player: HTMLElement | null = null;
-    const requestFullscreen = vi.fn(async function (this: HTMLElement) {
-      player = this;
-      Object.defineProperty(document, "fullscreenElement", { configurable: true, value: this });
-      document.dispatchEvent(new Event("fullscreenchange"));
-    });
-    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
-      configurable: true,
-      value: requestFullscreen,
-    });
-    const { container } = render(() => <LazyPlayer streams={[direct]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
-    await waitFor(() => expect(requestFullscreen).toHaveBeenCalledTimes(1));
-    expect(player).toBe(container.querySelector(".player"));
-    expect(screen.getByRole("button", { name: "Exit fullscreen" })).toBeInTheDocument();
-  });
-
-  it("requests landscape orientation when fullscreen supports orientation locking", async () => {
-    const lock = vi.fn(async () => undefined);
-    Object.defineProperty(window.screen, "orientation", {
-      configurable: true,
-      value: { lock, unlock: vi.fn() },
-    });
-    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
-      configurable: true,
-      value: vi.fn(async function (this: HTMLElement) {
-        Object.defineProperty(document, "fullscreenElement", { configurable: true, value: this });
-        document.dispatchEvent(new Event("fullscreenchange"));
-      }),
-    });
-    render(() => <LazyPlayer streams={[direct]} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
-    await waitFor(() => expect(lock).toHaveBeenCalledWith("landscape"));
-  });
-
-  it("pins the player over the viewport with working controls when element fullscreen is missing", async () => {
-    // iPhone Safari has no Element.requestFullscreen: the player must not
-    // surrender to the native player (which hides every custom control).
-    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
-      configurable: true,
-      value: undefined,
-    });
-    const { container } = render(() => <LazyPlayer streams={[direct]} />);
-    const stage = container.querySelector(".player")!;
-
-    fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
-    await waitFor(() => expect(stage.classList.contains("player-fake")).toBe(true));
-    expect(screen.getByRole("button", { name: "Exit fullscreen" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Play" })).toBeVisible();
-    expect(screen.getByLabelText("Playback position")).toBeVisible();
-
-    fireEvent.click(screen.getByRole("button", { name: "Exit fullscreen" }));
-    await waitFor(() => expect(stage.classList.contains("player-fake")).toBe(false));
-    expect(screen.getByRole("button", { name: "Enter fullscreen" })).toBeInTheDocument();
-  });
-
-  it("hides player controls from assistive technology during playback and restores them while paused", () => {
-    vi.useFakeTimers();
-    try {
-      const { container } = render(() => <LazyPlayer streams={[direct]} />);
-      const stage = container.querySelector(".player")!;
-      const chrome = container.querySelector(".player-chrome")!;
-      const video = container.querySelector("video")!;
-      expect(stage).toHaveAttribute("data-chrome", "visible");
-      expect(chrome).not.toHaveAttribute("aria-hidden", "true");
-
-      fireEvent.canPlay(video);
-      fireEvent.play(video);
-      expect(stage).toHaveAttribute("data-chrome", "visible");
-      vi.advanceTimersByTime(3500);
-      expect(stage).toHaveAttribute("data-chrome", "hidden");
-      expect(chrome).toHaveAttribute("aria-hidden", "true");
-
-      fireEvent.pause(video);
-      expect(stage).toHaveAttribute("data-chrome", "visible");
-      expect(chrome).not.toHaveAttribute("aria-hidden", "true");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("focuses the screen on a mouse tap so Space pauses without preventing auto-hide", () => {
-    vi.useFakeTimers();
-    try {
-      const { container } = render(() => <LazyPlayer streams={[direct]} />);
-      const stage = container.querySelector(".player")!;
-      const video = container.querySelector("video")!;
-      const tapLayer = container.querySelector(".player-taplayer")!;
-      const pause = vi.spyOn(video, "pause").mockImplementation(() => fireEvent.pause(video));
-      Object.defineProperty(video, "paused", { configurable: true, value: false });
-      fireEvent.canPlay(video);
-      fireEvent.play(video);
-      screen.getByRole("button", { name: "Pause" }).focus();
-      vi.advanceTimersByTime(3500);
-      expect(stage).toHaveAttribute("data-chrome", "visible");
-
-      fireEvent.pointerUp(tapLayer, { pointerType: "mouse" });
-      expect(document.activeElement).toBe(container.querySelector(".player-screen"));
-      fireEvent.keyDown(document.activeElement!, { key: " ", code: "Space" });
-      expect(pause).toHaveBeenCalled();
-
-      fireEvent.play(video);
-      vi.advanceTimersByTime(3500);
-      expect(stage).toHaveAttribute("data-chrome", "hidden");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("caps fetched quality to the player size with a deeper stall buffer", async () => {
-    render(() => <LazyPlayer streams={[hlsStream]} />);
-    await waitFor(() => expect(hls.instances).toHaveLength(1));
-    expect(
-      (hls.FakeHls as unknown as { lastConfig: unknown }).lastConfig,
-    ).toMatchObject({ capLevelToPlayerSize: true, maxBufferLength: 60 });
-  });
-
-  it("points at Auto quality when a pinned level keeps buffering", async () => {
+  it("routes expired failures to the session for silent recovery", async () => {
+    const onMediaError = vi.fn(() => true);
     const { container } = render(() => (
       <LazyPlayer
         streams={[hlsStream]}
-        preferences={{ quality: "720p", audioLanguage: null, audioLabel: null, subtitleLanguage: null, subtitleLabel: null }}
+        identity={identity}
+        onMediaError={onMediaError}
       />
     ));
-    await waitFor(() => expect(hls.instances).toHaveLength(1));
-    const instance = hls.instances[0]!;
-    instance.levels = [
-      { name: "1080p", height: 1080, bitrate: 6_000_000 },
-      { name: "720p", height: 720, bitrate: 3_000_000 },
-    ];
-    instance.emit("manifestParsed");
-    const video = container.querySelector("video")!;
-    fireEvent.canPlay(video);
-    fireEvent.waiting(video);
+    const player = await waitFor(() => {
+      expect(playerOf(container)).toBeInTheDocument();
+      return playerOf(container);
+    });
+    // The HLS provider hands over its hls.js instance; raw library errors
+    // arrive per failed attempt, ahead of any escalated fatal.
+    const instanceHandlers: Record<string, (...args: unknown[]) => void> = {};
+    const instanceCbs: Array<(instance: unknown) => void> = [];
+    emit(player, "provider-change", {
+      library: null,
+      config: null,
+      onInstance: (callback: (instance: unknown) => void) => {
+        instanceCbs.push(callback);
+      },
+    });
+    expect(instanceCbs).toHaveLength(1);
+    instanceCbs[0]!({
+      on: (event: string, handler: (...args: unknown[]) => void) => {
+        instanceHandlers[event] = handler;
+      },
+    });
+    instanceHandlers.hlsError!(
+      "hlsError",
+      {
+        fatal: true,
+        type: "networkError",
+        details: "fragLoadError",
+        response: { code: 410 },
+      },
+    );
+
+    expect(onMediaError).toHaveBeenCalledWith(
+      identity,
+      expect.stringContaining("expired"),
+      true,
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Buffering… · slow connection, try Auto quality",
+      "Refreshing stream…",
     );
   });
+
+  it("treats an error message carrying an expiry status as an expired link", async () => {
+    const onMediaError = vi.fn(() => true);
+    const { container } = render(() => (
+      <LazyPlayer
+        streams={[hlsStream]}
+        identity={identity}
+        onMediaError={onMediaError}
+      />
+    ));
+    const player = await waitFor(() => {
+      expect(playerOf(container)).toBeInTheDocument();
+      return playerOf(container);
+    });
+    emit(player, "error", { message: "Failed to load resource: 403" });
+
+    expect(onMediaError).toHaveBeenCalledWith(
+      identity,
+      expect.stringContaining("expired"),
+      true,
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("ignores non-fatal HLS errors the library recovers from itself", async () => {
+    const onMediaError = vi.fn(() => true);
+    const { container } = render(() => (
+      <LazyPlayer
+        streams={[hlsStream]}
+        identity={identity}
+        onMediaError={onMediaError}
+      />
+    ));
+    const player = await waitFor(() => {
+      expect(playerOf(container)).toBeInTheDocument();
+      return playerOf(container);
+    });
+    const instanceHandlers: Record<string, (...args: unknown[]) => void> = {};
+    const instanceCbs: Array<(instance: unknown) => void> = [];
+    emit(player, "provider-change", {
+      library: null,
+      config: null,
+      onInstance: (callback: (instance: unknown) => void) => {
+        instanceCbs.push(callback);
+      },
+    });
+    instanceCbs[0]!({
+      on: (event: string, handler: (...args: unknown[]) => void) => {
+        instanceHandlers[event] = handler;
+      },
+    });
+    instanceHandlers.hlsError!("hlsError", {
+      fatal: false,
+      type: "mediaError",
+    });
+
+    expect(onMediaError).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("ignores HLS errors from a superseded instance after switching servers", async () => {
+    const onMediaError = vi.fn(() => true);
+    const { container } = render(() => (
+      <LazyPlayer
+        streams={[hlsStream]}
+        identity={identity}
+        onMediaError={onMediaError}
+      />
+    ));
+    const player = await waitFor(() => {
+      expect(playerOf(container)).toBeInTheDocument();
+      return playerOf(container);
+    });
+    const instanceHandlers: Record<string, (...args: unknown[]) => void> = {};
+    const instanceCbs: Array<(instance: unknown) => void> = [];
+    const attach = () => {
+      emit(player, "provider-change", {
+        library: null,
+        config: null,
+        onInstance: (callback: (instance: unknown) => void) => {
+          instanceCbs.push(callback);
+        },
+      });
+      instanceCbs[instanceCbs.length - 1]!({
+        on: (event: string, handler: (...args: unknown[]) => void) => {
+          instanceHandlers[`${instanceCbs.length}:${event}`] = handler;
+        },
+      });
+    };
+    attach();
+    attach();
+    // The first instance belongs to the previous selection: its late failure
+    // must not report against the current one.
+    instanceHandlers["1:hlsError"]!("hlsError", {
+      fatal: true,
+      type: "networkError",
+      response: { code: 410 },
+    });
+
+    expect(onMediaError).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("surfaces unrecoverable failures with retry and a stream link fallback", async () => {
+    const onMediaError = vi.fn(() => false);
+    const onRetry = vi.fn(async () => undefined);
+    const { container } = render(() => (
+      <LazyPlayer
+        streams={[direct]}
+        identity={identity}
+        onMediaError={onMediaError}
+        onRetry={onRetry}
+      />
+    ));
+    const player = await waitFor(() => {
+      expect(playerOf(container)).toBeInTheDocument();
+      return playerOf(container);
+    });
+    emit(player, "error", { message: "Playback failed" });
+
+    expect(onMediaError).toHaveBeenCalledWith(
+      identity,
+      "Playback failed",
+      false,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Playback failed");
+
+    // jsdom has no clipboard: the raw link stays readable while failed.
+    expect(screen.getByDisplayValue(direct.url)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry stream" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Refreshing stream…",
+    );
+  });
+
+  it("persists quality, audio, and caption choices from the player menus", async () => {
+    const onPreferencesChange = vi.fn();
+    const { container } = render(() => (
+      <LazyPlayer
+        streams={[hlsStream]}
+        preferences={nullPrefs}
+        onPreferencesChange={onPreferencesChange}
+      />
+    ));
+    const player = await waitFor(() => {
+      expect(playerOf(container)).toBeInTheDocument();
+      return playerOf(container);
+    });
+
+    emit(player, "quality-change", { height: 720 });
+    emit(player, "audio-track-change", {
+      language: "ja",
+      label: "Japanese",
+    });
+    emit(player, "text-track-change", {
+      language: "en",
+      label: "English",
+    });
+
+    expect(onPreferencesChange).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ quality: "720p" }),
+    );
+    expect(onPreferencesChange).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        audioLanguage: "ja",
+        audioLabel: "Japanese",
+      }),
+    );
+    expect(onPreferencesChange).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        subtitleLanguage: "en",
+        subtitleLabel: "English",
+      }),
+    );
+  });
+
+  it("renders nothing without streams", () => {
+    const { container } = render(() => <LazyPlayer streams={[]} />);
+    expect(container.querySelector("media-player")).not.toBeInTheDocument();
+  });
 });
+
 
 describe("SearchSurface", () => {
   beforeEach(() => {

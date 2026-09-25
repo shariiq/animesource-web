@@ -1,15 +1,16 @@
 # AniSource access control
 
-The browser calls the same-origin `/api/anisource/*` TanStack server route. It never receives the AniSource API base URL or the service bearer token. The route is limited to `GET` and `HEAD`, validates operation-specific paths, query parameters, and successful JSON responses with the client's Zod schemas, checks same-origin request metadata, and rejects redirects rather than following them.
+The browser calls the same-origin `/api/anisource/*` TanStack server route. It never receives the AniSource API base URL or the service bearer token. The route is limited to `GET` and `HEAD`, validates operation-specific paths, query parameters, and successful JSON responses with the client's Zod schemas, checks same-origin request metadata, and rejects redirects rather than following them. Requests failing the same-origin check get a response byte-identical to an unknown route (404), never a message naming the rule — confirming the route exists only teaches probers what to spoof.
 
 ## Runtime controls
 
 - The route mints a signed, HttpOnly, SameSite=Lax anonymous session cookie (Secure and `__Host-` in production). The session expires after 12 hours.
 - Playback and reader media URLs are wrapped in HMAC tickets bound to the session, exact upstream path and query, and a 55-minute expiry. HLS child URLs retain the request's scope. Ticketed media is streamed; JSON and session-bound media are never shared-cached.
+- Catalog callers prove a recent site visit with a request nonce: the document response sets a short-lived HMAC cookie (`anisource-nonce`), and the browser client echoes it as `x-anisource-nonce` on catalog requests. Missing or stale nonces answer exactly like unknown routes. Media tickets stay exempt (image and media elements cannot send headers), as do health checks (headerless monitors). The nonce is a speed bump for naive replay scripts, not identity — rate limits remain the real abuse control.
 - With `ANISOURCE_DIRECT_MEDIA=1` the gateway instead passes absolute API media URLs (segments, keys, subtitles, manga pages, playlists) through to the browser. Catalog JSON still resolves here, so the service credential stays hidden. Enable only after the API deployment sets short segment TTLs (`HLS_PROXY_SEGMENT_TTL`) and the site origin allowlist (`MEDIA_ALLOWED_ORIGINS`); see ADR 0004. Stale pre-flag tickets keep working through the gateway until they expire.
 - Production rate limits use Upstash Redis: 240 requests per 10 seconds per session and 1,200 per 10 seconds per trusted Vercel client IP. Both must pass for catalog JSON. Session-bound media tickets (`/asset/*`) skip the web limiter — the URLs are unguessable, the API enforces its own proxy rate limit, and charging every HLS segment and manga image against Upstash added round trips to each media fetch. Redis errors and missing production configuration fail closed. Local development skips the distributed limiter.
 - Abuse-control ownership is split by layer on purpose: the website limiter guards catalog JSON (search/match/chapters/streams metadata), while the API's own proxy rate limiter guards media bandwidth. Neither layer assumes the other is present, so keep both enabled in production rather than "simplifying" to one.
-- Gateway failures carry `X-AniSource-Error-Kind` (`rate-limited`, `misconfigured`, `invalid`, `forbidden`, plus the transport kinds) so the browser reports throttling and credential problems honestly instead of as network errors. An upstream 401 on a service-authenticated catalog request is translated to a `misconfigured` outage naming `ANISOURCE_SERVICE_TOKEN`, because passing it through would make sessions report "expired stream links" and burn refresh budgets on an outage no retry can heal.
+- Gateway failures carry `X-AniSource-Error-Kind` (`rate-limited`, `misconfigured`, `invalid`, plus the transport kinds) so the browser reports throttling and credential problems honestly instead of as network errors. An upstream 401 on a service-authenticated catalog request is translated to a `misconfigured` outage naming `ANISOURCE_SERVICE_TOKEN`, because passing it through would make sessions report "expired stream links" and burn refresh budgets on an outage no retry can heal.
 - The Upstash endpoint must use HTTPS; invalid or insecure URLs fail closed before the Redis token is sent.
 - The API requires `Authorization: Bearer <service-token>` for every `/api/v1/*` route except its existing signed HLS and manga-page capability URLs. Public wildcard CORS was removed from catalog routes; CORS remains only for direct use of signed media capabilities. Root `/health` remains public for deployment liveness.
 - The root document's `connect-src` policy ships as a per-request response header (browsers ignore CSP meta tags added after the initial document): same-origin traffic plus the configured AniList GraphQL origin, with local mock/HMR origins only in development. In direct-media mode the API origins from server runtime configuration are appended; they never enter the client bundle (see `verify:boundary`).
@@ -46,8 +47,10 @@ The website server streams signed images, captions, and video bytes so the brows
 ## Fallback origin
 
 `ANISOURCE_FALLBACK_BASE` points at a second API deployment that acts as the
-overflow origin (see ADR 0005): the browser client serves from the primary
-origin until measured latency or origin-health failures move a session over.
+overflow origin (see ADR 0005): catalog operations serve from the primary
+origin while media-resolving operations (streams, manga pages) prefer the
+overflow deployment, keeping video bandwidth off primary. Either class moves
+on measured latency or origin-health failures.
 Media tickets stay origin-bound either way, so a switch never disturbs
 in-flight playback or reading. Without the variable the shared default in
 `config/api-urls.json` applies; set it empty to disable the overflow

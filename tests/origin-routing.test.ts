@@ -110,6 +110,7 @@ describe('origin routing policy', () => {
   it('skips a repeatedly failing origin up front until its window lapses', () => {
     const state: OriginRoutingState = {
       active: 'primary',
+      preferred: 'primary',
       primary: { slowStreak: 0, failStreak: 3, lastFailAt: 1000, lastSuccessAt: 0 },
       overflow: { slowStreak: 0, failStreak: 0, lastFailAt: 0, lastSuccessAt: 0 },
     }
@@ -140,6 +141,37 @@ describe('origin routing policy', () => {
     recordOriginCall(state, success('primary'), 5000)
     expect(state.active).toBe('primary')
     expect(pickOrigin(state, 5000)).toBe('primary')
+  })
+
+  it('homes media traffic on the overflow origin instead', () => {
+    const state = createOriginRoutingState('overflow')
+    expect(state.active).toBe('overflow')
+
+    recordOriginCall(state, failure('overflow', 'timeout'), 1000)
+    expect(state.active).toBe('primary')
+    // A primary success does not pull media traffic home.
+    recordOriginCall(state, success('primary'), 2000)
+    expect(state.active).toBe('primary')
+    // The exiled overflow gets one recovery probe per window.
+    expect(pickOrigin(state, 3000)).toBe('primary')
+    expect(pickOrigin(state, 1000 + ROUTING_FAIL_FAST_PATH_WINDOW_MS)).toBe('overflow')
+  })
+
+  it('still sends shared-token outages home to primary for media traffic', () => {
+    const state = createOriginRoutingState('overflow')
+    recordOriginCall(state, failure('overflow', 'misconfigured', 503), 1000)
+    expect(state.active).toBe('primary')
+  })
+
+  it('slow-switches symmetrically toward a proven primary', () => {
+    const state = createOriginRoutingState('overflow')
+    recordOriginCall(state, failure('overflow', 'timeout'), 1000)
+    recordOriginCall(state, success('primary'), 1000)
+    recordOriginCall(state, failure('primary', 'timeout'), 2000)
+    expect(state.active).toBe('overflow')
+    recordOriginCall(state, success('overflow', true), 3000)
+    recordOriginCall(state, success('overflow', true), 4000)
+    expect(state.active).toBe('primary')
   })
 
   it('treats an overflow success older than the window as unproven', () => {

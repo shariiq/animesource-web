@@ -23,10 +23,11 @@ import { LazyPlayer } from './watch/LazyPlayer'
 import { MatchPicker } from './watch/MatchPicker'
 
 /**
- * Overflow-capable gateway client: the primary origin serves until measured
- * latency or origin-health failures move a session to the overflow
- * deployment, which shares the same gateway under `/fallback`. Media tickets
- * stay origin-bound either way, so no session state changes on a switch.
+ * Overflow-capable gateway client: catalog operations serve from the primary
+ * origin while media-resolving operations prefer the overflow deployment,
+ * which shares the same gateway under `/fallback`. Either class moves on
+ * measured latency or origin-health failures; media tickets stay
+ * origin-bound either way, so no session state changes on a switch.
  */
 const watchApi: WatchSourceClient = createAniSourceClient({ baseUrl: ANISOURCE_PROXY_BASE, overflowBaseUrl: ANISOURCE_OVERFLOW_BASE })
 const watchPersistence: WatchPersistence = viewerData

@@ -31,16 +31,22 @@ never per request.
    service token (a shared-token outage homes traffic to primary).
 3. Switches are sticky with bounded cost: a switchable failure alternates
    once per call; two slow calls switch only toward an origin with a recent
-   success (a slow primary still beats a sleeping overflow); three
+   success (a slow origin still beats a sleeping one); three
    consecutive recent failures fast-path new calls past the outage, and the
-   exiled primary gets one recovery probe per window. No probes, no retry
-   loops, no persisted state.
+   exiled preferred origin gets one recovery probe per window. No probes, no
+   retry loops, no persisted state.
 4. Delete the Watch-only explicit fallback machinery (`fallbackApi`,
    fallback warm-ups, streams last-resort re-resolution). Per-operation
    overflow subsumes it; primary-side expired-ticket refresh already
    re-extracts, so the fallback re-extract added only deployment diversity
    at the cost of a second code path. The content-source `fallbackSource`
    picker is unrelated and stays.
+5. Prefer per operation class, not per deployment: catalog metadata stays on
+   primary while operations that mint media-byte URLs (streams, manga
+   reader pages) prefer overflow, keeping video bandwidth off the primary
+   deployment. Each class converges its own routing state with identical
+   mechanics; the exiled preferred origin of either class is probed back
+   on the same window.
 
 ## Consequences
 

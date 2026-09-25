@@ -2,6 +2,8 @@ import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
 import { z } from 'zod'
 import apiUrls from '../../../config/api-urls.json'
+import { REQUEST_NONCE_HEADER, verifyRequestNonce } from '../../lib/requestNonce'
+import { serverSecret } from '../../lib/serverSecret'
 import {
   anisourceMangaSchema,
   chapterPageSchema,
@@ -25,7 +27,6 @@ const SESSION_LIFETIME_SECONDS = 12 * 60 * 60
 const ASSET_TICKET_LIFETIME_SECONDS = 55 * 60
 const MAX_PROXY_BODY_BYTES = 8 * 1024 * 1024
 const textEncoder = new TextEncoder()
-const localSessionSecret = encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)))
 
 const sessionSchema = z.object({ sid: z.string().regex(/^[A-Za-z0-9_-]{43}$/), exp: z.number().int() })
 const identifierSchema = z.string().min(1).max(512).refine((value) => {
@@ -68,12 +69,6 @@ function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(new ArrayBuffer(binary.length))
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
   return bytes
-}
-
-function secret(): string | null {
-  const configured = process.env.ANISOURCE_SESSION_SECRET
-  if (configured) return new TextEncoder().encode(configured).byteLength >= 32 ? configured : null
-  return process.env.NODE_ENV === 'production' ? null : localSessionSecret
 }
 
 function hmacKey(value: string): Promise<CryptoKey> {
@@ -234,6 +229,15 @@ function jsonError(status: number, detail: string, headers: HeadersInit = {}, ki
       ...(kind ? { 'X-AniSource-Error-Kind': kind } : {}),
     },
   })
+}
+
+/**
+ * Single source for the camouflage response: unknown routes, failed
+ * same-origin checks, and missing request nonces all answer identically so
+ * probers cannot tell the three cases apart.
+ */
+function hiddenRoute(): Response {
+  return jsonError(404, 'AniSource route not found.', {}, 'invalid')
 }
 
 function apiBase(): URL | null {
@@ -447,10 +451,12 @@ function appendSessionCookie(response: Response, cookie: string | undefined): Re
 
 /** The single server-side AniSource seam for catalog JSON and signed media assets. */
 export async function handleAniSourceRequest(request: Request): Promise<Response> {
-  if (!isSameOriginRequest(request)) return jsonError(403, 'Same-origin request required.', {}, 'forbidden')
+  // Deliberately indistinguishable from an unknown route: confirming the
+  // route exists (or why it was rejected) only teaches probers the rule.
+  if (!isSameOriginRequest(request)) return hiddenRoute()
   if (!['GET', 'HEAD'].includes(request.method)) return jsonError(405, 'Method not allowed.', { Allow: 'GET, HEAD' }, 'invalid')
 
-  const signingSecret = secret()
+  const signingSecret = serverSecret()
   const url = new URL(request.url)
   let rawPath = url.pathname.startsWith(`${API_PREFIX}/`) ? url.pathname.slice(API_PREFIX.length) : ''
   let viaFallback = false
@@ -473,7 +479,15 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
   const signingKey = await cachedHmacKey(signingSecret)
 
   const assetMatch = /^\/asset\/([^/]+)$/.exec(rawPath)
-  if (!assetMatch && !isAllowedUpstreamPath(rawPath, url.search)) return jsonError(404, 'AniSource route not found.', {}, 'invalid')
+  if (!assetMatch && !isAllowedUpstreamPath(rawPath, url.search)) return hiddenRoute()
+  // Catalog callers must prove they rendered site HTML recently. Media
+  // tickets stay exempt (image and media elements cannot send headers) as do
+  // health checks (headerless monitors). A missing nonce answers exactly
+  // like an unknown route.
+  const nonceExempt = assetMatch !== null || rawPath === '/health' || rawPath === '/api/v1/health'
+  if (!nonceExempt && !verifyRequestNonce(request.headers.get(REQUEST_NONCE_HEADER), signingSecret, Math.floor(Date.now() / 1000))) {
+    return hiddenRoute()
+  }
   let session = await readSession(request, signingKey)
   if (assetMatch && !session) return jsonError(403, 'Expired or invalid media ticket.', {}, 'invalid')
 

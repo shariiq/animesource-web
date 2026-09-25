@@ -48,9 +48,9 @@ describe('AniSource client', () => {
   })
 
   it('falls back to status handling for unknown gateway error kinds', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ detail: 'Same-origin request required.' }), {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ detail: 'Gateway refused the request.' }), {
       status: 403,
-      headers: { 'content-type': 'application/json', 'x-anisource-error-kind': 'forbidden' },
+      headers: { 'content-type': 'application/json', 'x-anisource-error-kind': 'suspended' },
     })))
     const client = createAniSourceClient()
 
@@ -399,6 +399,57 @@ describe('AniSource client', () => {
       const last = fetch.mock.calls.at(-1)![0] as string
       expect(last.startsWith(overflow)).toBe(true)
       expect(primaryCalls).toBe(3)
+    })
+
+    it('resolves streams on overflow while catalog stays on primary', async () => {
+      const fetch = vi.fn(async (url: string) => {
+        if (url.includes('/streams/')) {
+          return response([{ url: '/proxy/hls/master.m3u8', quality: '720p', is_hls: true }])
+        }
+        return response([{ id: 'server-1', name: 'Primary', type: 'SUB' }])
+      })
+      const client = routed(fetch)
+
+      await client.streams('source', 'episode', 'server')
+      await client.servers('source', 'episode')
+
+      const urls = fetch.mock.calls.map(([url]) => url as string)
+      expect(urls[0]!.startsWith(overflow)).toBe(true)
+      expect(urls[0]).toContain('/streams/')
+      expect(urls[1]!.startsWith(primary)).toBe(true)
+    })
+
+    it('alternates a failed overflow streams call to primary and stays there', async () => {
+      const fetch = vi.fn(async (url: string) => {
+        if (url.startsWith(overflow)) return response({ detail: 'Overflow down' }, 503)
+        return response([{ url: '/proxy/hls/master.m3u8', quality: '720p', is_hls: true }])
+      })
+      const client = routed(fetch)
+
+      await expect(client.streams('source', 'episode', 'server')).resolves.toMatchObject([
+        { quality: '720p' },
+      ])
+      expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+        `${overflow}/api/anisource/fallback/api/v1/anime/source/streams/episode?server_id=server`,
+        `${primary}/api/v1/anime/source/streams/episode?server_id=server`,
+      ])
+
+      await expect(client.streams('source', 'episode', 'server')).resolves.toMatchObject([
+        { quality: '720p' },
+      ])
+      expect(fetch).toHaveBeenCalledTimes(3)
+      expect((fetch.mock.calls[2]![0] as string).startsWith(primary)).toBe(true)
+    })
+
+    it('resolves manga pages on overflow', async () => {
+      const fetch = vi.fn(async (_url: string) => response([{ index: 0, url: 'https://source.test/page-1', page_url: '' }]))
+      const client = routed(fetch)
+
+      await client.mangaPages('source', 'chapter')
+      expect(fetch).toHaveBeenCalledTimes(1)
+      expect(fetch.mock.calls[0]![0]).toBe(
+        `${overflow}/api/anisource/fallback/api/v1/manga/source/pages/chapter`,
+      )
     })
   })
 

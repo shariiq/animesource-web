@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { normalizeApiUrl } from '../../config/api'
+import { REQUEST_NONCE_COOKIE, REQUEST_NONCE_HEADER } from '../../lib/requestNonce'
 import {
   createOriginRoutingState,
   isFailFastPath,
@@ -142,6 +143,16 @@ export interface AniSourceClientOptions {
 export type AniSourceCatalog = 'anime' | 'manga'
 
 /**
+ * True for the operations whose responses mint media-byte URLs (segment and
+ * playlist capabilities, reader images). Identifiers are encoded before they
+ * reach here, so a literal `/streams/` or `/pages/` segment can only be the
+ * operation itself.
+ */
+export function isMediaResolvingPath(path: string): boolean {
+  return path.includes('/streams/') || path.includes('/pages/')
+}
+
+/**
  * Browser-initiated AniSource client. Requests are sent only to the same-origin
  * server route and are never called from loaders, SSR, or initial page load.
  */
@@ -150,7 +161,11 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
   const baseUrl = normalizeApiUrl(options.baseUrl ?? ANISOURCE_PROXY_BASE)
   const overflowUrl = options.overflowBaseUrl ? normalizeApiUrl(options.overflowBaseUrl) : null
   const routed = overflowUrl !== null && overflowUrl !== baseUrl
-  const routing: OriginRoutingState | null = routed ? createOriginRoutingState() : null
+  // Catalog metadata stays on primary; operations that mint media-byte URLs
+  // (streams, manga pages) prefer overflow so video bandwidth leaves the
+  // primary deployment. Each class converges independently.
+  const catalogRouting: OriginRoutingState | null = routed ? createOriginRoutingState('primary') : null
+  const mediaRouting: OriginRoutingState | null = routed ? createOriginRoutingState('overflow') : null
   const clock = options.clock ?? (() => Date.now())
   const timeoutMs = options.fetchTimeoutMs ?? AS_FETCH_TIMEOUT_MS
 
@@ -174,11 +189,14 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
     }
 
     async function fetchAndParse(url: string, attemptSignal: AbortSignal): Promise<T> {
+      const nonce = requestNonce()
       let response: Response
       try {
         response = await transport.fetch(url, {
           signal: attemptSignal,
-          headers: { Accept: 'application/json' },
+          headers: nonce
+            ? { Accept: 'application/json', [REQUEST_NONCE_HEADER]: nonce }
+            : { Accept: 'application/json' },
         })
       } catch (error) {
         if (error instanceof AniSourceError) throw error
@@ -234,6 +252,10 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
     }
 
     try {
+      let routing: OriginRoutingState | null = null
+      if (routed && mediaRouting && catalogRouting) {
+        routing = isMediaResolvingPath(path) ? mediaRouting : catalogRouting
+      }
       const skipAlternate = routing ? isFailFastPath(routing, clock()) : false
       const first = routing ? pickOrigin(routing, clock()) : 'primary'
       const order: RoutingOrigin[] = routing ? [first, otherOrigin(first)] : ['primary']
@@ -369,6 +391,18 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
       sourceCache.clear()
     },
   }
+}
+
+/** Reads the request nonce the document response set; null outside the browser or before first paint. */
+function requestNonce(): string | null {
+  if (typeof document === 'undefined' || !document.cookie) return null
+  const prefix = `${REQUEST_NONCE_COOKIE}=`
+  const value = document.cookie
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix))
+    ?.slice(prefix.length)
+  return value && value.length <= 256 ? value : null
 }
 
 /** Resolves relative AniSource asset URLs against the given (or configured) base. */

@@ -3,17 +3,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import apiUrls from '../config/api-urls.json'
 import { handleAniSourceRequest } from '../app/data/anisource/proxy.server'
+import { REQUEST_NONCE_HEADER, hmacSha256, issueRequestNonce, verifyRequestNonce } from '../app/lib/requestNonce'
 
 const APP_ORIGIN = 'https://app.test'
 const API_ORIGIN = 'https://api.test'
 const SERVICE_TOKEN = 'test-service-token-'.padEnd(48, 'x')
+const NONCE_SECRET = 'session-secret-'.padEnd(48, 's')
 
-function request(path: string, cookie?: string, origin = APP_ORIGIN): Request {
+function request(path: string, cookie?: string, origin = APP_ORIGIN, nonce: string | null = issueRequestNonce(NONCE_SECRET, Math.floor(Date.now() / 1000))): Request {
   return new Request(`${APP_ORIGIN}${path}`, {
     headers: {
       Origin: origin,
       'Sec-Fetch-Site': origin === APP_ORIGIN ? 'same-origin' : 'cross-site',
       ...(cookie ? { Cookie: cookie } : {}),
+      ...(nonce ? { [REQUEST_NONCE_HEADER]: nonce } : {}),
     },
   })
 }
@@ -314,16 +317,95 @@ describe('AniSource server boundary', () => {
     expect(response.headers.get('x-anisource-error-kind')).toBe('invalid')
   })
 
-  it('rejects cross-origin and non-allowlisted requests before contacting AniSource', async () => {
+  it('hides cross-origin and non-allowlisted requests as unknown routes before contacting AniSource', async () => {
     const upstreamFetch = vi.fn()
     vi.stubGlobal('fetch', upstreamFetch)
 
     const crossOrigin = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/sources', undefined, 'https://evil.test'))
     const arbitraryPath = await handleAniSourceRequest(request('/api/anisource/https://evil.test/secret'))
 
-    expect(crossOrigin.status).toBe(403)
+    expect(crossOrigin.status).toBe(404)
     expect(arbitraryPath.status).toBe(404)
+    // A rejected prober learns nothing: byte-identical to an unknown route.
+    expect(await crossOrigin.text()).toBe(await arbitraryPath.text())
+    expect(crossOrigin.headers.get('x-anisource-error-kind')).toBe(arbitraryPath.headers.get('x-anisource-error-kind'))
+    expect(crossOrigin.headers.get('set-cookie')).toBeNull()
     expect(upstreamFetch).not.toHaveBeenCalled()
+  })
+
+  it('checks the request-nonce primitive against RFC 4231 vectors', () => {
+    const hex = (bytes: Uint8Array): string => [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+    const bytes = (values: number[]): Uint8Array => new Uint8Array(values)
+    const ascii = (text: string): Uint8Array => new TextEncoder().encode(text)
+    expect(hex(hmacSha256(bytes(new Array(20).fill(0x0b)), ascii('Hi There')))).toBe(
+      'b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7',
+    )
+    expect(hex(hmacSha256(ascii('Jefe'), ascii('what do ya want for nothing?')))).toBe(
+      '5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843',
+    )
+    expect(hex(hmacSha256(bytes(new Array(20).fill(0xaa)), bytes(new Array(50).fill(0xdd))))).toBe(
+      '773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe',
+    )
+    const key25 = bytes(Array.from({ length: 25 }, (_, index) => index + 1))
+    expect(hex(hmacSha256(key25, bytes(new Array(50).fill(0xcd))))).toBe(
+      '82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b',
+    )
+  })
+
+  it('round-trips minted request nonces and rejects malformed ones', () => {
+    const now = Math.floor(Date.now() / 1000)
+    const nonce = issueRequestNonce(NONCE_SECRET, now)
+    expect(verifyRequestNonce(nonce, NONCE_SECRET, now)).toBe(true)
+    expect(verifyRequestNonce(nonce, NONCE_SECRET, now + 12 * 60 * 60 + 61)).toBe(false)
+    for (const bad of [null, undefined, '', 'no-dot', 'abc.def.ghi', `${now}.short`, `99999999999999999999999.${'A'.repeat(43)}`]) {
+      expect(verifyRequestNonce(bad, NONCE_SECRET, now)).toBe(false)
+    }
+    expect(verifyRequestNonce(nonce, 'wrong-secret-'.padEnd(48, 'w'), now)).toBe(false)
+  })
+
+  it('rejects catalog calls without a request nonce exactly like an unknown route', async () => {
+    const upstreamFetch = vi.fn()
+    vi.stubGlobal('fetch', upstreamFetch)
+
+    const missing = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/sources', undefined, APP_ORIGIN, null))
+    const unknown = await handleAniSourceRequest(request('/api/anisource/nope'))
+    expect(missing.status).toBe(404)
+    expect(await missing.text()).toBe(await unknown.text())
+    expect(upstreamFetch).not.toHaveBeenCalled()
+  })
+
+  it('rejects tampered, expired, and foreign-secret nonces without distinguishing them', async () => {
+    const upstreamFetch = vi.fn()
+    vi.stubGlobal('fetch', upstreamFetch)
+    const now = Math.floor(Date.now() / 1000)
+    const valid = issueRequestNonce(NONCE_SECRET, now)
+    const tampered = valid.slice(0, -1) + (valid.endsWith('A') ? 'B' : 'A')
+    const expired = issueRequestNonce(NONCE_SECRET, now - (12 * 60 * 60 + 61))
+    const foreign = issueRequestNonce('foreign-secret-'.padEnd(48, 'f'), now)
+    for (const nonce of [tampered, expired, foreign]) {
+      const response = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/sources', undefined, APP_ORIGIN, nonce))
+      expect(response.status).toBe(404)
+      expect(await response.json()).toEqual({ detail: 'AniSource route not found.' })
+    }
+    expect(upstreamFetch).not.toHaveBeenCalled()
+  })
+
+  it('exempts health checks and media tickets from the request nonce', async () => {
+    const upstreamFetch = vi.fn(async () => new Response(JSON.stringify({
+      status: 'ok',
+      version: 'test',
+      uptime_seconds: 1,
+      memory_usage_mb: 1,
+      active_sources: 1,
+      cache_stats: {},
+    }), { headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', upstreamFetch)
+
+    const health = await handleAniSourceRequest(request('/api/anisource/health', undefined, APP_ORIGIN, null))
+    expect(health.status).toBe(200)
+
+    const ticket = await handleAniSourceRequest(request('/api/anisource/asset/garbage', undefined, APP_ORIGIN, null))
+    expect(ticket.status).toBe(403)
   })
 
   it('does not follow upstream redirects and keeps the initial session on errors', async () => {
@@ -371,7 +453,11 @@ describe('AniSource server boundary', () => {
     vi.stubGlobal('fetch', upstreamFetch)
 
     const pending = handleAniSourceRequest(new Request(`${APP_ORIGIN}/api/anisource/api/v1/anime/sources`, {
-      headers: { Origin: APP_ORIGIN, 'Sec-Fetch-Site': 'same-origin' },
+      headers: {
+        Origin: APP_ORIGIN,
+        'Sec-Fetch-Site': 'same-origin',
+        [REQUEST_NONCE_HEADER]: issueRequestNonce(NONCE_SECRET, Math.floor(Date.now() / 1000)),
+      },
       signal: controller.signal,
     }))
     await vi.waitFor(() => expect(upstreamFetch).toHaveBeenCalledOnce())
@@ -413,9 +499,10 @@ describe('AniSource server boundary', () => {
     const upstreamFetch = vi.fn()
     vi.stubGlobal('fetch', upstreamFetch)
 
-    const forbidden = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/sources', undefined, 'https://evil.test'))
-    expect(forbidden.status).toBe(403)
-    expect(forbidden.headers.get('x-anisource-error-kind')).toBe('forbidden')
+    const indistinguishable = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/sources', undefined, 'https://evil.test'))
+    expect(indistinguishable.status).toBe(404)
+    expect(indistinguishable.headers.get('x-anisource-error-kind')).toBe('invalid')
+    expect(await indistinguishable.json()).toEqual({ detail: 'AniSource route not found.' })
     expect(upstreamFetch).not.toHaveBeenCalled()
 
     vi.stubEnv('NODE_ENV', 'production')

@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createAniSourceClient } from '../app/data/anisource/client'
 import { handleAniSourceRequest } from '../app/data/anisource/proxy.server'
+import { REQUEST_NONCE_HEADER, issueRequestNonce } from '../app/lib/requestNonce'
 
 const APP_ORIGIN = 'https://app.test'
 const API_ORIGIN = 'https://api.test'
@@ -87,13 +88,21 @@ describe('AniSource client/gateway route contract', () => {
     }))
 
     const requestedPaths: string[] = []
+    // The transport shim plays the browser: it attaches the cookie-derived
+    // request nonce exactly as client request encoding does.
+    const nonce = issueRequestNonce('session-secret-'.padEnd(48, 's'), Math.floor(Date.now() / 1000))
     const client = createAniSourceClient({
       transport: {
         fetch: async (input: string) => {
           requestedPaths.push(input)
           // The browser only ever talks to the same-origin gateway.
           return handleAniSourceRequest(new Request(`${APP_ORIGIN}${input}`, {
-            headers: { Origin: APP_ORIGIN, 'Sec-Fetch-Site': 'same-origin', Accept: 'application/json' },
+            headers: {
+              Origin: APP_ORIGIN,
+              'Sec-Fetch-Site': 'same-origin',
+              Accept: 'application/json',
+              [REQUEST_NONCE_HEADER]: nonce,
+            },
           }))
         },
         setTimeout: (callback: () => void) => setTimeout(callback, 0),

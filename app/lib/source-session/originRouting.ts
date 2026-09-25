@@ -9,10 +9,15 @@
  *
  * Two facts shape the policy. Media tickets are origin-bound, so a switch
  * must be sticky: once an operation moves to an origin, everything derived
- * from it (child URLs, scopes) already follows. And the overflow origin
- * sleeps when idle, so a switch into an origin with no recent success is
- * only ever triggered by an actual failure — never by mere slowness, where
- * a slow primary still beats a sleeping overflow.
+ * from it (child URLs, scopes) already follows. And an idle origin may be
+ * asleep, so a switch into an origin with no recent success is only ever
+ * triggered by an actual failure — never by mere slowness, where a slow
+ * origin still beats a sleeping one.
+ *
+ * Each policy instance has a preferred origin: catalog operations prefer
+ * primary, while operations that mint media-byte URLs (streams, manga
+ * pages) prefer overflow, keeping video bandwidth off the primary
+ * deployment. All other mechanics are identical for both.
  */
 
 export type RoutingOrigin = 'primary' | 'overflow'
@@ -37,6 +42,8 @@ interface OriginStats {
 }
 
 export interface OriginRoutingState {
+  /** Default origin for this operation class; traffic homes here on success. */
+  preferred: RoutingOrigin
   active: RoutingOrigin
   primary: OriginStats
   overflow: OriginStats
@@ -55,8 +62,8 @@ function emptyStats(): OriginStats {
   return { slowStreak: 0, failStreak: 0, lastFailAt: 0, lastSuccessAt: 0 }
 }
 
-export function createOriginRoutingState(): OriginRoutingState {
-  return { active: 'primary', primary: emptyStats(), overflow: emptyStats() }
+export function createOriginRoutingState(preferred: RoutingOrigin = 'primary'): OriginRoutingState {
+  return { preferred, active: preferred, primary: emptyStats(), overflow: emptyStats() }
 }
 
 export function otherOrigin(origin: RoutingOrigin): RoutingOrigin {
@@ -77,17 +84,17 @@ export function isSwitchableFailure(kind: string | null, status?: number): boole
 
 /**
  * Entry origin for a call. Skips an origin still inside its failure window
- * so an outage does not cost a full timeout on every operation, and probes a
- * failure-exiled primary once its window lapses so recovery is noticed.
+ * so an outage does not cost a full timeout on every operation, and probes
+ * an exiled preferred origin once its window lapses so recovery is noticed.
  * Slow-switch exile never probes: nothing failed, so there is nothing to
- * re-check until the overflow origin itself degrades.
+ * re-check until the other origin itself degrades.
  */
 export function pickOrigin(state: OriginRoutingState, now: number): RoutingOrigin {
   if (isFailFastPath(state, now)) return otherOrigin(state.active)
-  if (state.active === 'overflow') {
-    const primary = state.primary
-    if (primary.failStreak >= 1 && now - primary.lastFailAt >= ROUTING_FAIL_FAST_PATH_WINDOW_MS) {
-      return 'primary'
+  if (state.active !== state.preferred) {
+    const home = state[state.preferred]
+    if (home.failStreak >= 1 && now - home.lastFailAt >= ROUTING_FAIL_FAST_PATH_WINDOW_MS) {
+      return state.preferred
     }
   }
   return state.active
@@ -107,9 +114,9 @@ export function isFailFastPath(state: OriginRoutingState, now: number): boolean 
 /**
  * Records a settled attempt. Switches are sticky: a switchable failure moves
  * `active` immediately (the caller runs its single bounded alternate there),
- * a slow streak moves it only toward a recently-proven origin, a primary
- * success moves traffic home, and a misconfigured failure sends traffic home
- * to primary since both deployments share one service token.
+ * a slow streak moves it only toward a recently-proven origin, a success on
+ * the preferred origin moves traffic home, and a misconfigured failure sends
+ * traffic home to primary since both deployments share one service token.
  */
 export function recordOriginCall(state: OriginRoutingState, event: OriginCallEvent, now: number): void {
   if (event.aborted) return
@@ -117,7 +124,7 @@ export function recordOriginCall(state: OriginRoutingState, event: OriginCallEve
   if (event.ok) {
     stats.failStreak = 0
     stats.lastSuccessAt = now
-    if (event.origin === 'primary') state.active = 'primary'
+    if (event.origin === state.preferred) state.active = state.preferred
     if (!event.slow) {
       stats.slowStreak = 0
       return

@@ -39,9 +39,9 @@ interface MangaReaderPageProps {
 const CHROME_HIDE_DELAY_MS = 2_600
 const IMAGE_LOAD_CONCURRENCY = 2
 /**
- * Overflow-capable gateway client, mirroring the Watch page: the primary
- * origin serves until measured latency or origin-health failures move a
- * session to the overflow deployment under `/fallback`.
+ * Overflow-capable gateway client, mirroring the Watch page: catalog
+ * operations serve from primary while media-resolving operations prefer
+ * the overflow deployment under `/fallback`.
  */
 const readerApi = createAniSourceClient({ baseUrl: ANISOURCE_PROXY_BASE, overflowBaseUrl: ANISOURCE_OVERFLOW_BASE })
 const CONTINUOUS_INITIAL_PAGES = 2

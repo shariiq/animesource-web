@@ -355,6 +355,47 @@ describe('AniSource client', () => {
       expect(fetch).toHaveBeenCalledTimes(7)
     })
 
+    it('alternates when the gateway labels a 5xx upstream failure invalid', async () => {
+      // Mirrors a production failure: an earlier blip leaves chapters
+      // starting on overflow, overflow answers garbage, the gateway 502s it
+      // as invalid — and the client must still try primary, which is healthy.
+      const calls: string[] = []
+      let phase = 0
+      vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+        const url = input.toString()
+        calls.push(url)
+        if (phase === 0) {
+          if (!url.includes('/fallback/')) {
+            const error = new Error('aborted')
+            error.name = 'AbortError'
+            throw error
+          }
+          return new Response(JSON.stringify({ sources: [], count: 0 }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        if (url.includes('/fallback/')) {
+          return new Response(JSON.stringify({ detail: 'AniSource returned an unexpected response format.' }), {
+            status: 502,
+            headers: { 'content-type': 'application/json', 'x-anisource-error-kind': 'invalid' },
+          })
+        }
+        return new Response(JSON.stringify([{ id: 'c1', number: 1, title: 'First', url: 'https://source.test/c1' }]), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }))
+      const client = createAniSourceClient({ baseUrl: primary, overflowBaseUrl: `${overflow}/api/anisource/fallback` })
+
+      await expect(client.sources()).resolves.toEqual({ sources: [], count: 0 })
+      phase = 1
+      await expect(client.mangaChapters('source', 'manga')).resolves.toHaveLength(1)
+
+      expect(calls.slice(-2).map((url) => url.includes('/fallback/'))).toEqual([true, false])
+      vi.unstubAllGlobals()
+    })
+
     it('moves slow traffic to a proven overflow after two slow calls', async () => {
       let primaryCalls = 0
       let overflowCalls = 0
@@ -441,14 +482,14 @@ describe('AniSource client', () => {
       expect((fetch.mock.calls[2]![0] as string).startsWith(primary)).toBe(true)
     })
 
-    it('resolves manga pages on overflow', async () => {
+    it('resolves manga pages on primary', async () => {
       const fetch = vi.fn(async (_url: string) => response([{ index: 0, url: 'https://source.test/page-1', page_url: '' }]))
       const client = routed(fetch)
 
       await client.mangaPages('source', 'chapter')
       expect(fetch).toHaveBeenCalledTimes(1)
       expect(fetch.mock.calls[0]![0]).toBe(
-        `${overflow}/api/anisource/fallback/api/v1/manga/source/pages/chapter`,
+        `${primary}/api/v1/manga/source/pages/chapter`,
       )
     })
   })

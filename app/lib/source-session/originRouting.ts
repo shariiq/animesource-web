@@ -72,14 +72,19 @@ export function otherOrigin(origin: RoutingOrigin): RoutingOrigin {
 
 /**
  * Which failures may improve by trying the other origin. Timeouts, dropped
- * connections, and 5xx responses describe the origin, not the request.
- * Expired tickets, rejected routes, throttling, credential outages, and
- * cancellations cannot improve elsewhere: rate limits apply per session
- * regardless of origin, and both deployments share one service token.
+ * connections, and 5xx responses describe the origin, not the request —
+ * including 5xx the gateway labels `invalid`, which means the upstream
+ * answered with garbage rather than a usable error. Expired tickets,
+ * rejected routes, throttling, credential outages, and cancellations cannot
+ * improve elsewhere: rate limits apply per session regardless of origin, and
+ * both deployments share one service token.
  */
 export function isSwitchableFailure(kind: string | null, status?: number): boolean {
   if (kind === 'timeout' || kind === 'network') return true
-  return kind === 'http' && status !== undefined && [502, 503, 504].includes(status)
+  if (status !== undefined && [502, 503, 504].includes(status)) {
+    return kind === 'http' || kind === 'invalid'
+  }
+  return false
 }
 
 /**

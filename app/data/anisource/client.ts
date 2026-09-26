@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { normalizeApiUrl } from '../../config/api'
-import { REQUEST_NONCE_COOKIE, REQUEST_NONCE_HEADER } from '../../lib/requestNonce'
+import { solvePowChallenge } from '../../lib/proofOfWork'
 import {
   createOriginRoutingState,
   isFailFastPath,
@@ -69,7 +69,7 @@ export const AS_MAX_RETRIES = 0 // AniSource failures are surfaced, not silently
 export class AniSourceError extends Error {
   constructor(
     message: string,
-    readonly kind: 'network' | 'http' | 'timeout' | 'invalid' | 'cancelled' | 'rate-limited' | 'misconfigured',
+    readonly kind: 'network' | 'http' | 'timeout' | 'invalid' | 'cancelled' | 'rate-limited' | 'misconfigured' | 'session-required',
     readonly status?: number,
   ) {
     super(message)
@@ -96,6 +96,7 @@ const GATEWAY_ERROR_KINDS: ReadonlySet<string> = new Set([
   'cancelled',
   'rate-limited',
   'misconfigured',
+  'session-required',
 ])
 
 function gatewayErrorKind(value: string | null): AniSourceError['kind'] | null {
@@ -122,6 +123,83 @@ const defaultTransport: AniSourceTransport = {
   },
   setTimeout: (callback, milliseconds) => setTimeout(callback, milliseconds),
   clearTimeout: (timeout) => clearTimeout(timeout),
+}
+
+const challengeResponseSchema = z.object({
+  challenge: z.string().min(1),
+  difficulty: z.number().int().min(1),
+  expiresIn: z.number().int().min(1),
+})
+const sessionResponseSchema = z.object({ ok: z.literal(true) })
+
+/** In-flight verification shared by concurrent requests; reset after settling. */
+let sessionExchange: Promise<void> | null = null
+
+async function runPowExchange(
+  fetch: AniSourceTransport['fetch'],
+  base: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  // At most one retry with a fresh challenge: a challenge can expire or be
+  // spent between issuance and exchange. Bounded to two rounds, never a loop.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (signal?.aborted) throw new AniSourceError('The streaming request was cancelled.', 'cancelled')
+    const challengeRes = await fetch(`${base}/challenge`, { signal, headers: { Accept: 'application/json' } })
+    const challengeBody: unknown = await challengeRes.json().catch(() => null)
+    const challenge = challengeResponseSchema.safeParse(challengeBody)
+    if (!challenge.success) throw new AniSourceError('Browser verification returned an unexpected response.', 'invalid')
+    const id = challenge.data.challenge.split('.', 1)[0]
+    if (!id) throw new AniSourceError('Browser verification returned an unexpected response.', 'invalid')
+    let nonce: number
+    try {
+      // Parallel search where workers exist; the attempt cap bounds worst
+      // case at ~8x expected work so a misconfigured difficulty fails loudly
+      // within minutes instead of spinning indefinitely.
+      const workerCount = typeof navigator === 'undefined'
+        ? 1
+        : Math.min(4, Math.max(1, navigator.hardwareConcurrency ?? 1))
+      nonce = (await solvePowChallenge(id, challenge.data.difficulty, {
+        signal,
+        workers: workerCount,
+        maxAttempts: 8 * 2 ** Math.min(challenge.data.difficulty, 24),
+      })).nonce
+    } catch (error) {
+      if (signal?.aborted) throw new AniSourceError('The streaming request was cancelled.', 'cancelled')
+      throw error instanceof Error ? new AniSourceError(error.message, 'invalid') : error
+    }
+    try {
+      const exchangeRes = await fetch(`${base}/session`, {
+        method: 'POST',
+        signal,
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challenge: challenge.data.challenge, solution: { nonce } }),
+      })
+      const sessionBody: unknown = await exchangeRes.json().catch(() => null)
+      if (!sessionResponseSchema.safeParse(sessionBody).success) {
+        throw new AniSourceError('Browser verification returned an unexpected response.', 'invalid')
+      }
+      return
+    } catch (error) {
+      // A stale or spent challenge fails 'invalid': solve once more against a
+      // fresh challenge before surfacing the failure.
+      if (attempt === 0 && error instanceof AniSourceError && error.kind === 'invalid') continue
+      throw error
+    }
+  }
+  throw new AniSourceError('Browser verification failed. Try again.', 'http')
+}
+
+function ensureSession(
+  fetch: AniSourceTransport['fetch'],
+  base: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!sessionExchange) {
+    sessionExchange = runPowExchange(fetch, base, signal).finally(() => {
+      sessionExchange = null
+    })
+  }
+  return sessionExchange
 }
 
 export interface AniSourceClientOptions {
@@ -176,6 +254,7 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
     schema: z.ZodType<T>,
     onSlow?: () => void,
     signal?: AbortSignal,
+    sessionRetried = false,
   ): Promise<T> {
     if (!baseUrl) throw new AniSourceError('AniSource base URL is not configured.', 'invalid')
 
@@ -191,14 +270,11 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
     }
 
     async function fetchAndParse(url: string, attemptSignal: AbortSignal): Promise<T> {
-      const nonce = requestNonce()
       let response: Response
       try {
         response = await transport.fetch(url, {
           signal: attemptSignal,
-          headers: nonce
-            ? { Accept: 'application/json', [REQUEST_NONCE_HEADER]: nonce }
-            : { Accept: 'application/json' },
+          headers: { Accept: 'application/json' },
         })
       } catch (error) {
         if (error instanceof AniSourceError) throw error
@@ -228,6 +304,17 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
           }
         } catch {
           // Non-JSON error body — fall back to the generic message.
+        }
+        // Custom transports return raw gateway responses without the kind
+        // translation defaultTransport performs, so the session signal is
+        // recognized here too: the retry contract must not depend on which
+        // transport wrapped the fetch.
+        if (response.status === 401 && response.headers.get('x-anisource-error-kind') === 'session-required') {
+          throw new AniSourceError(
+            detail || 'Browser verification is required before using AniSource.',
+            'session-required',
+            response.status,
+          )
         }
         throw new AniSourceError(
           detail || `Request failed (${response.status}).`,
@@ -289,6 +376,22 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
           const status = error instanceof AniSourceError ? error.status : undefined
           if (routing) {
             recordOriginCall(routing, { origin, ok: false, slow: slowFired, kind, status, aborted }, clock())
+          }
+          if (
+            !sessionRetried &&
+            !aborted &&
+            error instanceof AniSourceError &&
+            error.kind === 'session-required'
+          ) {
+            // First request of a visit races the session: verify once, then
+            // replay the original request exactly once. The exchange is shared
+            // with concurrent requests; its failure is the truthful error.
+            try {
+              await ensureSession((input, init) => transport.fetch(input, init), baseUrl, signal)
+            } catch (exchangeError) {
+              throw exchangeError instanceof AniSourceError ? exchangeError : error
+            }
+            return request(path, schema, onSlow, signal, true)
           }
           const mayAlternate = routing !== null &&
             attempt === 0 &&
@@ -393,18 +496,6 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
       sourceCache.clear()
     },
   }
-}
-
-/** Reads the request nonce the document response set; null outside the browser or before first paint. */
-function requestNonce(): string | null {
-  if (typeof document === 'undefined' || !document.cookie) return null
-  const prefix = `${REQUEST_NONCE_COOKIE}=`
-  const value = document.cookie
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(prefix))
-    ?.slice(prefix.length)
-  return value && value.length <= 256 ? value : null
 }
 
 /** Resolves relative AniSource asset URLs against the given (or configured) base. */

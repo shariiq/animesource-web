@@ -78,6 +78,14 @@ for (const [name] of Object.entries(process.env)) {
   }
 }
 
+const powDifficulty = process.env.ANISOURCE_POW_DIFFICULTY
+if (powDifficulty !== undefined && powDifficulty !== '') {
+  const parsed = Number.parseInt(powDifficulty, 10)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 30) {
+    problems.push('ANISOURCE_POW_DIFFICULTY must be an integer from 1 to 30.')
+  }
+}
+
 if (problems.length > 0) {
   for (const problem of problems) console.error(`access-config: ${problem}`)
   process.exit(1)

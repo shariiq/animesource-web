@@ -2,9 +2,18 @@ import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
 import { z } from 'zod'
 import apiUrls from '../../../config/api-urls.json'
-import { REQUEST_NONCE_HEADER, verifyRequestNonce } from '../../lib/requestNonce'
 import { serverSecret } from '../../lib/serverSecret'
 import { PlaybackCapUnavailable, appendPlaybackCapability, mintPlaybackCapability } from './capability.server'
+import {
+  POW_CHALLENGE_BUDGET_PER_MINUTE,
+  POW_EXCHANGE_BUDGET_PER_MINUTE,
+  challengeStore,
+  escalatedDifficulty,
+  mintPowChallenge,
+  parseExchangeBody,
+  powDifficulty,
+  redeemPowChallenge,
+} from './pow.server'
 import {
   anisourceMangaSchema,
   chapterPageSchema,
@@ -20,7 +29,9 @@ import {
 
 const API_PREFIX = '/api/anisource'
 const FALLBACK_PREFIX = '/fallback'
-const SESSION_LIFETIME_SECONDS = 12 * 60 * 60
+// Short sessions bound the value of one solved puzzle: a harvested session
+// stops working within two hours, so bulk abuse must keep solving.
+const SESSION_LIFETIME_SECONDS = 2 * 60 * 60
 // Ticket lifetime sits just under the API media capability TTL (60 min) so a
 // gateway expiry always fires first and its refresh pulls fresh API URLs too.
 // API HLS key resources may expire sooner (10 min); those surface as upstream
@@ -144,7 +155,7 @@ function isSameOriginRequest(request: Request): boolean {
   }
 }
 
-function requestClientIp(request: Request): string | null {
+export function requestClientIp(request: Request): string | null {
   const forwarded = process.env.NODE_ENV === 'production'
     ? request.headers.get('x-vercel-forwarded-for')
     : request.headers.get('x-vercel-forwarded-for') ?? request.headers.get('x-forwarded-for')
@@ -196,7 +207,7 @@ function cachedHmacKey(value: string): Promise<CryptoKey> {
   return pending
 }
 
-async function checkRateLimits(request: Request, session: Session, key: CryptoKey): Promise<Response | null> {
+async function checkRateLimits(request: Request, session: Session | null, key: CryptoKey): Promise<Response | null> {
   const limiters = getLimiters()
   if (!limiters) {
     return process.env.NODE_ENV === 'production'
@@ -206,12 +217,17 @@ async function checkRateLimits(request: Request, session: Session, key: CryptoKe
   const ip = requestClientIp(request)
   if (!ip) return jsonError(503, 'Client rate limiting is unavailable.', {}, 'misconfigured')
   try {
-    const [bySession, byIp] = await Promise.all([
-      limiters.session.limit(await sign(session.sid, 'limit-session-v1', key)),
-      limiters.ip.limit(await sign(ip, 'limit-ip-v1', key)),
-    ])
-    if (bySession.success && byIp.success) return null
-    const reset = Math.min(...[bySession, byIp].filter((result) => !result.success).map((result) => result.reset))
+    // Sessionless health checks pay only the IP budget: there is no session
+    // to charge, and minting one just to limit it would reopen session
+    // issuance without proof-of-work.
+    const checks = session
+      ? await Promise.all([
+        limiters.session.limit(await sign(session.sid, 'limit-session-v1', key)),
+        limiters.ip.limit(await sign(ip, 'limit-ip-v1', key)),
+      ])
+      : [await limiters.ip.limit(await sign(ip, 'limit-ip-v1', key))]
+    if (checks.every((result) => result.success)) return null
+    const reset = Math.min(...checks.filter((result) => !result.success).map((result) => result.reset))
     return jsonError(429, 'Too many AniSource requests. Try again shortly.', {
       'Retry-After': String(Math.max(1, Math.ceil((reset - Date.now()) / 1000))),
     }, 'rate-limited')
@@ -233,9 +249,10 @@ function jsonError(status: number, detail: string, headers: HeadersInit = {}, ki
 }
 
 /**
- * Single source for the camouflage response: unknown routes, failed
- * same-origin checks, and missing request nonces all answer identically so
- * probers cannot tell the three cases apart.
+ * Single source for the camouflage response: unknown routes and failed
+ * same-origin checks all answer identically so probers cannot tell the cases
+ * apart. Sessionless catalog calls deliberately do NOT use this (401
+ * session-required): the client must learn it has to verify before retrying.
  */
 function hiddenRoute(): Response {
   return jsonError(404, 'AniSource route not found.', {}, 'invalid')
@@ -353,7 +370,7 @@ async function verifyTicket(value: string, session: Session, key: CryptoKey): Pr
   }
 }
 
-async function rewriteApiUrl(value: string, base: URL, session: Session, key: CryptoKey, scope: string, viaFallback = false): Promise<string> {
+async function rewriteApiUrl(value: string, base: URL, session: Session | null, key: CryptoKey, scope: string, viaFallback = false): Promise<string> {
   const absoluteUrl = /^(?:https?:)?\/\//i.test(value)
   if (!absoluteUrl && !/^\/?api\/v1(?:\/|$)/i.test(value)) return value
   let url: URL
@@ -367,6 +384,10 @@ async function rewriteApiUrl(value: string, base: URL, session: Session, key: Cr
   const basePath = base.pathname.replace(/\/$/, '')
   const path = basePath && url.pathname.startsWith(`${basePath}/`) ? url.pathname.slice(basePath.length) : url.pathname
   if (isMediaPath(path)) {
+    // Media URLs are always session-bound (tickets or capabilities): a
+    // sessionless response (health) never contains one, so reaching here
+    // without a session is an upstream shape violation, not a user state.
+    if (!session) throw new Error('AniSource session is required to sign media URLs.')
     if (directMediaEnabled()) {
       // Direct mode hands the browser absolute API URLs, so each one carries
       // a session-bound capability (ADR 0006). Without a resolvable secret
@@ -384,7 +405,7 @@ async function rewriteApiUrl(value: string, base: URL, session: Session, key: Cr
   return `${path}${url.search}${url.hash}`
 }
 
-async function rewriteJson(value: unknown, base: URL, session: Session, key: CryptoKey, scope: string, viaFallback = false): Promise<unknown> {
+async function rewriteJson(value: unknown, base: URL, session: Session | null, key: CryptoKey, scope: string, viaFallback = false): Promise<unknown> {
   if (typeof value === 'string') return rewriteApiUrl(value, base, session, key, scope, viaFallback)
   if (Array.isArray(value)) return Promise.all(value.map((item) => rewriteJson(item, base, session, key, scope, viaFallback)))
   if (value && typeof value === 'object') {
@@ -396,7 +417,7 @@ async function rewriteJson(value: unknown, base: URL, session: Session, key: Cry
   return value
 }
 
-async function rewriteManifest(content: string, base: URL, session: Session, key: CryptoKey, scope: string, viaFallback = false): Promise<string> {
+async function rewriteManifest(content: string, base: URL, session: Session | null, key: CryptoKey, scope: string, viaFallback = false): Promise<string> {
   const rewrite = (value: string) => rewriteApiUrl(value, base, session, key, scope, viaFallback)
   const attributes = await Promise.all([...content.matchAll(/URI=(['"])([^'"]+)\1/g)].map(async (match) => ({
     value: match[0],
@@ -459,16 +480,84 @@ function appendSessionCookie(response: Response, cookie: string | undefined): Re
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 
+function powNoStore(): HeadersInit {
+  return { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+}
+
+/** Issue a single-use proof-of-work challenge bound to the request network. */
+async function servePowChallenge(request: Request): Promise<Response> {
+  const secret = serverSecret()
+  if (!secret) return jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured')
+  const store = challengeStore()
+  if (!store && process.env.NODE_ENV === 'production') {
+    return jsonError(503, 'AniSource verification is not configured.', {}, 'misconfigured')
+  }
+  const ip = requestClientIp(request)
+  const budget = store ? await store.hitBudget(`challenge:${ip ?? 'unknown'}`, POW_CHALLENGE_BUDGET_PER_MINUTE, 60) : { allowed: true, count: 0 }
+  if (store && !budget.allowed) {
+    return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '60' }, 'rate-limited')
+  }
+  const issued = mintPowChallenge(ip, Math.floor(Date.now() / 1000), escalatedDifficulty(powDifficulty(), budget.count))
+  if (!issued) return jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured')
+  return new Response(JSON.stringify(issued), { status: 200, headers: powNoStore() })
+}
+
+/** Verify a solved challenge and issue the browser session. */
+async function exchangePowSession(request: Request): Promise<Response> {
+  const secret = serverSecret()
+  if (!secret) return jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured')
+  if (Number(request.headers.get('content-length') ?? 0) > 2048) {
+    return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
+  }
+  let body: ReturnType<typeof parseExchangeBody>
+  try {
+    body = parseExchangeBody(await request.json())
+  } catch {
+    return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
+  }
+  if (!body) return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
+  const store = challengeStore()
+  if (!store && process.env.NODE_ENV === 'production') {
+    return jsonError(503, 'AniSource verification is not configured.', {}, 'misconfigured')
+  }
+  const ip = requestClientIp(request)
+  const budget = store ? await store.hitBudget(`exchange:${ip ?? 'unknown'}`, POW_EXCHANGE_BUDGET_PER_MINUTE, 60) : { allowed: true, count: 0 }
+  if (store && !budget.allowed) {
+    return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '60' }, 'rate-limited')
+  }
+  const result = await redeemPowChallenge(body.challenge, body.solution.nonce, ip, store, Math.floor(Date.now() / 1000))
+  if (!result.ok) {
+    if (result.reason === 'misconfigured') {
+      return jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured')
+    }
+    if (result.reason === 'expired' || result.reason === 'spent') {
+      return jsonError(400, 'Verification expired. Request a fresh challenge and retry.', {}, 'invalid')
+    }
+    return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
+  }
+  const signingKey = await cachedHmacKey(secret)
+  const created = await createSession(signingKey)
+  const headers = new Headers(powNoStore())
+  headers.append('Set-Cookie', created.cookie)
+  return new Response(JSON.stringify({ ok: true }), { status: 200, headers })
+}
+
 /** The single server-side AniSource seam for catalog JSON and signed media assets. */
 export async function handleAniSourceRequest(request: Request): Promise<Response> {
   // Deliberately indistinguishable from an unknown route: confirming the
   // route exists (or why it was rejected) only teaches probers the rule.
   if (!isSameOriginRequest(request)) return hiddenRoute()
+  const url = new URL(request.url)
+  let rawPath = url.pathname.startsWith(`${API_PREFIX}/`) ? url.pathname.slice(API_PREFIX.length) : ''
+
+  // Local proof-of-work session issuance is the only unauthenticated surface
+  // besides health. Challenge minting costs one HMAC; exchange verification
+  // costs one hash plus a single-use spend.
+  if (rawPath === '/challenge' && request.method === 'GET') return servePowChallenge(request)
+  if (rawPath === '/session' && request.method === 'POST') return exchangePowSession(request)
   if (!['GET', 'HEAD'].includes(request.method)) return jsonError(405, 'Method not allowed.', { Allow: 'GET, HEAD' }, 'invalid')
 
   const signingSecret = serverSecret()
-  const url = new URL(request.url)
-  let rawPath = url.pathname.startsWith(`${API_PREFIX}/`) ? url.pathname.slice(API_PREFIX.length) : ''
   let viaFallback = false
   if (rawPath === FALLBACK_PREFIX || rawPath.startsWith(`${FALLBACK_PREFIX}/`)) {
     viaFallback = true
@@ -490,29 +579,25 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
 
   const assetMatch = /^\/asset\/([^/]+)$/.exec(rawPath)
   if (!assetMatch && !isAllowedUpstreamPath(rawPath, url.search)) return hiddenRoute()
-  // Catalog callers must prove they rendered site HTML recently. Media
-  // tickets stay exempt (image and media elements cannot send headers) as do
-  // health checks (headerless monitors). A missing nonce answers exactly
-  // like an unknown route.
-  const nonceExempt = assetMatch !== null || rawPath === '/health' || rawPath === '/api/v1/health'
-  if (!nonceExempt && !verifyRequestNonce(request.headers.get(REQUEST_NONCE_HEADER), signingSecret, Math.floor(Date.now() / 1000))) {
-    return hiddenRoute()
-  }
-  let session = await readSession(request, signingKey)
-  if (assetMatch && !session) return jsonError(403, 'Expired or invalid media ticket.', {}, 'invalid')
 
-  let newCookie: string | undefined
-  if (!session) {
-    const created = await createSession(signingKey)
-    session = created.session
-    newCookie = created.cookie
+  // Every gateway route but health requires a live proof-of-work session.
+  // Sessionless callers get a distinguishable 401 (never camouflage): the
+  // browser client must learn it has to verify before retrying.
+  const healthExempt = rawPath === '/health' || rawPath === '/api/v1/health'
+  const session = await readSession(request, signingKey)
+  if (!healthExempt && !session) {
+    return jsonError(401, 'Browser verification is required before using AniSource.', {}, 'session-required')
   }
-  const withSession = (response: Response) => appendSessionCookie(response, newCookie)
+
+  // No session is ever minted here: issuance happens only through the
+  // proof-of-work exchange, so health responses carry no Set-Cookie.
+  const withSession = (response: Response) => appendSessionCookie(response, undefined)
 
   let path: string
   let search: string
   let ticket: AssetTicket | null = null
   if (assetMatch) {
+    if (!session) return withSession(jsonError(403, 'Expired or invalid media ticket.', {}, 'invalid'))
     ticket = await verifyTicket(assetMatch[1]!, session, signingKey)
     if (!ticket) return withSession(jsonError(403, 'Expired or invalid media ticket.', {}, 'invalid'))
     path = ticket.p

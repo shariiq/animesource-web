@@ -47,7 +47,7 @@ export type MangaReaderStage =
   | 'empty'
   | 'error'
 
-export type MangaReaderErrorKind = 'network' | 'timeout' | 'invalid' | 'unavailable' | 'empty' | 'persistence' | 'cancelled' | 'rate-limited' | 'misconfigured'
+export type MangaReaderErrorKind = 'network' | 'timeout' | 'invalid' | 'unavailable' | 'empty' | 'persistence' | 'cancelled' | 'rate-limited' | 'misconfigured' | 'session-required'
 
 export interface MangaReaderError {
   kind: MangaReaderErrorKind

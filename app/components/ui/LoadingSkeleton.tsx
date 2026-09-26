@@ -3,8 +3,7 @@ import { For } from 'solid-js'
 /**
  * Shared loading skeletons. Every async surface renders one of these while its
  * query is pending so navigation never lands on bare text or an empty frame.
- * Skeletons reuse the real layout containers (explore-grid, schedule rows,
- * detail shells) to avoid layout shift, carry aria-busy/role=status, and honor
+ * Skeletons reuse the real layout containers (explore-grid, detail shells) to avoid layout shift, carry aria-busy/role=status, and honor
  * prefers-reduced-motion through the static `.skeleton` fallback in CSS.
  */
 export function Skeleton(props: { height?: string; width?: string; rounded?: string; label?: string }) {
@@ -94,34 +93,6 @@ export function ExploreLoadingSkeleton() {
       </div>
       <p class="mono-signal mt-4" role="status">Loading the collection…</p>
     </section>
-  )
-}
-
-export function ScheduleLoadingSkeleton() {
-  return (
-    <div class="schedule-days" aria-busy="true" role="status" aria-label="Reading the release calendar">
-      <For each={['Monday releases', 'Tuesday releases']}>{(day) => (
-        <section class="schedule-day" aria-label={day}>
-          <div class="schedule-day-heading" aria-hidden="true">
-            <Skeleton height="30px" width="220px" />
-            <Skeleton height="12px" width="90px" />
-          </div>
-          <div class="schedule-day-items" aria-hidden="true">
-            <For each={[0, 1, 2, 3]}>{() => (
-              <div class="schedule-row">
-                <Skeleton height="88px" rounded="8px" />
-                <div class="grid w-full gap-2">
-                  <Skeleton height="10px" width="45%" />
-                  <Skeleton height="16px" width="85%" />
-                  <Skeleton height="12px" width="35%" />
-                </div>
-              </div>
-            )}</For>
-          </div>
-        </section>
-      )}</For>
-      <p class="mono-signal px-6 py-4">Reading the release calendar…</p>
-    </div>
   )
 }
 

@@ -1,6 +1,6 @@
-import { keepPreviousData, queryOptions } from '@tanstack/solid-query'
+import { queryOptions } from '@tanstack/solid-query'
 import { canonicalIds, queryKeys } from '../lib/queryKeys'
-import { alHome, alDetail, alByIds, alBrowse, alSuggest, alGenres, alSchedule } from './anilist/queries'
+import { alHome, alDetail, alByIds, alBrowse, alSuggest, alGenres } from './anilist/queries'
 import type { MediaSort } from './anilist/queries'
 import type { BrowseCountry, BrowseFormat, BrowseSeason, BrowseStatus } from '../lib/browse'
 import type { CatalogMode } from '../lib/catalog'
@@ -64,17 +64,4 @@ export const genresQuery = () =>
     queryKey: queryKeys.genres,
     queryFn: ({ signal }) => alGenres(signal),
     staleTime: 1000 * 60 * 60 * 24,
-  })
-
-export const scheduleQuery = (start: number, end: number) =>
-  queryOptions({
-    queryKey: queryKeys.schedule(start, end),
-    queryFn: ({ signal }) => alSchedule(start, end, signal),
-    staleTime: 1000 * 60 * 5,
-    gcTime: 1000 * 60 * 30,
-    // Keep the previous week visible while the next range loads so rapid
-    // Prev/Next navigation shows an updating indicator instead of flashing a
-    // full loading state. Countdowns tick locally every 30 seconds, so no
-    // background interval refetch is needed; stale ranges refetch on focus.
-    placeholderData: keepPreviousData,
   })

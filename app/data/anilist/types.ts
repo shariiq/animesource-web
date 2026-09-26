@@ -8,8 +8,6 @@ export type {
   AniListPage,
   AniListHome,
   AniListGenre,
-  AniListScheduleItem,
-  AniListSchedule,
   AniListRanking,
   AniListTag,
 } from './schema'

@@ -127,10 +127,6 @@ createServer(async (request, response) => {
       return send(response, 200, {
         data: { batch0: { media: [media(1, "Test Anime")] } },
       });
-    if (body.includes("airingSchedules("))
-      return send(response, 200, {
-        data: { Page: { pageInfo: { currentPage: 1, lastPage: 1, hasNextPage: false, total: 1 }, airingSchedules: [] } },
-      });
     if (body.includes("Page(") && body.includes("media("))
       return send(response, 200, {
         data: {

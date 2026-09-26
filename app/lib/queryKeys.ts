@@ -8,6 +8,5 @@ export const queryKeys = {
   browse: (params: Record<string, unknown>, mode: string = 'ANIME') => ['anilist', 'browse', mode, params] as const,
   suggest: (query: string, mode: string = 'ANIME') => ['anilist', 'suggest', mode, query] as const,
   genres: ['anilist', 'genres'] as const,
-  schedule: (start: number, end: number) => ['anilist', 'schedule', start, end] as const,
   byIds: (ids: readonly number[], mode: string = 'ANIME') => ['anilist', 'byIds', mode, canonicalIds(ids)] as const,
 } as const

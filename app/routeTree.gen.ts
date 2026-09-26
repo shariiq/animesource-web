@@ -13,7 +13,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ExploreRouteImport } from './routes/explore'
 import { Route as LibraryRouteImport } from './routes/library'
 import { Route as ProfileRouteImport } from './routes/profile'
-import { Route as ScheduleRouteImport } from './routes/schedule'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as AnimeAnimeIdRouteImport } from './routes/anime/$animeId'
 import { Route as AnimeAnimeIdIndexRouteImport } from './routes/anime/$animeId.index'
@@ -40,11 +39,6 @@ const LibraryRoute = LibraryRouteImport.update({
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ScheduleRoute = ScheduleRouteImport.update({
-  id: '/schedule',
-  path: '/schedule',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -90,7 +84,6 @@ export interface FileRoutesByFullPath {
   '/explore': typeof ExploreRoute
   '/library': typeof LibraryRoute
   '/profile': typeof ProfileRoute
-  '/schedule': typeof ScheduleRoute
   '/settings': typeof SettingsRoute
   '/anime/$animeId': typeof AnimeAnimeIdRouteWithChildren
   '/api/anisource/$': typeof ApiAnisourceSplatRoute
@@ -104,7 +97,6 @@ export interface FileRoutesByTo {
   '/explore': typeof ExploreRoute
   '/library': typeof LibraryRoute
   '/profile': typeof ProfileRoute
-  '/schedule': typeof ScheduleRoute
   '/settings': typeof SettingsRoute
   '/api/anisource/$': typeof ApiAnisourceSplatRoute
   '/anime/$animeId': typeof AnimeAnimeIdIndexRoute
@@ -118,7 +110,6 @@ export interface FileRoutesById {
   '/explore': typeof ExploreRoute
   '/library': typeof LibraryRoute
   '/profile': typeof ProfileRoute
-  '/schedule': typeof ScheduleRoute
   '/settings': typeof SettingsRoute
   '/anime/$animeId': typeof AnimeAnimeIdRouteWithChildren
   '/api/anisource/$': typeof ApiAnisourceSplatRoute
@@ -134,7 +125,6 @@ export interface FileRouteTypes {
     | '/explore'
     | '/library'
     | '/profile'
-    | '/schedule'
     | '/settings'
     | '/anime/$animeId'
     | '/api/anisource/$'
@@ -148,7 +138,6 @@ export interface FileRouteTypes {
     | '/explore'
     | '/library'
     | '/profile'
-    | '/schedule'
     | '/settings'
     | '/api/anisource/$'
     | '/anime/$animeId'
@@ -161,7 +150,6 @@ export interface FileRouteTypes {
     | '/explore'
     | '/library'
     | '/profile'
-    | '/schedule'
     | '/settings'
     | '/anime/$animeId'
     | '/api/anisource/$'
@@ -176,7 +164,6 @@ export interface RootRouteChildren {
   ExploreRoute: typeof ExploreRoute
   LibraryRoute: typeof LibraryRoute
   ProfileRoute: typeof ProfileRoute
-  ScheduleRoute: typeof ScheduleRoute
   SettingsRoute: typeof SettingsRoute
   AnimeAnimeIdRoute: typeof AnimeAnimeIdRouteWithChildren
   ApiAnisourceSplatRoute: typeof ApiAnisourceSplatRoute
@@ -212,13 +199,6 @@ declare module '@tanstack/solid-router' {
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/schedule': {
-      id: '/schedule'
-      path: '/schedule'
-      fullPath: '/schedule'
-      preLoaderRoute: typeof ScheduleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -292,7 +272,6 @@ const rootRouteChildren: RootRouteChildren = {
   ExploreRoute: ExploreRoute,
   LibraryRoute: LibraryRoute,
   ProfileRoute: ProfileRoute,
-  ScheduleRoute: ScheduleRoute,
   SettingsRoute: SettingsRoute,
   AnimeAnimeIdRoute: AnimeAnimeIdRouteWithChildren,
   ApiAnisourceSplatRoute: ApiAnisourceSplatRoute,

@@ -5,7 +5,6 @@ import { homeQuery } from '../../data/options'
 import type { AniListMedia } from '../../data/anilist/types'
 import { HeroCarousel } from './HeroCarousel'
 import { AnimeCard } from './AnimeCard'
-import { GenreNav } from './GenreNav'
 import { Rail } from './Rail'
 import { currentSeason, nextSeasonOf } from '../../lib/format'
 import { makeBrowseSearch } from '../../lib/browse'
@@ -109,10 +108,6 @@ export function HomePage(props: { mode?: CatalogMode } = {}) {
                   <AnimeColumn mode={mode()} title={copy().columnThird} items={data.allTime.media} search={makeBrowseSearch({ sort: 'POPULARITY_DESC' })} />
                 </div>
                 <div class="mt-5"><AnimeColumn mode={mode()} title={copy().columnFourth} items={data.upcoming.media} search={makeBrowseSearch(mode() === 'ANIME' ? { sort: 'POPULARITY_DESC', status: 'NOT_YET_RELEASED', season: nextSeason.season, year: nextSeason.year } : { sort: 'START_DATE_DESC', status: 'NOT_YET_RELEASED' })} /></div>
-              </section>
-              <section class="home-deferred-section section" aria-labelledby="genre-heading">
-                <SectionHeading id="genre-heading" title={copy().genreLabel} />
-                <GenreNav mode={mode()} />
               </section>
             </>}
       </Show>

@@ -26,6 +26,11 @@ export const ABUSE_WINDOW_SECONDS = 600
 export const ABUSE_SID_VELOCITY_LIMIT = 150
 /** Distinct IPs per session before sharing is assumed (NAT-safe margin). */
 export const ABUSE_SID_SHARE_LIMIT = 10
+/** Media resolves (Streams, Pages) per session per 10 min. Unsampled: one
+ * resolve serves a whole Episode or Chapter, so human pacing is single
+ * digits per 10 minutes while bulk ripping needs hundreds. Trips to the
+ * same short session ban through the existing rate-limit path. */
+export const ABUSE_SID_MEDIA_LIMIT = 30
 /** Sessionless hits per IP per 10 min before probing is assumed. Unsampled:
  *  legitimate clients 401 exactly once per session, then verify. */
 export const ABUSE_IP_ANON_LIMIT = 200
@@ -118,12 +123,21 @@ export interface AbuseSignal {
   sessionFingerprint: string | null
   sessionless: boolean
   forceSample?: boolean
+  /** Media-resolution catalog call (Streams, Pages): counted unsampled
+   * against the media pacing budget, since one resolve serves a whole
+   * Episode or Chapter. */
+  mediaResolve?: boolean
+  /** Standing-denial read only: asset-ticket media checks whether the
+   * session is already banned without writing telemetry, preserving the
+   * Redis-free byte path (one read, no increments). */
+  readOnly?: boolean
 }
 
 /**
  * Judge one request. Denied identities fail fast on reads; telemetry writes
- * ride a sampling rate except the sessionless counter, which is rare for
- * legitimate traffic by construction (one 401 per session, then verify).
+ * ride a sampling rate except the sessionless counter and the media pacing
+ * counter, which are rare for legitimate traffic by construction (one 401
+ * per session then verify; one resolve per Episode or Chapter).
  */
 export async function checkAbuse(
   store: AbuseStore | null,
@@ -145,6 +159,10 @@ export async function checkAbuse(
     const denied = await deniedReason(`abuse:denied:ip:${signal.ipHash}`)
     if (denied) return { ok: false, retryAfterSeconds: ABUSE_IP_BAN_TTL_SECONDS, reason: 'probing' }
   }
+
+  // Asset-ticket callers only ask whether the session already stands denied:
+  // no counters, no HyperLogLog writes, so media bytes stay Redis-cheap.
+  if (signal.readOnly) return { ok: true }
 
   if (signal.sessionless) {
     const bucket = minuteBucket(nowSeconds)
@@ -171,6 +189,15 @@ export async function checkAbuse(
     if (shared > ABUSE_SID_SHARE_LIMIT) {
       await store.set(`abuse:denied:sid:${signal.sessionFingerprint}`, 'shared', ABUSE_SHARE_BAN_TTL_SECONDS)
       return { ok: false, retryAfterSeconds: ABUSE_SHARE_BAN_TTL_SECONDS, reason: 'shared' }
+    }
+  }
+  if (signal.sessionFingerprint && signal.mediaResolve) {
+    const bucket = minuteBucket(nowSeconds)
+    const media = await store.incr(`abuse:media:${signal.sessionFingerprint}:${bucket}`)
+    if (media === 1) await store.expire(`abuse:media:${signal.sessionFingerprint}:${bucket}`, ABUSE_WINDOW_SECONDS)
+    if (media > ABUSE_SID_MEDIA_LIMIT) {
+      await store.set(`abuse:denied:sid:${signal.sessionFingerprint}`, 'velocity', ABUSE_SID_BAN_TTL_SECONDS)
+      return { ok: false, retryAfterSeconds: ABUSE_SID_BAN_TTL_SECONDS, reason: 'velocity' }
     }
   }
   return { ok: true }

@@ -65,15 +65,15 @@ A short-lived, session-bound signed token minted by the website and verified by 
 _Avoid_: Password, shared key, bearer URL
 
 **Session**:
-An anonymous browser session issued only for a solved proof-of-work challenge, carried in an HttpOnly cookie. Every gateway route but health requires a live one; sessions expire after 2 hours.
+An anonymous browser session issued only for a solved proof-of-work challenge, carried in an HttpOnly cookie. Every gateway route but health requires a live one; sessions expire after 2 hours and carry the issuing-network fingerprint, which media resolution enforces (drift re-verifies transparently).
 _Avoid_: Account, login, user
 
 **Challenge**:
-A single-use, server-signed computational puzzle binding a difficulty and the requesting network. Solving it proves a JavaScript engine spent real time; it prices bulk automation without identifying anyone.
+A single-use, server-signed computational puzzle binding a difficulty and the requesting network. Solving it proves a JavaScript engine spent real time; it prices bulk automation without identifying anyone. Issuance and exchange carry tight per-network budgets with difficulty escalation under pressure.
 _Avoid_: CAPTCHA, puzzle page, bot check
 
 **Attestation**:
-Coarse environment signals (automation flag, counts, viewport) shipped with a proof-of-work exchange. Scored to price automation with shorter sessions and hotter puzzles; never blocks, because client-asserted signals are forgeable.
+Coarse environment signals (automation flag, counts, viewport) plus a required schema version and client week shipped with a proof-of-work exchange. Missing values are malformed; stale versions or weeks answer upgrade-and-reload. Scored to price automation with shorter sessions and hotter puzzles; never blocks, because client-asserted signals are forgeable.
 _Avoid_: Fingerprint, tracking, bot score
 
 **Reader**:

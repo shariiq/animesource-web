@@ -10,7 +10,7 @@ import {
 } from '../app/data/anisource/capability.server'
 
 const SECRET = 'test-playback-capability-secret-0123456789'
-const VECTOR = 'v1.eyJleHAiOjE3NTAwMDA5MDAsImlhdCI6MTc1MDAwMDAwMCwia2lkIjoiZjkyYzQ4NTgiLCJzY29wZSI6IjY5N2JhNjYxNzIyODk4YTk4YTRmODJmOGMwMDQzMjlhNzdjYmQxNTJjOWNkM2IyODQ3OTI5NzM4NmE3MDg5MTEiLCJzaWQiOiJkNjI3ZTc0M2NjYjUwZmIxYjMwZmFmN2JhNTlkOTIzMyIsInYiOjF9.X-5R7JVLxgvgPhheztrsHTpuD9XQMH-AOa4ajDvuKVo'
+const VECTOR = 'v1.eyJleHAiOjE3NTAwMDA2MDAsImlhdCI6MTc1MDAwMDAwMCwia2lkIjoiZjkyYzQ4NTgiLCJzY29wZSI6IjY5N2JhNjYxNzIyODk4YTk4YTRmODJmOGMwMDQzMjlhNzdjYmQxNTJjOWNkM2IyODQ3OTI5NzM4NmE3MDg5MTEiLCJzaWQiOiJkNjI3ZTc0M2NjYjUwZmIxYjMwZmFmN2JhNTlkOTIzMyIsInYiOjF9.W-xDn2W_eByNhrh13mmhcCQqS3q7lJI4qA6c5MVne9E'
 
 describe('playback capabilities', () => {
   beforeEach(() => {
@@ -39,7 +39,7 @@ describe('playback capabilities', () => {
   it('expires TTL seconds after issuance and honors the TTL override', async () => {
     const now = 1750000000
     const payload = (token: string) => JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString('utf8')) as { iat: number; exp: number }
-    expect(payload(await mintPlaybackCapability('t', 's', now)).exp - now).toBe(900)
+    expect(payload(await mintPlaybackCapability('t', 's', now)).exp - now).toBe(600)
     vi.stubEnv('ANISOURCE_PLAYBACK_TTL', '300')
     expect(capTtlSeconds()).toBe(300)
     expect(payload(await mintPlaybackCapability('t', 's', now)).exp - now).toBe(300)

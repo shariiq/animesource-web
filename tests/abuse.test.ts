@@ -4,6 +4,7 @@ import {
   ABUSE_IP_ANON_LIMIT,
   ABUSE_SHARE_BAN_TTL_SECONDS,
   ABUSE_SID_BAN_TTL_SECONDS,
+  ABUSE_SID_MEDIA_LIMIT,
   ABUSE_SID_SHARE_LIMIT,
   ABUSE_SID_VELOCITY_LIMIT,
   type AbuseStore,
@@ -89,6 +90,35 @@ describe('abuse tripwires', () => {
     }, NOW)).toEqual({ ok: false, retryAfterSeconds: ABUSE_SHARE_BAN_TTL_SECONDS, reason: 'shared' })
   })
 
+  it('paces media resolution unsampled: one resolve serves a whole episode', async () => {
+    const store = fakeAbuseStore()
+    const signal = { ipHash: 'net-1', sessionFingerprint: 'sid-media', sessionless: false, mediaResolve: true }
+    for (let attempt = 0; attempt < ABUSE_SID_MEDIA_LIMIT; attempt += 1) {
+      expect(await checkAbuse(store, signal, NOW)).toEqual({ ok: true })
+    }
+    // The 31st Streams/Pages resolve in 10 minutes trips the same session
+    // ban human pacing (single digits) never approaches.
+    expect(await checkAbuse(store, signal, NOW)).toEqual({
+      ok: false,
+      retryAfterSeconds: ABUSE_SID_BAN_TTL_SECONDS,
+      reason: 'velocity',
+    })
+  })
+
+  it('reads standing denials for asset tickets without writing telemetry', async () => {
+    const store = fakeAbuseStore()
+    const signal = { ipHash: 'net-1', sessionFingerprint: 'sid-asset', sessionless: false, readOnly: true }
+    expect(await checkAbuse(store, signal, NOW)).toEqual({ ok: true })
+    const denied = { ipHash: 'net-1', sessionFingerprint: 'sid-asset', sessionless: false, forceSample: true }
+    for (let attempt = 0; attempt <= ABUSE_SID_VELOCITY_LIMIT; attempt += 1) {
+      await checkAbuse(store, denied, NOW)
+    }
+    expect(await checkAbuse(store, signal, NOW)).toEqual({
+      ok: false,
+      retryAfterSeconds: ABUSE_SID_BAN_TTL_SECONDS,
+      reason: 'velocity',
+    })
+  })
   it('bans networks flooding sessionless requests', async () => {
     const store = fakeAbuseStore()
     const signal = { ipHash: 'scan-net', sessionFingerprint: null, sessionless: true }

@@ -11,6 +11,7 @@ import {
   POW_EXCHANGE_BUDGET_PER_MINUTE,
   POW_SHORT_SESSION_TTL_SECONDS,
   POW_SUSPICIOUS_BURN_AMOUNT,
+  attestationVersionCurrent,
   challengeStore,
   clientWeekInWindow,
   escalatedDifficulty,
@@ -37,11 +38,12 @@ const FALLBACK_PREFIX = '/fallback'
 // Short sessions bound the value of one solved puzzle: a harvested session
 // stops working within two hours, so bulk abuse must keep solving.
 const SESSION_LIFETIME_SECONDS = 2 * 60 * 60
-// Ticket lifetime sits just under the API media capability TTL (60 min) so a
-// gateway expiry always fires first and its refresh pulls fresh API URLs too.
-// API HLS key resources may expire sooner (10 min); those surface as upstream
-// 401/403/410 on the media fetch and ride the same expired-link refresh path.
-const ASSET_TICKET_LIFETIME_SECONDS = 55 * 60
+// Ticket lifetime nests inside the playback capability TTL (600 s) with
+// margin to spare: gateway expiry always fires first and its refresh pulls
+// fresh API URLs and a fresh capability too. API HLS key resources may
+// expire sooner (10 min); those surface as upstream 401/403/410 on the media
+// fetch and ride the same expired-link refresh path.
+const ASSET_TICKET_LIFETIME_SECONDS = 9 * 60
 const MAX_PROXY_BODY_BYTES = 8 * 1024 * 1024
 const textEncoder = new TextEncoder()
 
@@ -51,6 +53,11 @@ const sessionSchema = z.object({
   // Automation score at mint. Strict: sessions minted before scores existed
   // do not verify, so a deploy cleanly retires them within one lifetime.
   scr: z.number().int().min(0),
+  // Issuing-network fingerprint (opaque hash, see abuse.server). Required:
+  // pre-binding sessions fail verification and re-verify transparently, so
+  // no grandfathering logic ships. Metadata stays lenient across hops (the
+  // check runs on media paths only); media re-verifies on drift.
+  net: z.string().regex(/^[0-9a-f]{64}$/),
 })
 const identifierSchema = z.string().min(1).max(512).refine((value) => {
   try {
@@ -66,6 +73,101 @@ const identifierSchema = z.string().min(1).max(512).refine((value) => {
 const emptyQuerySchema = z.object({}).strict()
 const searchQuerySchema = z.object({ q: z.string().max(512), page: z.coerce.number().int().positive() }).strict()
 const streamQuerySchema = z.object({ server_id: z.string().min(1).max(512) }).strict()
+
+/**
+ * Server identifier guard: `server_id` is caller-controlled and replayed to
+ * the upstream API verbatim, so the gateway refuses values shaped like an
+ * internal-network pivot before they leave this deployment. Legitimate IDs
+ * are opaque tokens or base64 JSON carrying a public embed host (for
+ * example KickAssAnime's `{name, src: https://embed.host/...}`); anything
+ * embedding control bytes, non-HTTP fetch schemes, or loopback / private /
+ * link-local / metadata hosts is rejected as an unknown route (404), never
+ * with a message naming the rule. Public-host fetching stays upstream
+ * territory: the API must allowlist embed hosts there, since Sources
+ * legitimately resolve third-party hosts by design.
+ */
+function tryBase64UrlDecodeToText(value: string): string | null {
+  if (!/^[A-Za-z0-9-_]+={0,2}$/.test(value) || value.length % 4 === 1 || value.length > 1024) return null
+  try {
+    const binary = atob(value.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - value.length % 4) % 4))
+    if (!binary) return null
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    if (!/^[\x20-\x7E\s]*$/.test(text)) return null
+    return text
+  } catch {
+    return null
+  }
+}
+
+function candidateHosts(value: string): string[] {
+  const hosts: string[] = []
+  for (const match of value.matchAll(/https?:\/\/([^/?#\s]+)/gi)) {
+    if (match[1]) hosts.push(match[1])
+  }
+  return hosts
+}
+
+function isNonPublicHost(host: string): boolean {
+  let bare = host.toLowerCase().trim()
+  if (!bare) return true
+  if (bare.startsWith('[') && bare.includes(']')) bare = bare.slice(1, bare.indexOf(']'))
+  bare = bare.split(':')[0] ?? ''
+  if (!bare) return true
+  if (bare === 'localhost' || bare.endsWith('.localhost') || bare === '0.0.0.0' || bare === '::' || bare === '::1') return true
+  if (bare === 'metadata.google.internal' || bare === 'metadata.google.com' || bare === 'instance-data') return true
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(bare)
+  if (ipv4) {
+    const parts = ipv4.slice(1).map(Number)
+    if (parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true
+    const [a = 0, b = 0] = parts
+    if (a === 127 || a === 10) return true
+    if (a === 172 && b >= 16 && b <= 31) return true
+    if (a === 192 && b === 168) return true
+    if (a === 169 && b === 254) return true
+    if (a === 0) return true
+    return false
+  }
+  if (bare.includes(':')) {
+    const normalized = bare.toLowerCase()
+    if (normalized === '::1' || normalized === '::') return true
+    if (/^(fc|fd)[0-9a-f]*:/.test(normalized)) return true
+    if (/^fe[89ab][0-9a-f]*:/.test(normalized)) return true
+    return false
+  }
+  return false
+}
+
+export function isSafeServerId(value: string): boolean {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 512) return false
+  // Control bytes and backslashes never appear in legitimate opaque IDs or
+  // base64 JSON. Checked by code point (not a control-character regex) so
+  // the pattern stays lint-clean.
+  for (const character of value) {
+    const code = character.charCodeAt(0)
+    if (code < 32 || code === 127 || code === 92) return false
+  }
+  const lower = value.toLowerCase()
+  for (const scheme of ['file:', 'gopher:', 'ftp:', 'dict:', 'ldap:', 'ldaps:', 'jar:', 'tftp:', 'sftp:', 'ssh:', 'telnet:', 'javascript:', 'data:', 'vbscript:']) {
+    if (lower.includes(scheme)) return false
+  }
+  const texts = [value]
+  const decoded = tryBase64UrlDecodeToText(value)
+  if (decoded) texts.push(decoded)
+  for (const text of texts) {
+    for (const host of candidateHosts(text)) {
+      if (isNonPublicHost(host)) return false
+    }
+    const textLower = text.toLowerCase()
+    if (/\b127\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/.test(textLower)) return false
+    if (textLower.includes('localhost')) return false
+    if (/\b169\.254\.\d{1,3}\.\d{1,3}\b/.test(textLower)) return false
+    if (/\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/.test(textLower)) return false
+    if (/\b192\.168\.\d{1,3}\.\d{1,3}\b/.test(textLower)) return false
+    if (/\b172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}\b/.test(textLower)) return false
+  }
+  return true
+}
 const ticketSchema = z.object({
   v: z.literal(1),
   p: z.string().min(1).max(4096),
@@ -138,11 +240,12 @@ async function readSession(request: Request, key: CryptoKey): Promise<Session | 
   }
 }
 
-async function createSession(key: CryptoKey, ttlSeconds: number = SESSION_LIFETIME_SECONDS, score = 0): Promise<{ session: Session; cookie: string }> {
-  const session = {
+async function createSession(key: CryptoKey, ttlSeconds: number, score: number, netHash: string): Promise<{ session: Session; cookie: string }> {
+  const session: Session = {
     sid: encodeBase64Url(crypto.getRandomValues(new Uint8Array(32))),
     exp: Math.floor(Date.now() / 1000) + ttlSeconds,
     scr: Math.max(0, Math.trunc(score)),
+    net: netHash,
   }
   const payload = encodeBase64Url(textEncoder.encode(JSON.stringify(session)))
   const signature = await sign(payload, 'session-v1', key)
@@ -355,7 +458,10 @@ function responseSchema(path: string, search: string): z.ZodType | null {
   }
   if (!itemId) return null
   if (catalog === 'anime' && operation === 'streams') {
-    return streamQuerySchema.safeParse(query).success ? streamSchema.array() : null
+    if (!streamQuerySchema.safeParse(query).success) return null
+    // server_id replays upstream verbatim: refuse internal-pivot shapes here.
+    if (typeof query.server_id !== 'string' || !isSafeServerId(query.server_id)) return null
+    return streamSchema.array()
   }
   if (!emptyQuerySchema.safeParse(query).success) return null
   if (catalog === 'manga') {
@@ -433,7 +539,24 @@ async function rewriteApiUrl(value: string, base: URL, session: Session | null, 
       const cap = await mintPlaybackCapability(token, session.sid)
       return appendPlaybackCapability(url.toString(), cap)
     }
-    const ticket = await issueTicket(path, url.search, scope, session, key, viaFallback)
+    // Ticket mode preserves the upstream signed query and, when playback
+    // secrets resolve, additionally binds a session capability to it: ticket
+    // asset fetches replay the stored query upstream, so deployments that
+    // enforce capabilities on media keep working through the gateway, while
+    // deployments that rely on Bearer or pre-signed queries ignore the extra
+    // parameter. Best-effort by design — missing secrets must not break
+    // ticket mode, which authenticates via Bearer plus the preserved query.
+    let ticketQuery = url.search
+    try {
+      const token = url.pathname.split('/').filter(Boolean).at(-1)
+      if (token) {
+        const cap = await mintPlaybackCapability(token, session.sid)
+        ticketQuery = `${ticketQuery}${ticketQuery ? '&' : '?'}${'cap'}=${encodeURIComponent(cap)}`
+      }
+    } catch (error) {
+      if (!(error instanceof PlaybackCapUnavailable)) throw error
+    }
+    const ticket = await issueTicket(path, ticketQuery, scope, session, key, viaFallback)
     return `${API_PREFIX}/asset/${ticket}`
   }
   if (isAllowedUpstreamPath(path, url.search)) return `${API_PREFIX}${path}${url.search}${url.hash}`
@@ -555,6 +678,11 @@ async function exchangePowSession(request: Request): Promise<Response> {
     return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
   }
   if (!body) return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
+  // Stale-but-well-formed copies reload for a fresh bundle; malformed ones
+  // (including missing week/version, rejected by the schema above) stay 400.
+  if (!attestationVersionCurrent(body.attestation.av)) {
+    return jsonError(426, 'Client is outdated. Reload to update.', {}, 'invalid')
+  }
   if (!clientWeekInWindow(body.attestation.cw, Date.now())) {
     return jsonError(426, 'Client is outdated. Reload to update.', {}, 'invalid')
   }
@@ -593,6 +721,7 @@ async function exchangePowSession(request: Request): Promise<Response> {
     signingKey,
     short ? POW_SHORT_SESSION_TTL_SECONDS : SESSION_LIFETIME_SECONDS,
     attestation.score,
+    networkFingerprint(ip),
   )
   const headers = new Headers(powNoStore())
   headers.append('Set-Cookie', created.cookie)
@@ -659,6 +788,16 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
       }
       return jsonError(401, 'Browser verification is required before using AniSource.', {}, 'session-required')
     }
+    // Network-bound media: the challenge was issued to one network and the
+    // session carries its fingerprint. Metadata stays lenient across hops;
+    // media resolution and asset tickets re-verify transparently (the browser
+    // client solves on 401 and replays once), so a harvested or shared
+    // session stops playing outside its home network within minutes.
+    if (!!assetMatch || isMediaResolutionPath(rawPath)) {
+      if (session.net !== networkFingerprint(requestClientIp(request))) {
+        return jsonError(401, 'Browser verification is required before using AniSource.', {}, 'session-required')
+      }
+    }
     if (
       process.env.NODE_ENV === 'production' &&
       isMediaResolutionPath(rawPath) &&
@@ -690,16 +829,29 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
     search = url.search
   }
 
-  // Abuse telemetry runs on catalog traffic: velocity, sharing, and standing
-  // denials. Asset tickets stay Redis-free by design (per the limiter note
-  // below), so bans take effect when banned sessions re-resolve metadata —
-  // at most a ticket lifetime later. Sampled writes keep the hot path cheap;
-  // denials always read.
+  // Abuse telemetry runs on catalog traffic: velocity, sharing, media pacing,
+  // and standing denials. Asset tickets stay write-free by design (per the
+  // limiter note below): media bytes never increment counters, but a banned
+  // session's ticket reads its standing denial and answers 429 immediately
+  // instead of serving out the ticket lifetime. Sampled writes keep the hot
+  // path cheap; denials always read.
   if (!healthExempt && !ticket && session) {
     const verdict = await checkAbuse(abuse, {
       ipHash: networkFingerprint(requestClientIp(request)),
       sessionFingerprint: sessionFingerprint(session.sid),
       sessionless: false,
+      mediaResolve: isMediaResolutionPath(rawPath),
+    }, nowSeconds)
+    if (!verdict.ok) {
+      return withSession(jsonError(429, 'Too many requests from this session. Try again shortly.', { 'Retry-After': String(verdict.retryAfterSeconds) }, 'rate-limited'))
+    }
+  }
+  if (!healthExempt && ticket && session) {
+    const verdict = await checkAbuse(abuse, {
+      ipHash: networkFingerprint(requestClientIp(request)),
+      sessionFingerprint: sessionFingerprint(session.sid),
+      sessionless: false,
+      readOnly: true,
     }, nowSeconds)
     if (!verdict.ok) {
       return withSession(jsonError(429, 'Too many requests from this session. Try again shortly.', { 'Retry-After': String(verdict.retryAfterSeconds) }, 'rate-limited'))
@@ -741,7 +893,11 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
     || (serviceToken && new TextEncoder().encode(serviceToken).byteLength < 32)) {
     return withSession(jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured'))
   }
-  const sentServiceAuth = Boolean(serviceToken && !isMediaPath(normalizedPath))
+  // The gateway authenticates to the API on every upstream call, catalog and
+  // media alike: media capability URLs are exempt from Bearer upstream, but
+  // an extra header is harmless there and required when the deployment
+  // enforces service auth uniformly. The credential never leaves the server.
+  const sentServiceAuth = Boolean(serviceToken)
 
   const headers = new Headers({ Accept: request.headers.get('accept') ?? 'application/json, */*;q=0.8' })
   if (request.method === 'GET') {
@@ -782,6 +938,7 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
     // deployments disagree on the shared secret. Surfacing the 401 would make
     // sessions report "expired stream links" and burn refresh budgets on an
     // outage no retry can heal, so translate it to a misconfigured outage.
+    // This covers catalog and media alike now that both carry service auth.
     await upstream.body?.cancel()
     return withSession(jsonError(
       503,

@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type ChallengeStore,
+  attestationVersionCurrent,
+  clientWeekInWindow,
   escalatedDifficulty,
   mintPowChallenge,
   parseExchangeBody,
@@ -10,6 +12,7 @@ import {
 } from '../app/data/anisource/pow.server'
 import {
   attestationDigest,
+  clientWeekId,
   countLeadingZeroBits,
   powSolutionPreimage,
   solvePowChallenge,
@@ -28,7 +31,7 @@ const TEST_ATTESTATION = {
   touchPoints: 0,
   mobile: false,
   av: 1,
-  cw: null,
+  cw: '2026W01',
 }
 
 function fakeStore(): ChallengeStore & { claimed: string[] } {
@@ -118,7 +121,14 @@ describe('proof-of-work session issuance', () => {
     while (countLeadingZeroBits(powSolutionPreimage(id, wrong, binding)) >= issued.difficulty) wrong += 1
     expect(await redeemPowChallenge(issued.challenge, wrong, TEST_ATTESTATION, '10.0.0.1', store, now))
       .toEqual({ ok: false, reason: 'invalid' })
-    const tampered = `${issued.challenge.slice(0, -1)}${issued.challenge.endsWith('A') ? 'B' : 'A'}`
+    // Tamper with the tag's first character: it always carries full data
+    // bits, while the last base64 character of a 32-byte tag carries only
+    // padding-adjacent bits that atob decodes lossily (flipping the tail
+    // between A/B/C/D can decode to identical bytes and pass by luck).
+    const segments = issued.challenge.split('.')
+    const tag = segments[4] ?? ''
+    const flipped = `${tag.startsWith('A') ? 'B' : 'A'}${tag.slice(1)}`
+    const tampered = [...segments.slice(0, 4), flipped].join('.')
     expect(await redeemPowChallenge(tampered, nonce, TEST_ATTESTATION, '10.0.0.1', store, now))
       .toEqual({ ok: false, reason: 'invalid' })
     expect(await redeemPowChallenge(issued.challenge, nonce, TEST_ATTESTATION, '10.0.0.1', store, now + 5 * 60 + 1))
@@ -167,9 +177,9 @@ describe('proof-of-work session issuance', () => {
 
   it('escalates difficulty for networks burning their budget', () => {
     expect(escalatedDifficulty(20, 1)).toBe(20)
-    expect(escalatedDifficulty(20, 30)).toBe(20)
-    expect(escalatedDifficulty(20, 31)).toBe(22)
-    expect(escalatedDifficulty(20, 46)).toBe(24)
+    expect(escalatedDifficulty(20, 10)).toBe(20)
+    expect(escalatedDifficulty(20, 11)).toBe(22)
+    expect(escalatedDifficulty(20, 21)).toBe(24)
     expect(escalatedDifficulty(29, 100)).toBe(30)
   })
 
@@ -185,14 +195,28 @@ describe('proof-of-work session issuance', () => {
       touchPoints: 0,
       mobile: false,
       av: 1,
-      cw: null,
+      cw: '2026W01',
     }
     expect(parseExchangeBody({ challenge: 'c', solution: { nonce: 3 }, attestation })).toMatchObject({ challenge: 'c' })
     for (const bad of [null, {}, { challenge: 'c' }, { challenge: 'c', solution: {} }, { challenge: 'c', solution: { nonce: -1 } }, {
       challenge: 'c',
       solution: { nonce: 1.5 },
-    }, { challenge: 'c', solution: { nonce: 1 } }, { challenge: 'c', solution: { nonce: 1 }, attestation: { ...attestation, extra: 1 } }]) {
+    }, { challenge: 'c', solution: { nonce: 1 } }, { challenge: 'c', solution: { nonce: 1 }, attestation: { ...attestation, extra: 1 } },
+    // Freshness fields are required: a missing week or version is malformed,
+    // not unverifiable. Staleness itself is judged at the exchange.
+    { challenge: 'c', solution: { nonce: 1 }, attestation: { ...attestation, cw: null } },
+    { challenge: 'c', solution: { nonce: 1 }, attestation: { ...attestation, av: null } },
+    { challenge: 'c', solution: { nonce: 1 }, attestation: { ...attestation, cw: 'last-week' } }]) {
       expect(parseExchangeBody(bad)).toBeNull()
     }
+  })
+
+  it('requires a current week and schema version, never a null exemption', () => {
+    const now = Date.now()
+    expect(clientWeekInWindow(clientWeekId(now), now)).toBe(true)
+    expect(clientWeekInWindow('2020W01', now)).toBe(false)
+    expect(clientWeekInWindow('last-week', now)).toBe(false)
+    expect(attestationVersionCurrent(1)).toBe(true)
+    expect(attestationVersionCurrent(999)).toBe(false)
   })
 })

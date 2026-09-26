@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { Redis } from '@upstash/redis'
 import { serverSecret } from '../../lib/serverSecret'
-import { clientWeekId } from '../../lib/proofOfWork'
+import { ATTESTATION_VERSION, clientWeekId } from '../../lib/proofOfWork'
 import {
   attestationDigest,
   countLeadingZeroBits,
@@ -25,11 +25,15 @@ export const POW_DEFAULT_DIFFICULTY = 20
 export const POW_MIN_DIFFICULTY = 1
 export const POW_MAX_DIFFICULTY = 30
 /** Challenge issuance budget per IP per minute: minting is one HMAC, but an
- * unbounded tap lets attackers stockpile fresh challenges. */
-export const POW_CHALLENGE_BUDGET_PER_MINUTE = 60
+ * unbounded tap lets attackers stockpile fresh challenges. Tight: one
+ * challenge per session per two hours is legitimate, so 30/min still allows
+ * heavy multi-tab bursts while capping farming throughput. */
+export const POW_CHALLENGE_BUDGET_PER_MINUTE = 30
 /** Exchange attempts per IP per minute: verification is one hash, so this
- * only bounds Redis writes, not legitimate retries. */
-export const POW_EXCHANGE_BUDGET_PER_MINUTE = 20
+ * only bounds session minting, not legitimate retries. Tight: browsers mint
+ * one session per two hours; 5/min absorbs retries without allowing
+ * session-rotation farming. */
+export const POW_EXCHANGE_BUDGET_PER_MINUTE = 5
 
 const textEncoder = new TextEncoder()
 const MAX_CHALLENGE_LENGTH = 512
@@ -37,8 +41,10 @@ const MAX_CHALLENGE_LENGTH = 512
  * leash prices farms continuously without bothering real browsers. */
 export const POW_SHORT_SESSION_TTL_SECONDS = 20 * 60
 /** Budget hits pre-burned on a suspicious exchange: enough to push the next
- * challenges from the same network into the escalation tiers. */
-export const POW_SUSPICIOUS_BURN_AMOUNT = 30
+ * challenges from the same network into the top escalation tier while
+ * leaving headroom under the issuance budget (the burn must price, never
+ * block on its own). */
+export const POW_SUSPICIOUS_BURN_AMOUNT = 22
 
 const attestationSchema = z.object({
   webdriver: z.boolean().nullable(),
@@ -50,8 +56,13 @@ const attestationSchema = z.object({
   screenHeight: z.number().int().min(0).nullable(),
   touchPoints: z.number().int().min(0).nullable(),
   mobile: z.boolean().nullable(),
-  av: z.number().int().min(0).nullable(),
-  cw: z.string().regex(/^\d{4}W\d{2}$/).nullable(),
+  // Schema version and client week are always stamped by the web client, so
+  // they are required here: a missing value is a stale or forged copy, not
+  // an old browser. Freshness (week window, version equality) is enforced at
+  // the exchange, which answers stale-but-well-formed copies with 426
+  // upgrade semantics and malformed ones with 400.
+  av: z.number().int(),
+  cw: z.string().regex(/^\d{4}W\d{2}$/),
 }).strict()
 
 const exchangeBodySchema = z.object({
@@ -63,15 +74,21 @@ const exchangeBodySchema = z.object({
 export type PowExchangeBody = z.infer<typeof exchangeBodySchema>
 
 /**
- * Client-week freshness: a hardcoded attestation rots within weeks while the
- * web client is always current. Null is allowed (unverifiable, not guilty);
- * a present-but-stale week fails closed with upgrade semantics.
+ * Client-week freshness: the web client stamps the current ISO week on every
+ * exchange. A present-but-stale week fails closed with upgrade semantics
+ * (the caller reloads for a fresh bundle). Missing weeks never reach here:
+ * the exchange schema rejects them as malformed.
  */
-export function clientWeekInWindow(week: string | null, nowMs: number): boolean {
-  if (week === null) return true
+export function clientWeekInWindow(week: string, nowMs: number): boolean {
   if (!/^\d{4}W\d{2}$/.test(week)) return false
   const window = [-7, 0, 7].map((offsetDays) => clientWeekId(nowMs + offsetDays * 86_400_000))
   return window.includes(week)
+}
+
+/** Attestation schema version check: hardcoded copies pin an old version
+ * while the web client always stamps the current one. */
+export function attestationVersionCurrent(version: number): boolean {
+  return version === ATTESTATION_VERSION
 }
 
 export function parseExchangeBody(raw: unknown): PowExchangeBody | null {
@@ -149,11 +166,12 @@ export interface PowChallenge {
  * get harder puzzles within the same minute window, at zero extra round
  * trips (the count rides along with the budget check). A lone browser does
  * one challenge per session and never leaves the base tier; +2/+4 bits
- * quadruple/cap the cost for whoever is hammering issuance.
+ * quadruple/cap the cost for whoever is hammering issuance. Thresholds sit
+ * well inside the per-minute budget so farming hits them before the cap.
  */
 export function escalatedDifficulty(baseDifficulty: number, budgetCount: number): number {
-  if (budgetCount > 45) return Math.min(POW_MAX_DIFFICULTY, baseDifficulty + 4)
-  if (budgetCount > 30) return Math.min(POW_MAX_DIFFICULTY, baseDifficulty + 2)
+  if (budgetCount > 20) return Math.min(POW_MAX_DIFFICULTY, baseDifficulty + 4)
+  if (budgetCount > 10) return Math.min(POW_MAX_DIFFICULTY, baseDifficulty + 2)
   return baseDifficulty
 }
 

@@ -1,7 +1,7 @@
 import { AniSourceError } from '../../data/anisource/client'
 
 /** Catalog-level failure classification shared by the watch and reader sessions. */
-export type SourceFailureKind = 'network' | 'timeout' | 'invalid' | 'unavailable' | 'expired' | 'cancelled' | 'rate-limited' | 'misconfigured' | 'session-required'
+export type SourceFailureKind = 'network' | 'timeout' | 'invalid' | 'unavailable' | 'expired' | 'cancelled' | 'rate-limited' | 'misconfigured' | 'session-required' | 'automation'
 
 export interface SourceFailure {
   readonly kind: SourceFailureKind
@@ -20,6 +20,9 @@ export function describeSourceFailure(cause: unknown, operation: string): Source
     }
     if (cause.kind === 'session-required') {
       return { kind: 'session-required', retryable: true, message: 'Complete the browser verification to continue.' }
+    }
+    if (cause.kind === 'automation') {
+      return { kind: 'automation', retryable: false, message: cause.message || 'Automated browsing is not supported for playback.' }
     }
     if (cause.kind === 'timeout') {
       return {

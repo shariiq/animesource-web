@@ -3,10 +3,13 @@ import { Redis } from '@upstash/redis'
 import { z } from 'zod'
 import apiUrls from '../../../config/api-urls.json'
 import { serverSecret } from '../../lib/serverSecret'
+import { scoreAttestation, scoreRequestFingerprint, SUSPICIOUS_ATTESTATION_SCORE } from '../../lib/proofOfWork'
 import { PlaybackCapUnavailable, appendPlaybackCapability, mintPlaybackCapability } from './capability.server'
 import {
   POW_CHALLENGE_BUDGET_PER_MINUTE,
   POW_EXCHANGE_BUDGET_PER_MINUTE,
+  POW_SHORT_SESSION_TTL_SECONDS,
+  POW_SUSPICIOUS_BURN_AMOUNT,
   challengeStore,
   escalatedDifficulty,
   mintPowChallenge,
@@ -40,7 +43,13 @@ const ASSET_TICKET_LIFETIME_SECONDS = 55 * 60
 const MAX_PROXY_BODY_BYTES = 8 * 1024 * 1024
 const textEncoder = new TextEncoder()
 
-const sessionSchema = z.object({ sid: z.string().regex(/^[A-Za-z0-9_-]{43}$/), exp: z.number().int() })
+const sessionSchema = z.object({
+  sid: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  exp: z.number().int(),
+  // Automation score at mint. Strict: sessions minted before scores existed
+  // do not verify, so a deploy cleanly retires them within one lifetime.
+  scr: z.number().int().min(0),
+})
 const identifierSchema = z.string().min(1).max(512).refine((value) => {
   try {
     const decoded = decodeURIComponent(value)
@@ -127,16 +136,41 @@ async function readSession(request: Request, key: CryptoKey): Promise<Session | 
   }
 }
 
-async function createSession(key: CryptoKey): Promise<{ session: Session; cookie: string }> {
+async function createSession(key: CryptoKey, ttlSeconds: number = SESSION_LIFETIME_SECONDS, score = 0): Promise<{ session: Session; cookie: string }> {
   const session = {
     sid: encodeBase64Url(crypto.getRandomValues(new Uint8Array(32))),
-    exp: Math.floor(Date.now() / 1000) + SESSION_LIFETIME_SECONDS,
+    exp: Math.floor(Date.now() / 1000) + ttlSeconds,
+    scr: Math.max(0, Math.trunc(score)),
   }
   const payload = encodeBase64Url(textEncoder.encode(JSON.stringify(session)))
   const signature = await sign(payload, 'session-v1', key)
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
-  const cookie = `${cookieName()}=${payload}.${signature}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_LIFETIME_SECONDS}${secure}`
+  const cookie = `${cookieName()}=${payload}.${signature}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${ttlSeconds}${secure}`
   return { session, cookie }
+}
+
+/**
+ * Media-resolution operations: the only catalog paths that hand out playable
+ * bytes or page images. Gating here (not on metadata lists) keeps discovery,
+ * search, and detail pages working for every client while headless playback
+ * dies at the point of use, in both proxied and direct-media modes.
+ */
+function isMediaResolutionPath(path: string): boolean {
+  return (
+    /^\/api\/v1\/anime\/[^/]+\/streams\/[^/]+$/.test(path) ||
+    /^\/api\/v1\/manga\/[^/]+\/pages\/[^/]+$/.test(path)
+  )
+}
+
+/**
+ * Forged-stack ban: the request stack itself looks automated. Score 4+
+ * means a Chromium claim with no browser headers, or a known automation
+ * user agent with sloppy metadata — shapes no legitimate browser produces
+ * (stock Chrome/Firefox/Safari score 0–2). Single signals stay priced,
+ * never banned; only this conjunction of independent misses ends playback.
+ */
+function mediaStackForged(request: Request): boolean {
+  return scoreRequestFingerprint(request.headers).score >= 4
 }
 
 function isSameOriginRequest(request: Request): boolean {
@@ -525,7 +559,7 @@ async function exchangePowSession(request: Request): Promise<Response> {
   if (store && !budget.allowed) {
     return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '60' }, 'rate-limited')
   }
-  const result = await redeemPowChallenge(body.challenge, body.solution.nonce, ip, store, Math.floor(Date.now() / 1000))
+  const result = await redeemPowChallenge(body.challenge, body.solution.nonce, body.attestation, ip, store, Math.floor(Date.now() / 1000))
   if (!result.ok) {
     if (result.reason === 'misconfigured') {
       return jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured')
@@ -536,7 +570,19 @@ async function exchangePowSession(request: Request): Promise<Response> {
     return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
   }
   const signingKey = await cachedHmacKey(secret)
-  const created = await createSession(signingKey)
+  // Automation tells price, never block: suspicious sessions get a short
+  // leash (transparent re-verification) and pre-burn the network's challenge
+  // budget so follow-up puzzles escalate. Forged-clean passes by design.
+  const attestation = scoreAttestation(body.attestation)
+  const short = attestation.score >= SUSPICIOUS_ATTESTATION_SCORE
+  if (short && store) {
+    await store.burnBudget(`challenge:${ip ?? 'unknown'}`, POW_SUSPICIOUS_BURN_AMOUNT, 60)
+  }
+  const created = await createSession(
+    signingKey,
+    short ? POW_SHORT_SESSION_TTL_SECONDS : SESSION_LIFETIME_SECONDS,
+    attestation.score,
+  )
   const headers = new Headers(powNoStore())
   headers.append('Set-Cookie', created.cookie)
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers })
@@ -585,8 +631,21 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
   // browser client must learn it has to verify before retrying.
   const healthExempt = rawPath === '/health' || rawPath === '/api/v1/health'
   const session = await readSession(request, signingKey)
-  if (!healthExempt && !session) {
-    return jsonError(401, 'Browser verification is required before using AniSource.', {}, 'session-required')
+  if (!healthExempt) {
+    if (!session) {
+      return jsonError(401, 'Browser verification is required before using AniSource.', {}, 'session-required')
+    }
+    if (
+      process.env.NODE_ENV === 'production' &&
+      isMediaResolutionPath(rawPath) &&
+      (session.scr >= SUSPICIOUS_ATTESTATION_SCORE || mediaStackForged(request))
+    ) {
+      // Headless playback ends here: automated sessions resolve metadata but
+      // never media. Production-only by design — development and the headless
+      // e2e suite keep exercising these flows, and attackers cannot reach
+      // non-production deployments. Stealth clients pass by construction.
+      return jsonError(403, 'Automated browsing is not supported for playback. Use a standard browser to watch or read.', {}, 'automation')
+    }
   }
 
   // No session is ever minted here: issuance happens only through the

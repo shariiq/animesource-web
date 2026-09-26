@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import apiUrls from '../config/api-urls.json'
 import { handleAniSourceRequest } from '../app/data/anisource/proxy.server'
-import { countLeadingZeroBits, hmacSha256, powAttemptHash, solvePowChallenge } from '../app/lib/proofOfWork'
+import { attestationDigest, countLeadingZeroBits, hmacSha256, powAttemptHash, solvePowChallenge } from '../app/lib/proofOfWork'
+import type { PowAttestation } from '../app/lib/proofOfWork'
 
 const APP_ORIGIN = 'https://app.test'
 const API_ORIGIN = 'https://api.test'
@@ -60,8 +61,9 @@ function upstashAnswer(input: RequestInfo | URL, init?: RequestInit): Response |
       upstashSets.set(innerKey, '1')
       return json([{ result: 'OK' }])
     }
-    if (name === 'incr') {
-      const count = (upstashCounters.get(innerKey) ?? 0) + 1
+    if (name === 'incr' || name === 'incrby') {
+      const step = name === 'incrby' && typeof body[0]?.[2] === 'number' ? body[0][2] : 1
+      const count = (upstashCounters.get(innerKey) ?? 0) + step
       upstashCounters.set(innerKey, count)
       return json([{ result: count }])
     }
@@ -78,8 +80,9 @@ function upstashAnswer(input: RequestInfo | URL, init?: RequestInit): Response |
     upstashSets.set(key, '1')
     return json({ result: 'OK' })
   }
-  if (command === 'INCR') {
-    const count = (upstashCounters.get(key) ?? 0) + 1
+  if (command === 'INCR' || command === 'INCRBY') {
+    const step = command === 'INCRBY' && Array.isArray(body) && typeof body[2] === 'number' ? body[2] : 1
+    const count = (upstashCounters.get(key) ?? 0) + step
     upstashCounters.set(key, count)
     return json({ result: count })
   }
@@ -92,7 +95,31 @@ function upstashAnswer(input: RequestInfo | URL, init?: RequestInit): Response |
  * session cookie exactly as a browser would hold it. Uses whatever
  * environment the test stubbed (including production + mocked Redis).
  */
-async function verifiedSession(): Promise<string> {
+const CLEAN_ATTESTATION: PowAttestation = {
+  webdriver: false,
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  plugins: 5,
+  languages: 2,
+  hardwareConcurrency: 8,
+  screenWidth: 1920,
+  screenHeight: 1080,
+  touchPoints: 0,
+  mobile: false,
+}
+
+const HEADLESS_ATTESTATION: PowAttestation = {
+  webdriver: true,
+  userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/126.0 Safari/537.36',
+  plugins: 0,
+  languages: 1,
+  hardwareConcurrency: 4,
+  screenWidth: 800,
+  screenHeight: 600,
+  touchPoints: 0,
+  mobile: false,
+}
+
+async function verifiedSession(attestation: PowAttestation = CLEAN_ATTESTATION): Promise<string> {
   const challengeRes = await handleAniSourceRequest(request('/api/anisource/challenge'))
   expect(challengeRes.status).toBe(200)
   const { challenge, difficulty } = z
@@ -100,7 +127,7 @@ async function verifiedSession(): Promise<string> {
     .parse(await challengeRes.json())
   const id = challenge.split('.')[0]
   if (!id) throw new Error('Expected the challenge to carry an id.')
-  const { nonce } = await solvePowChallenge(id, difficulty)
+  const { nonce } = await solvePowChallenge(id, difficulty, { binding: attestationDigest(attestation) })
   const exchange = await handleAniSourceRequest(new Request(`${APP_ORIGIN}/api/anisource/session`, {
     method: 'POST',
     headers: {
@@ -108,7 +135,7 @@ async function verifiedSession(): Promise<string> {
       'Sec-Fetch-Site': 'same-origin',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ challenge, solution: { nonce } }),
+    body: JSON.stringify({ challenge, solution: { nonce }, attestation }),
   }))
   expect(exchange.status).toBe(200)
   const setCookie = exchange.headers.get('set-cookie')
@@ -116,6 +143,19 @@ async function verifiedSession(): Promise<string> {
   const cookie = setCookie.split(';', 1)[0]
   if (!cookie) throw new Error('Expected the session cookie to carry a value.')
   return cookie
+}
+
+/** Solves a fresh challenge and returns the exchange POST body for it. */
+async function solvedExchangeBody(attestation: PowAttestation): Promise<{ challenge: string; solution: { nonce: number }; attestation: PowAttestation }> {
+  const challengeRes = await handleAniSourceRequest(request('/api/anisource/challenge'))
+  if (challengeRes.status !== 200) throw new Error('Expected a challenge.')
+  const { challenge, difficulty } = z
+    .object({ challenge: z.string(), difficulty: z.number(), expiresIn: z.number() })
+    .parse(await challengeRes.json())
+  const id = challenge.split('.')[0]
+  if (!id) throw new Error('Expected the challenge to carry an id.')
+  const { nonce } = await solvePowChallenge(id, difficulty, { binding: attestationDigest(attestation) })
+  return { challenge, solution: { nonce }, attestation }
 }
 
 function ticketUrl(response: Response): Promise<string> {
@@ -285,7 +325,17 @@ describe('AniSource server boundary', () => {
     vi.stubGlobal('fetch', upstreamFetch)
 
     const cookie = await verifiedSession()
-    const catalog = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/test/streams/episode?server_id=1', cookie))
+    // Production rate limiting keys off the platform forwarding header;
+    // without it this would 503 before ever reaching capability minting,
+    // passing for the wrong reason.
+    const catalog = await handleAniSourceRequest(new Request(`${APP_ORIGIN}/api/anisource/api/v1/anime/test/streams/episode?server_id=1`, {
+      headers: {
+        Origin: APP_ORIGIN,
+        'Sec-Fetch-Site': 'same-origin',
+        Cookie: cookie,
+        'X-Vercel-Forwarded-For': '203.0.113.7',
+      },
+    }))
     expect(catalog.status).toBe(503)
     expect(catalog.headers.get('X-AniSource-Error-Kind')).toBe('misconfigured')
   })
@@ -557,11 +607,11 @@ describe('AniSource server boundary', () => {
       .parse(await challengeRes.json())
     const id = challenge.split('.')[0]
     if (!id) throw new Error('Expected the challenge to carry an id.')
-    const { nonce } = await solvePowChallenge(id, difficulty)
+    const { nonce } = await solvePowChallenge(id, difficulty, { binding: attestationDigest(CLEAN_ATTESTATION) })
     const exchange = (body: unknown) => handleAniSourceRequest(new Request(`${APP_ORIGIN}/api/anisource/session`, {
       method: 'POST',
       headers: { Origin: APP_ORIGIN, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(typeof body === 'object' && body !== null ? { ...body, attestation: CLEAN_ATTESTATION } : body),
     }))
     const first = await exchange({ challenge, solution: { nonce } })
     expect(first.status).toBe(200)
@@ -608,6 +658,181 @@ describe('AniSource server boundary', () => {
       else expect(response.status).toBe(200)
     }
     expect(throttled).toBeGreaterThan(0)
+  })
+
+  it('shortens sessions for automated environments without blocking them', async () => {
+    const exchange = await handleAniSourceRequest(new Request(`${APP_ORIGIN}/api/anisource/session`, {
+      method: 'POST',
+      headers: { Origin: APP_ORIGIN, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json' },
+      body: JSON.stringify(await solvedExchangeBody(HEADLESS_ATTESTATION)),
+    }))
+    expect(exchange.status).toBe(200)
+    expect(exchange.headers.get('set-cookie')).toContain('Max-Age=1200')
+
+    const clean = await handleAniSourceRequest(new Request(`${APP_ORIGIN}/api/anisource/session`, {
+      method: 'POST',
+      headers: { Origin: APP_ORIGIN, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json' },
+      body: JSON.stringify(await solvedExchangeBody(CLEAN_ATTESTATION)),
+    }))
+    expect(clean.status).toBe(200)
+    expect(clean.headers.get('set-cookie')).toContain('Max-Age=7200')
+  })
+
+  it('rejects exchanges without a well-formed attestation', async () => {
+    const body = await solvedExchangeBody(CLEAN_ATTESTATION)
+    const missing = await handleAniSourceRequest(new Request(`${APP_ORIGIN}/api/anisource/session`, {
+      method: 'POST',
+      headers: { Origin: APP_ORIGIN, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challenge: body.challenge, solution: body.solution }),
+    }))
+    expect(missing.status).toBe(400)
+  })
+
+  it('blocks media resolution for automated sessions in production, nowhere else', async () => {
+    const streamsUpstream = (input: RequestInfo | URL, init?: RequestInit) => {
+      const mocked = upstashAnswer(input, init)
+      if (mocked) return mocked
+      return new Response(JSON.stringify([{
+        url: `${API_ORIGIN}/api/v1/proxy/hls/master`,
+        quality: 'Auto',
+        is_hls: true,
+        is_audio: false,
+      }]), { headers: { 'Content-Type': 'application/json' } })
+    }
+    const pagesUpstream = (input: RequestInfo | URL, init?: RequestInit) => {
+      const mocked = upstashAnswer(input, init)
+      if (mocked) return mocked
+      return new Response(JSON.stringify([{ index: 0, url: `${API_ORIGIN}/api/v1/manga/page/page-1` }]), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://upstash.test')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'redis-secret')
+
+    vi.stubGlobal('fetch', vi.fn(streamsUpstream))
+    const automated = await verifiedSession(HEADLESS_ATTESTATION)
+    const blockedStreams = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/test/streams/episode?server_id=1', automated))
+    expect(blockedStreams.status).toBe(403)
+    expect(blockedStreams.headers.get('x-anisource-error-kind')).toBe('automation')
+    expect(await blockedStreams.json()).toEqual({ detail: expect.stringContaining('Automated browsing') })
+
+    vi.stubGlobal('fetch', vi.fn(pagesUpstream))
+    const blockedPages = await handleAniSourceRequest(request('/api/anisource/api/v1/manga/test/pages/chapter-1', automated))
+    expect(blockedPages.status).toBe(403)
+    expect(blockedPages.headers.get('x-anisource-error-kind')).toBe('automation')
+
+    // Discovery and metadata keep working: the ban ends playback, not browsing.
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const mocked = upstashAnswer(input, init)
+      if (mocked) return mocked
+      return new Response(JSON.stringify({
+        sources: [{ id: 'test', name: 'Test Source', base_url: 'https://source.test' }],
+        count: 1,
+      }), { headers: { 'Content-Type': 'application/json' } })
+    }))
+    // Production rate limiting keys off the platform forwarding header,
+    // which Vercel always sets; without it the gateway fails closed.
+    const forwarded = new Request(`${APP_ORIGIN}/api/anisource/api/v1/anime/sources`, {
+      headers: {
+        Origin: APP_ORIGIN,
+        'Sec-Fetch-Site': 'same-origin',
+        Cookie: automated,
+        'X-Vercel-Forwarded-For': '203.0.113.7',
+      },
+    })
+    const sources = await handleAniSourceRequest(forwarded)
+    expect(sources.status).toBe(200)
+
+    // Development never enforces the ban, so headless e2e keeps covering
+    // these flows and attackers gain nothing by reaching non-production.
+    vi.stubEnv('NODE_ENV', 'test')
+    vi.stubGlobal('fetch', vi.fn(streamsUpstream))
+    const devAutomated = await verifiedSession(HEADLESS_ATTESTATION)
+    const allowed = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/test/streams/episode?server_id=1', devAutomated))
+    expect(allowed.status).toBe(200)
+  })
+
+  it('bans forged stacks at media resolution in production', async () => {
+    const streamsUpstream = (input: RequestInfo | URL, init?: RequestInit) => {
+      const mocked = upstashAnswer(input, init)
+      if (mocked) return mocked
+      return new Response(JSON.stringify([{
+        url: `${API_ORIGIN}/api/v1/proxy/hls/master`,
+        quality: 'Auto',
+        is_hls: true,
+        is_audio: false,
+      }]), { headers: { 'Content-Type': 'application/json' } })
+    }
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://upstash.test')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'redis-secret')
+    vi.stubGlobal('fetch', vi.fn(streamsUpstream))
+
+    const forgedRequest = (userAgent: string | null, headers: Record<string, string> = {}) => new Request(
+      `${APP_ORIGIN}/api/anisource/api/v1/anime/test/streams/episode?server_id=1`,
+      {
+        headers: {
+          Origin: APP_ORIGIN,
+          ...(userAgent === null ? {} : { 'User-Agent': userAgent }),
+          'X-Vercel-Forwarded-For': '203.0.113.7',
+          ...headers,
+        },
+      },
+    )
+    const clean = asProdCookie(await verifiedSession())
+
+    // curl-style automation stack: known UA, no fetch metadata (3 + 2).
+    const automation = await handleAniSourceRequest(forgedRequest('curl/8.0', { Cookie: clean }))
+    expect(automation.status).toBe(403)
+    expect(automation.headers.get('x-anisource-error-kind')).toBe('automation')
+
+    // Forged Chrome without its header set: hints and fetch metadata missing.
+    const forged = await handleAniSourceRequest(forgedRequest(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36',
+      { Cookie: clean },
+    ))
+    expect(forged.status).toBe(403)
+    expect(forged.headers.get('x-anisource-error-kind')).toBe('automation')
+
+    // Safari omitting fetch metadata scores below the bar: priced, never banned.
+    const safari = await handleAniSourceRequest(forgedRequest(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+      { Cookie: clean },
+    ))
+    expect(safari.status).toBe(200)
+
+    // A real Firefox stack passes outright.
+    const firefox = await handleAniSourceRequest(forgedRequest(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0',
+      {
+        Cookie: clean,
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-Mode': 'cors',
+      },
+    ))
+    expect(firefox.status).toBe(200)
+  })
+
+  it('pre-burns the challenge budget after a suspicious exchange', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://upstash.test')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'redis-secret')
+    const upstreamFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const mocked = upstashAnswer(input, init)
+      if (mocked) return mocked
+      throw new Error(`Unexpected upstream fetch: ${input.toString()}`)
+    })
+    vi.stubGlobal('fetch', upstreamFetch)
+
+    await handleAniSourceRequest(new Request(`${APP_ORIGIN}/api/anisource/session`, {
+      method: 'POST',
+      headers: { Origin: APP_ORIGIN, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json' },
+      body: JSON.stringify(await solvedExchangeBody(HEADLESS_ATTESTATION)),
+    }))
+    const escalated = await handleAniSourceRequest(request('/api/anisource/challenge'))
+    expect(escalated.status).toBe(200)
+    const difficulty = z.object({ difficulty: z.number() }).parse(await escalated.json()).difficulty
+    expect(difficulty).toBe(8)
   })
 
   it('exempts health checks from sessions but still binds media tickets to them', async () => {

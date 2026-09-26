@@ -1,6 +1,6 @@
 import {
   countLeadingZeroBits,
-  powAttemptHash,
+  powSolutionPreimage,
   type PowWorkerResult,
   type PowWorkerTask,
 } from './proofOfWork'
@@ -21,7 +21,7 @@ scope.onmessage = (event) => {
   let nonce = task.fromNonce
   let remaining = task.attempts
   for (;;) {
-    if (countLeadingZeroBits(powAttemptHash(task.challengeId, nonce)) >= task.difficulty) {
+    if (countLeadingZeroBits(powSolutionPreimage(task.challengeId, nonce, task.binding)) >= task.difficulty) {
       scope.postMessage({ type: 'found', nonce })
       return
     }

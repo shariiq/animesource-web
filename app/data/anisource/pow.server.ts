@@ -1,7 +1,14 @@
 import { z } from 'zod'
 import { Redis } from '@upstash/redis'
 import { serverSecret } from '../../lib/serverSecret'
-import { countLeadingZeroBits, fromBase64Url, hmacSha256, powAttemptHash, toBase64Url } from '../../lib/proofOfWork'
+import {
+  attestationDigest,
+  countLeadingZeroBits,
+  fromBase64Url,
+  hmacSha256,
+  powSolutionPreimage,
+  toBase64Url,
+} from '../../lib/proofOfWork'
 
 /**
  * Proof-of-work session issuance (ADR 0007). Server-only: the minting secret
@@ -25,10 +32,29 @@ export const POW_EXCHANGE_BUDGET_PER_MINUTE = 20
 
 const textEncoder = new TextEncoder()
 const MAX_CHALLENGE_LENGTH = 512
+/** Automated sessions rot fast: re-verification is transparent, so a short
+ * leash prices farms continuously without bothering real browsers. */
+export const POW_SHORT_SESSION_TTL_SECONDS = 20 * 60
+/** Budget hits pre-burned on a suspicious exchange: enough to push the next
+ * challenges from the same network into the escalation tiers. */
+export const POW_SUSPICIOUS_BURN_AMOUNT = 30
+
+const attestationSchema = z.object({
+  webdriver: z.boolean().nullable(),
+  userAgent: z.string().max(256).nullable(),
+  plugins: z.number().int().min(0).nullable(),
+  languages: z.number().int().min(0).nullable(),
+  hardwareConcurrency: z.number().int().min(0).nullable(),
+  screenWidth: z.number().int().min(0).nullable(),
+  screenHeight: z.number().int().min(0).nullable(),
+  touchPoints: z.number().int().min(0).nullable(),
+  mobile: z.boolean().nullable(),
+}).strict()
 
 const exchangeBodySchema = z.object({
   challenge: z.string().min(1).max(MAX_CHALLENGE_LENGTH),
   solution: z.object({ nonce: z.number().int().min(0) }).strict(),
+  attestation: attestationSchema,
 }).strict()
 
 export type PowExchangeBody = z.infer<typeof exchangeBodySchema>
@@ -50,6 +76,8 @@ export interface ChallengeStore {
   claim(id: string, ttlSeconds: number): Promise<boolean>
   /** Allow `limit` hits per window; the count drives difficulty escalation. */
   hitBudget(key: string, limit: number, windowSeconds: number): Promise<{ allowed: boolean; count: number }>
+  /** Pre-burn budget hits (abuse pricing); never blocks on its own. */
+  burnBudget(key: string, amount: number, windowSeconds: number): Promise<void>
 }
 
 function redisChallengeStore(redis: Redis): ChallengeStore {
@@ -62,6 +90,10 @@ function redisChallengeStore(redis: Redis): ChallengeStore {
       const count = await redis.incr(`anisource:pow:budget:${key}`)
       if (count === 1) await redis.expire(`anisource:pow:budget:${key}`, windowSeconds)
       return { allowed: count <= limit, count }
+    },
+    burnBudget: async (key, amount, windowSeconds) => {
+      await redis.incrby(`anisource:pow:budget:${key}`, amount)
+      await redis.expire(`anisource:pow:budget:${key}`, windowSeconds)
     },
   }
 }
@@ -137,12 +169,15 @@ function tagsEqual(left: Uint8Array, right: Uint8Array): boolean {
 }
 
 /**
- * Verify a solution and spend the challenge. Pure except for the spend:
- * pass a null store only in development, where challenges stay reusable.
+ * Verify a solution and spend the challenge. The solution must satisfy the
+ * preimage bound to the submitted attestation — a solve cannot be cut from
+ * one attestation and pasted onto another. Pure except for the spend: pass a
+ * null store only in development, where challenges stay reusable.
  */
 export async function redeemPowChallenge(
   challenge: string,
   nonce: number,
+  attestation: z.infer<typeof attestationSchema>,
   ip: string | null,
   store: ChallengeStore | null,
   nowSeconds: number,
@@ -150,8 +185,14 @@ export async function redeemPowChallenge(
   const secret = serverSecret()
   if (!secret) return { ok: false, reason: 'misconfigured' }
   if (!challenge || challenge.length > MAX_CHALLENGE_LENGTH) return { ok: false, reason: 'invalid' }
-  const [id, expRaw, difficultyRaw, binding, tag, extra] = challenge.split('.')
-  if (!id || !expRaw || !difficultyRaw || !binding || !tag || extra !== undefined) return { ok: false, reason: 'invalid' }
+  const parts = challenge.split('.')
+  if (parts.length !== 5) return { ok: false, reason: 'invalid' }
+  const id = parts[0] ?? ''
+  const expRaw = parts[1] ?? ''
+  const difficultyRaw = parts[2] ?? ''
+  const binding = parts[3] ?? ''
+  const tag = parts[4] ?? ''
+  if (!id || !expRaw || !difficultyRaw || !binding || !tag) return { ok: false, reason: 'invalid' }
   if (!/^\d{1,20}$/.test(expRaw) || !/^\d{1,3}$/.test(difficultyRaw)) return { ok: false, reason: 'invalid' }
   const exp = Number(expRaw)
   const difficulty = Number(difficultyRaw)
@@ -180,7 +221,8 @@ export async function redeemPowChallenge(
   }
   if (bindingDiff !== 0) return { ok: false, reason: 'invalid' }
   if (!Number.isInteger(nonce) || nonce < 0) return { ok: false, reason: 'invalid' }
-  if (countLeadingZeroBits(powAttemptHash(id, nonce)) < difficulty) return { ok: false, reason: 'invalid' }
+  const solutionBinding = attestationDigest(attestation)
+  if (countLeadingZeroBits(powSolutionPreimage(id, nonce, solutionBinding)) < difficulty) return { ok: false, reason: 'invalid' }
   if (store && !(await store.claim(id, POW_CHALLENGE_TTL_SECONDS))) return { ok: false, reason: 'spent' }
   return { ok: true }
 }

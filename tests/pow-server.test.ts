@@ -8,9 +8,26 @@ import {
   powDifficulty,
   redeemPowChallenge,
 } from '../app/data/anisource/pow.server'
-import { countLeadingZeroBits, powAttemptHash, solvePowChallenge } from '../app/lib/proofOfWork'
+import {
+  attestationDigest,
+  countLeadingZeroBits,
+  powSolutionPreimage,
+  solvePowChallenge,
+} from '../app/lib/proofOfWork'
 
 const SECRET = 'pow-test-secret-'.padEnd(48, 'p')
+
+const TEST_ATTESTATION = {
+  webdriver: false,
+  userAgent: 'test-agent',
+  plugins: 1,
+  languages: 1,
+  hardwareConcurrency: 2,
+  screenWidth: 100,
+  screenHeight: 100,
+  touchPoints: 0,
+  mobile: false,
+}
 
 function fakeStore(): ChallengeStore & { claimed: string[] } {
   const claimed: string[] = []
@@ -26,6 +43,9 @@ function fakeStore(): ChallengeStore & { claimed: string[] } {
       const count = (budgets.get(key) ?? 0) + 1
       budgets.set(key, count)
       return { allowed: count <= limit, count }
+    },
+    burnBudget: async (key: string, amount: number) => {
+      budgets.set(key, (budgets.get(key) ?? 0) + amount)
     },
   }
 }
@@ -67,48 +87,80 @@ describe('proof-of-work session issuance', () => {
   })
 
   it('redeems a solved challenge and spends it exactly once', async () => {
+    const now = Math.floor(Date.now() / 1000)
     const store = fakeStore()
-    const issued = mintPowChallenge('10.0.0.1', 1_700_000_000)
+    const issued = mintPowChallenge('10.0.0.1', now)
     if (!issued) throw new Error('Expected a challenge.')
     const id = issued.challenge.split('.')[0]
     if (!id) throw new Error('Expected the challenge to carry an id.')
-    const { nonce } = await solvePowChallenge(id, issued.difficulty)
-    expect(await redeemPowChallenge(issued.challenge, nonce, '10.0.0.1', store, 1_700_000_000)).toEqual({ ok: true })
-    expect(await redeemPowChallenge(issued.challenge, nonce, '10.0.0.1', store, 1_700_000_000)).toEqual({
+    const binding = attestationDigest(TEST_ATTESTATION)
+    const { nonce } = await solvePowChallenge(id, issued.difficulty, { binding })
+    expect(await redeemPowChallenge(issued.challenge, nonce, TEST_ATTESTATION, '10.0.0.1', store, now))
+      .toMatchObject({ ok: true })
+    expect(await redeemPowChallenge(issued.challenge, nonce, TEST_ATTESTATION, '10.0.0.1', store, now)).toEqual({
       ok: false,
       reason: 'spent',
     })
   })
 
   it('rejects wrong solutions, tampered challenges, expiry, and foreign networks', async () => {
+    const now = Math.floor(Date.now() / 1000)
     const store = fakeStore()
-    const issued = mintPowChallenge('10.0.0.1', 1_700_000_000)
+    const issued = mintPowChallenge('10.0.0.1', now)
     if (!issued) throw new Error('Expected a challenge.')
     const id = issued.challenge.split('.')[0]
     if (!id) throw new Error('Expected the challenge to carry an id.')
-    const { nonce } = await solvePowChallenge(id, issued.difficulty)
+    const binding = attestationDigest(TEST_ATTESTATION)
+    const { nonce } = await solvePowChallenge(id, issued.difficulty, { binding })
     let wrong = nonce + 1
-    while (countLeadingZeroBits(powAttemptHash(id, wrong)) >= issued.difficulty) wrong += 1
-    expect(await redeemPowChallenge(issued.challenge, wrong, '10.0.0.1', store, 1_700_000_000))
+    while (countLeadingZeroBits(powSolutionPreimage(id, wrong, binding)) >= issued.difficulty) wrong += 1
+    expect(await redeemPowChallenge(issued.challenge, wrong, TEST_ATTESTATION, '10.0.0.1', store, now))
       .toEqual({ ok: false, reason: 'invalid' })
     const tampered = `${issued.challenge.slice(0, -1)}${issued.challenge.endsWith('A') ? 'B' : 'A'}`
-    expect(await redeemPowChallenge(tampered, nonce, '10.0.0.1', store, 1_700_000_000))
+    expect(await redeemPowChallenge(tampered, nonce, TEST_ATTESTATION, '10.0.0.1', store, now))
       .toEqual({ ok: false, reason: 'invalid' })
-    expect(await redeemPowChallenge(issued.challenge, nonce, '10.0.0.1', store, 1_700_000_000 + 5 * 60 + 1))
+    expect(await redeemPowChallenge(issued.challenge, nonce, TEST_ATTESTATION, '10.0.0.1', store, now + 5 * 60 + 1))
       .toEqual({ ok: false, reason: 'expired' })
     // A stolen challenge is useless cross-network: the binding mismatches.
-    expect(await redeemPowChallenge(issued.challenge, nonce, '10.9.9.9', store, 1_700_000_000))
+    expect(await redeemPowChallenge(issued.challenge, nonce, TEST_ATTESTATION, '10.9.9.9', store, now))
       .toEqual({ ok: false, reason: 'invalid' })
   })
 
-  it('stays reusable in development without a spent store', async () => {
-    const issued = mintPowChallenge(null, 1_700_000_000)
+  it('rejects solutions transplanted onto a different attestation', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const store = fakeStore()
+    const issued = mintPowChallenge('10.0.0.1', now)
     if (!issued) throw new Error('Expected a challenge.')
     const id = issued.challenge.split('.')[0]
     if (!id) throw new Error('Expected the challenge to carry an id.')
-    const { nonce } = await solvePowChallenge(id, issued.difficulty)
-    expect(await redeemPowChallenge(issued.challenge, nonce, null, null, 1_700_000_000)).toEqual({ ok: true })
-    expect(await redeemPowChallenge(issued.challenge, nonce, null, null, 1_700_000_000)).toEqual({ ok: true })
+    const { nonce } = await solvePowChallenge(id, issued.difficulty, { binding: attestationDigest(TEST_ATTESTATION) })
+    const swapped = { ...TEST_ATTESTATION, plugins: 0 }
+    expect(await redeemPowChallenge(issued.challenge, nonce, swapped, '10.0.0.1', store, now))
+      .toEqual({ ok: false, reason: 'invalid' })
+  })
+
+  it('reports the redeemed difficulty', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const store = fakeStore()
+    const issued = mintPowChallenge('10.0.0.1', now)
+    if (!issued) throw new Error('Expected a challenge.')
+    const id = issued.challenge.split('.')[0]
+    if (!id) throw new Error('Expected the challenge to carry an id.')
+    const { nonce } = await solvePowChallenge(id, issued.difficulty, { binding: attestationDigest(TEST_ATTESTATION) })
+    const redeemed = await redeemPowChallenge(issued.challenge, nonce, TEST_ATTESTATION, '10.0.0.1', store, now)
+    expect(redeemed).toEqual({ ok: true })
+  })
+
+  it('stays reusable in development without a spent store', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const issued = mintPowChallenge(null, now)
+    if (!issued) throw new Error('Expected a challenge.')
+    const id = issued.challenge.split('.')[0]
+    if (!id) throw new Error('Expected the challenge to carry an id.')
+    const binding = attestationDigest(TEST_ATTESTATION)
+    const { nonce } = await solvePowChallenge(id, issued.difficulty, { binding })
+    expect(await redeemPowChallenge(issued.challenge, nonce, TEST_ATTESTATION, null, null, now)).toMatchObject({ ok: true })
+    expect(await redeemPowChallenge(issued.challenge, nonce, TEST_ATTESTATION, null, null, now)).toMatchObject({ ok: true })
   })
 
   it('escalates difficulty for networks burning their budget', () => {
@@ -119,12 +171,23 @@ describe('proof-of-work session issuance', () => {
     expect(escalatedDifficulty(29, 100)).toBe(30)
   })
 
-  it('validates exchange bodies strictly', () => {
-    expect(parseExchangeBody({ challenge: 'c', solution: { nonce: 3 } })).toMatchObject({ challenge: 'c' })
+  it('validates exchange bodies strictly, attestation included', () => {
+    const attestation = {
+      webdriver: false,
+      userAgent: 'agent',
+      plugins: 1,
+      languages: 1,
+      hardwareConcurrency: 2,
+      screenWidth: 100,
+      screenHeight: 100,
+      touchPoints: 0,
+      mobile: false,
+    }
+    expect(parseExchangeBody({ challenge: 'c', solution: { nonce: 3 }, attestation })).toMatchObject({ challenge: 'c' })
     for (const bad of [null, {}, { challenge: 'c' }, { challenge: 'c', solution: {} }, { challenge: 'c', solution: { nonce: -1 } }, {
       challenge: 'c',
       solution: { nonce: 1.5 },
-    }]) {
+    }, { challenge: 'c', solution: { nonce: 1 } }, { challenge: 'c', solution: { nonce: 1 }, attestation: { ...attestation, extra: 1 } }]) {
       expect(parseExchangeBody(bad)).toBeNull()
     }
   })

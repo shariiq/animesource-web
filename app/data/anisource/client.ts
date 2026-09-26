@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { normalizeApiUrl } from '../../config/api'
-import { solvePowChallenge } from '../../lib/proofOfWork'
+import { attestationDigest, collectEnvironmentAttestation, solvePowChallenge } from '../../lib/proofOfWork'
 import {
   createOriginRoutingState,
   isFailFastPath,
@@ -69,7 +69,7 @@ export const AS_MAX_RETRIES = 0 // AniSource failures are surfaced, not silently
 export class AniSourceError extends Error {
   constructor(
     message: string,
-    readonly kind: 'network' | 'http' | 'timeout' | 'invalid' | 'cancelled' | 'rate-limited' | 'misconfigured' | 'session-required',
+    readonly kind: 'network' | 'http' | 'timeout' | 'invalid' | 'cancelled' | 'rate-limited' | 'misconfigured' | 'session-required' | 'automation',
     readonly status?: number,
   ) {
     super(message)
@@ -97,6 +97,7 @@ const GATEWAY_ERROR_KINDS: ReadonlySet<string> = new Set([
   'rate-limited',
   'misconfigured',
   'session-required',
+  'automation',
 ])
 
 function gatewayErrorKind(value: string | null): AniSourceError['kind'] | null {
@@ -150,6 +151,10 @@ async function runPowExchange(
     if (!challenge.success) throw new AniSourceError('Browser verification returned an unexpected response.', 'invalid')
     const id = challenge.data.challenge.split('.', 1)[0]
     if (!id) throw new AniSourceError('Browser verification returned an unexpected response.', 'invalid')
+    // The attestation is collected before solving and bound into the
+    // preimage: the submitted object must match the solved one exactly.
+    const attestation = collectEnvironmentAttestation()
+    const binding = attestationDigest(attestation)
     let nonce: number
     try {
       // Parallel search where workers exist; the attempt cap bounds worst
@@ -162,6 +167,7 @@ async function runPowExchange(
         signal,
         workers: workerCount,
         maxAttempts: 8 * 2 ** Math.min(challenge.data.difficulty, 24),
+        binding,
       })).nonce
     } catch (error) {
       if (signal?.aborted) throw new AniSourceError('The streaming request was cancelled.', 'cancelled')
@@ -172,7 +178,11 @@ async function runPowExchange(
         method: 'POST',
         signal,
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ challenge: challenge.data.challenge, solution: { nonce } }),
+        body: JSON.stringify({
+          challenge: challenge.data.challenge,
+          solution: { nonce },
+          attestation,
+        }),
       })
       const sessionBody: unknown = await exchangeRes.json().catch(() => null)
       if (!sessionResponseSchema.safeParse(sessionBody).success) {
@@ -306,13 +316,21 @@ export function createAniSourceClient(options: AniSourceClientOptions = {}) {
           // Non-JSON error body — fall back to the generic message.
         }
         // Custom transports return raw gateway responses without the kind
-        // translation defaultTransport performs, so the session signal is
-        // recognized here too: the retry contract must not depend on which
-        // transport wrapped the fetch.
-        if (response.status === 401 && response.headers.get('x-anisource-error-kind') === 'session-required') {
+        // translation defaultTransport performs, so gateway-directed signals
+        // are recognized here too: the recovery contract must not depend on
+        // which transport wrapped the fetch.
+        const gatewayKind = response.headers.get('x-anisource-error-kind')
+        if (response.status === 401 && gatewayKind === 'session-required') {
           throw new AniSourceError(
             detail || 'Browser verification is required before using AniSource.',
             'session-required',
+            response.status,
+          )
+        }
+        if (response.status === 403 && gatewayKind === 'automation') {
+          throw new AniSourceError(
+            detail || 'Automated browsing is not supported for playback.',
+            'automation',
             response.status,
           )
         }

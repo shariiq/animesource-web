@@ -143,6 +143,184 @@ export function powAttemptHash(challengeId: string, nonce: number): Uint8Array {
   return sha256Digest(textEncoder.encode(`${challengeId}:${Math.trunc(nonce)}`))
 }
 
+/**
+ * Canonical attestation encoding: sorted keys, compact separators, nulls
+ * included. One implementation shared by solver and verifier, so the bytes
+ * cannot drift between them.
+ */
+export function canonicalizeAttestation(attestation: PowAttestation): string {
+  return JSON.stringify({
+    hardwareConcurrency: attestation.hardwareConcurrency,
+    languages: attestation.languages,
+    mobile: attestation.mobile,
+    plugins: attestation.plugins,
+    screenHeight: attestation.screenHeight,
+    screenWidth: attestation.screenWidth,
+    touchPoints: attestation.touchPoints,
+    userAgent: attestation.userAgent,
+    webdriver: attestation.webdriver,
+  })
+}
+
+/** Short binding digest: 128 bits, far past collision concern for this use, short enough to keep preimages small. */
+export function attestationDigest(attestation: PowAttestation): string {
+  const digest = sha256Digest(textEncoder.encode(canonicalizeAttestation(attestation)))
+  return [...digest.slice(0, 16)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Bound solution preimage: `challengeId:nonce[:binding]`. Binding ties the
+ * solve to the exact attestation submitted with it — a solution cannot be
+ * cut from one attestation and pasted onto another. Unbound (null) preserves
+ * the bare format for tests; the server never accepts unbound solutions.
+ */
+export function powSolutionPreimage(challengeId: string, nonce: number, binding: string | null): Uint8Array {
+  const input = binding === null ? `${challengeId}:${Math.trunc(nonce)}` : `${challengeId}:${Math.trunc(nonce)}:${binding}`
+  return sha256Digest(textEncoder.encode(input))
+}
+
+/**
+ * Coarse, privacy-preserving environment signals collected while solving.
+ * Counts and viewport dimensions only — no language strings, no canvas, no
+ * identifiers. Every field is nullable because hardened browsers omit APIs;
+ * missing data scores nothing and never blocks. Client-asserted by nature,
+ * so this attests nothing: it prices automation, with stealthy clients
+ * passing clean by construction (see scoreAttestation).
+ */
+export interface PowAttestation {
+  webdriver: boolean | null
+  userAgent: string | null
+  plugins: number | null
+  languages: number | null
+  hardwareConcurrency: number | null
+  screenWidth: number | null
+  screenHeight: number | null
+  touchPoints: number | null
+  mobile: boolean | null
+}
+
+export function collectEnvironmentAttestation(): PowAttestation {
+  const empty: PowAttestation = {
+    webdriver: null,
+    userAgent: null,
+    plugins: null,
+    languages: null,
+    hardwareConcurrency: null,
+    screenWidth: null,
+    screenHeight: null,
+    touchPoints: null,
+    mobile: null,
+  }
+  try {
+    if (typeof navigator === 'undefined') return empty
+    const userAgent = typeof navigator.userAgent === 'string' ? navigator.userAgent.slice(0, 256) : null
+    const screen = typeof window !== 'undefined' ? window.screen ?? null : null
+    return {
+      webdriver: typeof navigator.webdriver === 'boolean' ? navigator.webdriver : null,
+      userAgent,
+      plugins: typeof navigator.plugins?.length === 'number' ? navigator.plugins.length : null,
+      languages: Array.isArray(navigator.languages) ? navigator.languages.length : null,
+      hardwareConcurrency: typeof navigator.hardwareConcurrency === 'number' ? navigator.hardwareConcurrency : null,
+      screenWidth: typeof screen?.width === 'number' ? screen.width : null,
+      screenHeight: typeof screen?.height === 'number' ? screen.height : null,
+      touchPoints: typeof navigator.maxTouchPoints === 'number' ? navigator.maxTouchPoints : null,
+      mobile: userAgent === null ? null : /Mobile|Android|iPhone|iPad/i.test(userAgent),
+    }
+  } catch {
+    return empty
+  }
+}
+
+export interface AttestationScore {
+  score: number
+  reasons: string[]
+}
+
+export interface FingerprintScore {
+  score: number
+  reasons: string[]
+}
+
+const AUTOMATION_UA = /okhttp|curl|wget|python-requests|python-urllib|go-http-client|java|apache-httpclient|axios|node-fetch|undici|dalvik|phantomjs|slimerjs|selenium|puppeteer|playwright|headless/i
+const CHROMIUM_UA = /Chrome\/|Chromium\/|Edg\/|OPR\/|Brave\/|SamsungBrowser\//i
+
+/**
+ * Server-observed request fingerprint. Unlike attestation, the client
+ * declares none of this — it leaks from the HTTP stack itself: automation
+ * libraries announce themselves in User-Agent, and non-browsers omit the
+ * fetch-metadata and client-hint headers real browsers always send.
+ * Deliberately presence-and-consistency only, never header order: platform
+ * proxies may normalize order, but they do not invent missing headers.
+ * A forged stack must replicate a browser's exact header set and keep it
+ * consistent with its claimed UA across every release — possible, but
+ * maintained impersonation instead of free riding.
+ */
+export function scoreRequestFingerprint(headers: Headers): FingerprintScore {
+  const reasons: string[] = []
+  let score = 0
+  const userAgent = headers.get('user-agent') ?? ''
+  if (userAgent === '') {
+    reasons.push('no user agent')
+    score += 1
+  } else if (AUTOMATION_UA.test(userAgent)) {
+    reasons.push('automation user agent')
+    score += 3
+  }
+  const fetchSite = headers.get('sec-fetch-site')
+  const fetchMode = headers.get('sec-fetch-mode')
+  if (fetchSite === null && fetchMode === null) {
+    reasons.push('no fetch metadata')
+    score += 2
+  } else if (fetchMode !== null && fetchMode !== 'cors') {
+    reasons.push('unexpected fetch mode')
+    score += 1
+  }
+  if (CHROMIUM_UA.test(userAgent) && headers.get('sec-ch-ua') === null) {
+    reasons.push('chromium claim without client hints')
+    score += 2
+  }
+  return { score, reasons }
+}
+
+/** Score at or above which a session is treated as automated. */
+export const SUSPICIOUS_ATTESTATION_SCORE = 3
+
+/**
+ * Scores automation tells from coarse signals. Forged-clean passes by
+ * design, so the score only ever prices (shorter sessions, hotter puzzles)
+ * and never blocks — a spoofable signal must not deny service. Thresholds
+ * are tuned so stock desktop/mobile browsers score 0 and default headless
+ * automation scores past the bar; the matrix test pins both sides.
+ */
+export function scoreAttestation(attestation: PowAttestation): AttestationScore {
+  const reasons: string[] = []
+  let score = 0
+  const flag = (reason: string, points: number): void => {
+    reasons.push(reason)
+    score += points
+  }
+  if (attestation.webdriver === true) flag('automation flag', 3)
+  if (
+    attestation.userAgent !== null &&
+    /headless|playwright|selenium|puppeteer|phantomjs|slimerjs|webdriver/i.test(attestation.userAgent)
+  ) {
+    flag('automation token', 2)
+  }
+  if (attestation.languages === 0) flag('no languages', 1)
+  if (attestation.hardwareConcurrency !== null && attestation.hardwareConcurrency <= 1) flag('single core', 1)
+  if (attestation.screenWidth === 0 || attestation.screenHeight === 0) flag('null screen', 1)
+  // Heuristic tied to old headless defaults (Playwright uses 1280x720,
+  // modern headless Chrome varies): revisit periodically as tooling shifts,
+  // and never promote viewport matching past a single point — common laptop
+  // resolutions must stay clean.
+  if (attestation.screenWidth === 800 && attestation.screenHeight === 600) flag('default headless viewport', 1)
+  // Mobile browsers legitimately expose zero plugins; only the desktop
+  // combination is a tell. Touch works the mirror way.
+  if (attestation.plugins === 0 && attestation.mobile === false) flag('no plugins on desktop', 1)
+  if (attestation.touchPoints === 0 && attestation.mobile === true) flag('no touch on mobile', 1)
+  return { score, reasons }
+}
+
 export interface PowSolution {
   nonce: number
 }
@@ -169,6 +347,12 @@ export interface SolvePowOptions {
   workers?: number
   /** Test seam for the worker pool; defaults to real module workers. */
   createWorker?: PowWorkerFactory
+  /**
+   * Attestation binding digest: when present, solutions satisfy the bound
+   * preimage and cannot be transplanted onto another attestation. Null
+   * preserves the bare format; servers only accept bound solutions.
+   */
+  binding?: string | null
 }
 
 const DEFAULT_BATCH_SIZE = 20_000
@@ -180,6 +364,8 @@ export interface PowWorkerTask {
   stride: number
   /** Nonce attempts for this worker; null searches until found or aborted. */
   attempts: number | null
+  /** Attestation binding digest; null solves the bare preimage. */
+  binding: string | null
 }
 
 export type PowWorkerResult = { type: 'found'; nonce: number } | { type: 'exhausted' }
@@ -219,8 +405,22 @@ export function powStrideStart(workerIndex: number, fromNonce: number): number {
   return fromNonce + workerIndex
 }
 
-function maxAttemptsError(maxAttempts: number): Error {
-  return new Error(`Proof-of-work search exceeded ${maxAttempts} attempts.`)
+function maxAttemptsError(maxAttempts: number): PowExhaustedError {
+  return new PowExhaustedError(`Proof-of-work search exceeded ${maxAttempts} attempts.`)
+}
+
+/** The pool searched its whole capped budget without a hit. */
+export class PowExhaustedError extends Error {}
+
+/** Every worker errored; nothing about the search space is known. Only the
+ *  all-errored pool rejects this way — a lone flaky worker is dropped and
+ *  the survivors continue, so this error specifically means no stride
+ *  completed. The caller retries sequentially rather than claiming
+ *  exhaustion. */
+export class PowWorkersFailedError extends Error {
+  constructor() {
+    super('Proof-of-work workers failed.')
+  }
 }
 
 async function solveSequential(
@@ -229,7 +429,8 @@ async function solveSequential(
   fromNonce: number,
   batchSize: number,
   maxAttempts: number | undefined,
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  binding: string | null,
 ): Promise<PowSolution> {
   let nonce = fromNonce
   let attempts = 0
@@ -238,7 +439,7 @@ async function solveSequential(
     const end = nonce + batchSize
     while (nonce < end) {
       if (maxAttempts !== undefined && attempts >= maxAttempts) throw maxAttemptsError(maxAttempts)
-      if (countLeadingZeroBits(powAttemptHash(challengeId, nonce)) >= difficulty) {
+      if (countLeadingZeroBits(powSolutionPreimage(challengeId, nonce, binding)) >= difficulty) {
         return { nonce }
       }
       nonce += 1
@@ -256,6 +457,7 @@ function solveParallel(
   maxAttempts: number | undefined,
   signal: AbortSignal | undefined,
   createWorker: PowWorkerFactory,
+  binding: string | null,
 ): Promise<PowSolution> {
   const workers: PowWorkerPort[] = []
   try {
@@ -275,6 +477,7 @@ function solveParallel(
   return new Promise<PowSolution>((resolve, reject) => {
     let settled = false
     let exhausted = 0
+    let errored = 0
     const finish = (outcome: () => void) => {
       if (settled) return
       settled = true
@@ -299,32 +502,64 @@ function solveParallel(
         const result = event.data
         if (result.type === 'found') {
           finish(() => resolve({ nonce: result.nonce }))
-        } else {
-          exhausted += 1
-          if (exhausted === workers.length) {
-            finish(() => reject(maxAttemptsError(maxAttempts ?? 0)))
-          }
+          return
         }
+        exhausted += 1
+        checkTerminal()
       }
-      worker.onerror = () => finish(() => reject(new Error('Proof-of-work worker failed.')))
+      worker.onerror = () => {
+        // One flaky worker costs one worker, not the pool: drop it and let
+        // the surviving strides continue. Only total failure is terminal.
+        try {
+          worker.terminate()
+        } catch {
+          // Cleanup is best-effort on a path that already failed.
+        }
+        errored += 1
+        checkTerminal()
+      }
       worker.postMessage({
         challengeId,
         difficulty,
         fromNonce: powStrideStart(index, fromNonce),
         stride: workerCount,
-        attempts: maxAttempts === undefined ? null : Math.ceil(maxAttempts / workerCount),
+        attempts: maxAttempts === undefined ? null : workerAttemptCap(maxAttempts, workerCount, index),
+        binding,
       })
     })
+
+    function checkTerminal(): void {
+      if (settled || exhausted + errored < workers.length) return
+      if (errored === 0) {
+        // Every stride searched to its exact cap with no hit: the budget is
+        // genuinely spent.
+        finish(() => reject(maxAttemptsError(maxAttempts ?? 0)))
+      } else {
+        // Searched ranges may still hold the solution; the caller retries
+        // sequentially rather than lying about exhaustion.
+        finish(() => reject(new PowWorkersFailedError()))
+      }
+    }
   })
+}
+
+/**
+ * This worker's share of a capped budget, dealt like cards so the shares sum
+ * to exactly maxAttempts: the pool can never overshoot the cap, and a dropped
+ * worker only shrinks the searched space, never grows it.
+ */
+export function workerAttemptCap(maxAttempts: number, workerCount: number, workerIndex: number): number {
+  const base = Math.floor(maxAttempts / workerCount)
+  return base + (workerIndex < maxAttempts % workerCount ? 1 : 0)
 }
 
 /**
  * Find a nonce whose attempt hash carries at least `difficulty` leading zero
  * bits. Runs in slices (sequential) or across workers (parallel) so page
  * interaction stays alive during multi-second solves; rejects promptly on
- * abort. Throws only on invalid input, abort, worker failure, or an
- * exhausted attempt cap — an unsolvable range is a caller bug, not a runtime
- * state.
+ * abort. Throws only on invalid input, abort, or an exhausted attempt cap.
+ * Dead workers fall back to the sequential search rather than failing
+ * verification for an environment reason.
  */
 export async function solvePowChallenge(
   challengeId: string,
@@ -340,17 +575,19 @@ export async function solvePowChallenge(
   const batchSize = Math.max(1, Math.trunc(options.batchSize ?? DEFAULT_BATCH_SIZE))
   const fromNonce = Math.max(0, Math.trunc(options.fromNonce ?? 0))
   const workerCount = Math.max(1, Math.trunc(options.workers ?? 1))
+  const binding = options.binding ?? null
   if (workerCount > 1) {
     const createWorker = options.createWorker ?? defaultCreateWorker
     // Construction can fail where workers don't exist (SSR, tests) or are
     // blocked (CSP worker-src): fall back to the sequential search instead
-    // of failing verification for an environment reason.
+    // of failing verification for an environment reason. A fully dead pool
+    // retries the same way; only genuine exhaustion propagates.
     try {
-      return await solveParallel(challengeId, difficulty, fromNonce, workerCount, options.maxAttempts, options.signal, createWorker)
+      return await solveParallel(challengeId, difficulty, fromNonce, workerCount, options.maxAttempts, options.signal, createWorker, binding)
     } catch (error) {
+      if (error instanceof PowExhaustedError) throw error
       if (options.signal?.aborted) throw error
-      if (error instanceof Error && /cancelled|exceeded/.test(error.message)) throw error
     }
   }
-  return solveSequential(challengeId, difficulty, fromNonce, batchSize, options.maxAttempts, options.signal)
+  return solveSequential(challengeId, difficulty, fromNonce, batchSize, options.maxAttempts, options.signal, binding)
 }

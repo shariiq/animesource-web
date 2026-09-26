@@ -72,6 +72,10 @@ _Avoid_: Account, login, user
 A single-use, server-signed computational puzzle binding a difficulty and the requesting network. Solving it proves a JavaScript engine spent real time; it prices bulk automation without identifying anyone.
 _Avoid_: CAPTCHA, puzzle page, bot check
 
+**Attestation**:
+Coarse environment signals (automation flag, counts, viewport) shipped with a proof-of-work exchange. Scored to price automation with shorter sessions and hotter puzzles; never blocks, because client-asserted signals are forgeable.
+_Avoid_: Fingerprint, tracking, bot score
+
 **Reader**:
 The client-only route that loads manga chapters and pages, records local position, and provides reading controls.
 _Avoid_: Viewer, document viewer

@@ -51,7 +51,7 @@ if (!sessionSecret && enforced) {
 const redisUrl = process.env.UPSTASH_REDIS_REST_URL
 const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN
 if ((!redisUrl || !redisToken) && enforced) {
-  problems.push('UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are both required: the gateway fails closed without rate limiting.')
+  problems.push('UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must both be set: the gateway fails closed without rate limiting.')
 } else if ((redisUrl && !redisToken) || (!redisUrl && redisToken)) {
   problems.push('UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must be set together.')
 } else if (redisUrl) {
@@ -60,6 +60,16 @@ if ((!redisUrl || !redisToken) && enforced) {
   } catch {
     problems.push('UPSTASH_REDIS_REST_URL must be a valid https URL.')
   }
+}
+
+const directMedia = process.env.ANISOURCE_DIRECT_MEDIA
+const directEnabled = directMedia === '1' || directMedia?.toLowerCase() === 'true' || directMedia?.toLowerCase() === 'yes'
+const playbackSecrets = (process.env.ANISOURCE_PLAYBACK_SECRETS ?? '')
+  .split(',')
+  .map((entry) => entry.trim())
+  .filter((entry) => Buffer.byteLength(entry, 'utf8') >= 32)
+if (directEnabled && enforced && playbackSecrets.length === 0) {
+  problems.push('ANISOURCE_PLAYBACK_SECRETS is required when ANISOURCE_DIRECT_MEDIA is on: direct media URLs must be session-bound (ADR 0006).')
 }
 
 for (const [name] of Object.entries(process.env)) {

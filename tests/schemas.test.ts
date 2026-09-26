@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { anisourceAnimeSchema, episodeSchema, streamSchema } from '../app/data/anisource/schema'
-import { detailShape, graphQLResponseShape, mediaShape, schedulePageShape } from '../app/data/anilist/schema'
+import { detailShape, graphQLResponseShape, mediaShape } from '../app/data/anilist/schema'
 
 describe('boundary schemas', () => {
   it('rejects AniSource anime records missing required identity fields', () => {
@@ -23,14 +23,6 @@ describe('boundary schemas', () => {
 
   it('rejects AniList media without a numeric identity', () => {
     expect(() => mediaShape.parse({ id: 'not-a-number' })).toThrow()
-  })
-
-  it('rejects schedule entries with malformed required episode data', () => {
-    expect(() => schedulePageShape.parse({
-      Page: {
-        airingSchedules: [{ episode: '12', airingAt: 1_700_000_000, media: { id: 12 } }],
-      },
-    })).toThrow()
   })
 
   it('rejects detail links with malformed URL data', () => {

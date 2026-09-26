@@ -1,9 +1,7 @@
 import { Link } from '@tanstack/solid-router'
-import { Show } from 'solid-js'
 import { GlobalSearch } from './GlobalSearch'
 import { CatalogModeSwitch, useCatalogMode } from './CatalogModeSwitch'
 import { makeBrowseSearch } from '../../lib/browse'
-import { localDateKey } from '../../lib/schedule'
 
 const NAV_LINK_CLASS =
   'rounded-full px-3 py-1.5 transition-[background,color,box-shadow] duration-200 hover:bg-white/70 hover:text-black hover:shadow-[inset_0_1px_rgb(255_255_255/.9),0_6px_14px_-10px_rgb(6_6_9/.4)]'
@@ -25,9 +23,6 @@ export function Header() {
             <Link to="/" preload="intent" activeOptions={{ exact: true }} class={NAV_LINK_CLASS} activeProps={{ class: NAV_LINK_ACTIVE_CLASS }}>Home</Link>
             <Link to="/explore" preload="intent" search={makeBrowseSearch()} activeOptions={{ includeSearch: false }} class={NAV_LINK_CLASS} activeProps={{ class: NAV_LINK_ACTIVE_CLASS }}>Explore</Link>
             <Link to="/library" preload="intent" class={NAV_LINK_CLASS} activeProps={{ class: NAV_LINK_ACTIVE_CLASS }}>Library</Link>
-            <Show when={mode() === 'ANIME'}>
-              <Link to="/schedule" search={{ date: localDateKey(new Date()), view: 'week', saved: false }} class={NAV_LINK_CLASS} activeProps={{ class: NAV_LINK_ACTIVE_CLASS }}>Schedule</Link>
-            </Show>
             <Link to="/profile" preload="intent" class={NAV_LINK_CLASS} activeProps={{ class: NAV_LINK_ACTIVE_CLASS }}>Profile</Link>
           </nav>
           <span class="header-status hidden items-center gap-[7px] font-mono text-[10px] uppercase tracking-[.13em] text-text-muted md:inline-flex"><i class="inline-block size-[5px] animate-pulse rounded-full bg-emerald shadow-[0_0_8px_rgb(0_200_83/.6)]" />{mode() === 'MANGA' ? 'Manga catalog' : 'Anime catalog'}</span>

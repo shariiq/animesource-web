@@ -500,28 +500,6 @@ test("library stays within desktop and mobile viewports", async ({ page }) => {
   await page.screenshot({ path: "test-results/library-mobile.png", fullPage: true });
 });
 
-test("schedule switches views and stays within desktop and mobile viewports", async ({ page }) => {
-  await page.goto("/schedule");
-  await expect(page.getByRole("heading", { name: "What’s airing." })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Schedule" })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("combobox", { name: "Genre" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Status" })).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "Saved only" })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({ path: "test-results/schedule-desktop.png", fullPage: true });
-
-  await page.getByRole("button", { name: "Day", exact: true }).click();
-  await expect(page).toHaveURL(/view=day/);
-  await page.getByRole("button", { name: "Next period" }).click();
-  await expect(page.getByRole("heading", { name: "No releases found." })).toBeVisible();
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.reload();
-  await expect(page.getByRole("combobox", { name: "Genre" })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({ path: "test-results/schedule-mobile.png", fullPage: true });
-});
-
 test("discovery initial load does not call AniSource", async ({ page }) => {
   const anisourceRequests: string[] = [];
   page.on("request", (request) => {

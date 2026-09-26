@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { anilistClient, AniListError } from './client'
-import type { AniListMedia, AniListDetail, AniListHome, AniListScheduleItem } from './types'
-import { mediaShape, detailShape, homeShape, genreCollectionShape, schedulePageShape, pageInfoShape } from './schema'
+import type { AniListMedia, AniListDetail, AniListHome } from './types'
+import { mediaShape, detailShape, homeShape, genreCollectionShape, pageInfoShape } from './schema'
 import type { BrowseCountry, BrowseFormat, BrowseSeason, BrowseSort, BrowseStatus } from '../../lib/browse'
 import type { CatalogMode } from '../../lib/catalog'
 
@@ -197,76 +197,6 @@ export async function alGenres(signal?: AbortSignal): Promise<string[]> {
   const query = `query{ GenreCollection }`
   const raw = await anilistClient.request(query, {}, signal)
   return parsePayload(z.object({ GenreCollection: genreCollectionShape }), raw, 'the genre collection').GenreCollection
-}
-
-/**
- * Schedule query: returns airing schedules in a time window.
- * Mirrors alSchedule() from prototype exactly.
- */
-/**
- * Schedule pages after the first run serially with a small gap. AniList pairs
- * a 90-requests-per-minute quota (currently degraded to 30/minute) with an
- * undocumented burst limiter, so the old 3-wide fan-out tripped 429s and the
- * parallel retries re-burst and burned the single client retry. Serial pages
- * never trip the burst limiter; the gap keeps rapid Prev/Next navigation from
- * spending the minute quota in one burst.
- */
-const SCHEDULE_PAGE_GAP_MS = 200
-
-function paceSchedulePages(signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) return Promise.resolve()
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, SCHEDULE_PAGE_GAP_MS)
-    signal?.addEventListener('abort', () => {
-      clearTimeout(timer)
-      resolve()
-    }, { once: true })
-  })
-}
-
-export async function alSchedule(start: number, end: number, signal?: AbortSignal): Promise<AniListScheduleItem[]> {  const query = `
-    query($start:Int,$end:Int,$page:Int){
-      Page(page:$page,perPage:50){
-        pageInfo{ currentPage lastPage hasNextPage total }
-        airingSchedules(airingAt_greater:$start, airingAt_lesser:$end, sort:TIME){
-          episode airingAt
-          media{ id title{ romaji english } coverImage{ large } format status genres }
-        }
-      }
-    }
-  `
-  const fetchPage = async (page: number) => {
-    const raw = await anilistClient.request(query, { start, end, page }, signal)
-    return parsePayload(schedulePageShape, raw, 'the airing schedule')
-  }
-  const first = await fetchPage(1)
-  const items: AniListScheduleItem[] = [...first.Page.airingSchedules]
-  const firstInfo = first.Page.pageInfo
-  if (!firstInfo?.hasNextPage) return items
-  // The first page reports the total, so the remainder follows serially with
-  // a small gap instead of fanning out. Parallel pages burst AniList into
-  // 429s, and parallel retries re-burst and burn the retry budget, surfacing
-  // the rate limit to the Schedule route.
-  const lastPage = firstInfo.lastPage ?? null
-  if (lastPage && lastPage > 1) {
-    for (let page = 2; page <= lastPage; page += 1) {
-      await paceSchedulePages(signal)
-      const parsed = await fetchPage(page)
-      items.push(...parsed.Page.airingSchedules)
-    }
-    return items
-  }
-  let page = 2
-  // Unknown page count: keep the serial fallback bounded so a malformed
-  // hasNextPage can never spin forever.
-  for (let guard = 0; guard < 20; guard += 1) {
-    await paceSchedulePages(signal)
-    const parsed = await fetchPage(page)
-    items.push(...parsed.Page.airingSchedules)
-    if (!parsed.Page.pageInfo?.hasNextPage) return items
-    page += 1
-  }
-  return items
 }
 
 /**

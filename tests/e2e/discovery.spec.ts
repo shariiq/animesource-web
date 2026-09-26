@@ -111,7 +111,7 @@ test("phone navigation keeps every destination tappable", async ({ page }) => {
   await page.goto("/");
   const navigation = page.getByRole("navigation", { name: "Primary navigation" });
   const tabs = navigation.getByRole("link");
-  await expect(tabs).toHaveCount(5);
+  await expect(tabs).toHaveCount(4);
   for (const tab of await tabs.all()) {
     expect((await tab.boundingBox())?.width).toBeGreaterThanOrEqual(44);
   }

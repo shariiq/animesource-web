@@ -910,7 +910,7 @@ describe("HomePage", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
-  it("renders rails and the genre browser on success", async () => {
+  it("renders rails on success", async () => {
     mockHomeQueryFn = async () => homeData;
     render(wrap(client, () => <HomePage />));
     expect(
@@ -926,8 +926,8 @@ describe("HomePage", () => {
       screen.getByRole("heading", { name: "All-time favorites" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Browse by Genre" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("heading", { name: "Browse by Genre" }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps rails visible during a background refetch instead of flashing loading", async () => {

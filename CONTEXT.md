@@ -69,7 +69,7 @@ An anonymous browser session issued only for a solved proof-of-work challenge, c
 _Avoid_: Account, login, user
 
 **Challenge**:
-A single-use, server-signed computational puzzle binding a difficulty and the requesting network. Solving it proves a JavaScript engine spent real time; it prices bulk automation without identifying anyone. Issuance and exchange carry tight per-network budgets with difficulty escalation under pressure.
+A single-use, server-signed computational puzzle binding a difficulty and the requesting network. Solving it prices bulk automation with real computation; native implementations pass clean, so it never proves a JavaScript engine or a human — only that somebody paid the compute.
 _Avoid_: CAPTCHA, puzzle page, bot check
 
 **Attestation**:

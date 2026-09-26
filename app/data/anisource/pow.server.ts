@@ -119,13 +119,30 @@ function redisChallengeStore(redis: Redis): ChallengeStore {
       return stored === 'OK'
     },
     hitBudget: async (key, limit, windowSeconds) => {
-      const count = await redis.incr(`anisource:pow:budget:${key}`)
-      if (count === 1) await redis.expire(`anisource:pow:budget:${key}`, windowSeconds)
-      return { allowed: count <= limit, count }
+      // Single round trip: a crash between INCRBY and EXPIRE would leave a
+      // TTL-less budget key that bricks issuance for that network, and the
+      // TTL check heals keys leaked by older split implementations.
+      const count = await redis.eval(
+        `local current = redis.call('INCRBY', KEYS[1], 1)
+         if redis.call('TTL', KEYS[1]) == -1 then
+           redis.call('EXPIRE', KEYS[1], ARGV[1])
+         end
+         return current`,
+        [`anisource:pow:budget:${key}`],
+        [windowSeconds],
+      )
+      return { allowed: Number(count) <= limit, count: Number(count) }
     },
     burnBudget: async (key, amount, windowSeconds) => {
-      await redis.incrby(`anisource:pow:budget:${key}`, amount)
-      await redis.expire(`anisource:pow:budget:${key}`, windowSeconds)
+      await redis.eval(
+        `local current = redis.call('INCRBY', KEYS[1], ARGV[1])
+         if redis.call('TTL', KEYS[1]) == -1 then
+           redis.call('EXPIRE', KEYS[1], ARGV[2])
+         end
+         return current`,
+        [`anisource:pow:budget:${key}`],
+        [amount, windowSeconds],
+      )
     },
   }
 }

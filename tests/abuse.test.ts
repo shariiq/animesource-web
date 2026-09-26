@@ -29,7 +29,22 @@ function fakeAbuseStore(): AbuseStore {
       return count
     },
     expire: async () => undefined,
+    incrExpiring: async (key: string) => {
+      const count = (counters.get(key) ?? 0) + 1
+      counters.set(key, count)
+      return count
+    },
     pfadd: async (key: string, member: string) => {
+      let set = hll.get(key)
+      if (!set) {
+        set = new Set()
+        hll.set(key, set)
+      }
+      const size = set.size
+      set.add(member)
+      return set.size > size ? 1 : 0
+    },
+    pfaddExpiring: async (key: string, member: string) => {
       let set = hll.get(key)
       if (!set) {
         set = new Set()

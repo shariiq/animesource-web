@@ -43,9 +43,26 @@ export interface AbuseStore {
   set(key: string, value: string, exSeconds: number): Promise<void>
   incr(key: string): Promise<number>
   expire(key: string, seconds: number): Promise<void>
+  /** Atomically increment and ensure expiry: split INCR/EXPIRE leaks TTL-less
+   * keys on crashes (a leaked velocity key bricks nothing, but a leaked
+   * sharing set false-positives forever within its fingerprint). */
+  incrExpiring(key: string, windowSeconds: number): Promise<number>
   pfadd(key: string, member: string): Promise<number>
   pfcount(key: string): Promise<number>
+  /** Atomically add a sharing observation and ensure expiry (same leak class). */
+  pfaddExpiring(key: string, member: string, windowSeconds: number): Promise<number>
 }
+
+const INCR_EXPIRING_SCRIPT = `local current = redis.call('INCRBY', KEYS[1], 1)
+if redis.call('TTL', KEYS[1]) == -1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return current`
+const PFADD_EXPIRING_SCRIPT = `local added = redis.call('PFADD', KEYS[1], ARGV[1])
+if redis.call('TTL', KEYS[1]) == -1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[2])
+end
+return added`
 
 function redisAbuseStore(redis: Redis): AbuseStore {
   return {
@@ -57,8 +74,10 @@ function redisAbuseStore(redis: Redis): AbuseStore {
     expire: async (key, seconds) => {
       await redis.expire(key, seconds)
     },
+    incrExpiring: async (key, windowSeconds) => Number(await redis.eval(INCR_EXPIRING_SCRIPT, [key], [windowSeconds])),
     pfadd: async (key, member) => redis.pfadd(key, member),
     pfcount: async (key) => redis.pfcount(key),
+    pfaddExpiring: async (key, member, windowSeconds) => Number(await redis.eval(PFADD_EXPIRING_SCRIPT, [key], [member, windowSeconds])),
   }
 }
 
@@ -166,8 +185,7 @@ export async function checkAbuse(
 
   if (signal.sessionless) {
     const bucket = minuteBucket(nowSeconds)
-    const anonCount = await store.incr(`abuse:anon:${signal.ipHash}:${bucket}`)
-    if (anonCount === 1) await store.expire(`abuse:anon:${signal.ipHash}:${bucket}`, ABUSE_WINDOW_SECONDS)
+    const anonCount = await store.incrExpiring(`abuse:anon:${signal.ipHash}:${bucket}`, ABUSE_WINDOW_SECONDS)
     if (anonCount > ABUSE_IP_ANON_LIMIT) {
       await store.set(`abuse:denied:ip:${signal.ipHash}`, 'probing', ABUSE_IP_BAN_TTL_SECONDS)
       return { ok: false, retryAfterSeconds: ABUSE_IP_BAN_TTL_SECONDS, reason: 'probing' }
@@ -177,10 +195,8 @@ export async function checkAbuse(
 
   if (signal.sessionFingerprint && (signal.forceSample === true || Math.random() < ABUSE_SAMPLE_RATE)) {
     const bucket = minuteBucket(nowSeconds)
-    const velocity = await store.incr(`abuse:vel:${signal.sessionFingerprint}:${bucket}`)
-    if (velocity === 1) await store.expire(`abuse:vel:${signal.sessionFingerprint}:${bucket}`, ABUSE_WINDOW_SECONDS)
-    await store.pfadd(`abuse:ips:${signal.sessionFingerprint}`, signal.ipHash)
-    await store.expire(`abuse:ips:${signal.sessionFingerprint}`, ABUSE_SHARE_BAN_TTL_SECONDS)
+    const velocity = await store.incrExpiring(`abuse:vel:${signal.sessionFingerprint}:${bucket}`, ABUSE_WINDOW_SECONDS)
+    await store.pfaddExpiring(`abuse:ips:${signal.sessionFingerprint}`, signal.ipHash, ABUSE_SHARE_BAN_TTL_SECONDS)
     const shared = await store.pfcount(`abuse:ips:${signal.sessionFingerprint}`)
     if (velocity > ABUSE_SID_VELOCITY_LIMIT) {
       await store.set(`abuse:denied:sid:${signal.sessionFingerprint}`, 'velocity', ABUSE_SID_BAN_TTL_SECONDS)
@@ -193,8 +209,7 @@ export async function checkAbuse(
   }
   if (signal.sessionFingerprint && signal.mediaResolve) {
     const bucket = minuteBucket(nowSeconds)
-    const media = await store.incr(`abuse:media:${signal.sessionFingerprint}:${bucket}`)
-    if (media === 1) await store.expire(`abuse:media:${signal.sessionFingerprint}:${bucket}`, ABUSE_WINDOW_SECONDS)
+    const media = await store.incrExpiring(`abuse:media:${signal.sessionFingerprint}:${bucket}`, ABUSE_WINDOW_SECONDS)
     if (media > ABUSE_SID_MEDIA_LIMIT) {
       await store.set(`abuse:denied:sid:${signal.sessionFingerprint}`, 'velocity', ABUSE_SID_BAN_TTL_SECONDS)
       return { ok: false, retryAfterSeconds: ABUSE_SID_BAN_TTL_SECONDS, reason: 'velocity' }

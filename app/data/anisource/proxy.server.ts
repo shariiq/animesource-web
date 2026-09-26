@@ -4,8 +4,8 @@ import { z } from 'zod'
 import apiUrls from '../../../config/api-urls.json'
 import { serverSecret } from '../../lib/serverSecret'
 import { scoreAttestation, scoreRequestFingerprint, SUSPICIOUS_ATTESTATION_SCORE } from '../../lib/proofOfWork'
-import { cachedAbuseStore, checkAbuse, isNetworkDenied, networkFingerprint, sessionFingerprint } from './abuse.server'
-import { PlaybackCapUnavailable, appendPlaybackCapability, mintPlaybackCapability } from './capability.server'
+import { type AbuseSignal, type AbuseStore, type AbuseVerdict, cachedAbuseStore, checkAbuse, isNetworkDenied, networkFingerprint, sessionFingerprint } from './abuse.server'
+import { PlaybackCapUnavailable, PLAYBACK_CAP_PARAM, appendPlaybackCapability, mintPlaybackCapability } from './capability.server'
 import {
   POW_CHALLENGE_BUDGET_PER_MINUTE,
   POW_EXCHANGE_BUDGET_PER_MINUTE,
@@ -100,41 +100,111 @@ function tryBase64UrlDecodeToText(value: string): string | null {
   }
 }
 
-function candidateHosts(value: string): string[] {
+/**
+ * Hosts of embedded absolute URLs, normalized with the URL parser before
+ * classification. WHATWG normalization collapses decimal/octal/hex and
+ * short-form IPv4 (`2130706433`, `127.1`, `0x7f.0.0.1`) to dotted quads,
+ * lowercases names, and separates userinfo and ports — so string-splitting
+ * tricks stop working. Null means an embedded URL failed to parse, which is
+ * itself a refusal: legitimate values are clean URLs.
+ */
+function normalizedEmbeddedHosts(text: string): string[] | null {
   const hosts: string[] = []
-  for (const match of value.matchAll(/https?:\/\/([^/?#\s]+)/gi)) {
-    if (match[1]) hosts.push(match[1])
+  for (const match of text.matchAll(/https?:\/\/[^/?#\s]+/gi)) {
+    // The authority pattern can swallow trailing JSON/text punctuation
+    // (`",`, `)`, `]`); strip it before parsing — no legitimate host ends
+    // with these characters.
+    const candidate = match[0].replace(/[`"'.,;)\]}]+$/, '')
+    try {
+      hosts.push(new URL(candidate).hostname.replace(/\.+$/, ''))
+    } catch {
+      return null
+    }
   }
   return hosts
 }
 
+/** Expand an IPv6 literal (no brackets) to 16 bytes, or null if malformed. */
+function expandIpv6(host: string): number[] | null {
+  const halves = host.split('::')
+  if (halves.length > 2) return null
+  const parseHextets = (part: string): number[] | null => {
+    if (part === '') return []
+    const out: number[] = []
+    for (const piece of part.split(':')) {
+      if (piece.includes('.')) {
+        // Embedded dotted quad tail (including ::ffff:127.0.0.1).
+        const quads = piece.split('.')
+        if (quads.length !== 4) return null
+        const bytes = quads.map(Number)
+        if (bytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) return null
+        out.push((bytes[0]! << 8) | bytes[1]!, (bytes[2]! << 8) | bytes[3]!)
+      } else {
+        if (!/^[0-9a-fA-F]{1,4}$/.test(piece)) return null
+        out.push(Number.parseInt(piece, 16))
+      }
+    }
+    return out
+  }
+  const head = parseHextets(halves[0] ?? '')
+  const tail = parseHextets(halves[1] ?? '')
+  if (!head || !tail) return null
+  // Each 16-bit group is one slot; an embedded quad consumes two.
+  if (halves.length === 1) {
+    return head.length === 8 ? head.flatMap((group) => [group >> 8, group & 0xff]) : null
+  }
+  if (head.length + tail.length > 7) return null
+  const middle = new Array(8 - head.length - tail.length).fill(0)
+  return [...head, ...middle, ...tail].flatMap((group) => [group >> 8, group & 0xff])
+}
+
+/** True when 16 IPv6 bytes are NOT globally routable (or malformed input). */
+function isNonPublicIpv6(bytes: number[]): boolean {
+  if (bytes.length !== 16) return true
+  const allZero = bytes.every((byte) => byte === 0)
+  if (allZero) return true
+  if (bytes.slice(0, 15).every((byte) => byte === 0) && bytes[15] === 1) return true
+  if (bytes[0] === 0xff) return true
+  if (bytes[0] === 0xfe && (bytes[1]! & 0xc0) === 0x80) return true
+  if ((bytes[0]! & 0xfe) === 0xfc) return true
+  if (
+    bytes.slice(0, 10).every((byte) => byte === 0) &&
+    bytes[10] === 0xff && bytes[11] === 0xff
+  ) {
+    // IPv4-mapped: classify the embedded quad recursively.
+    return isNonPublicIpv4([bytes[12]!, bytes[13]!, bytes[14]!, bytes[15]!])
+  }
+  if (
+    bytes[0] === 0x20 && bytes[1] === 0x01 && bytes[2] === 0x0d && bytes[3] === 0xb8
+  ) return true
+  return false
+}
+
+function isNonPublicIpv4([a = 0, b = 0, c = 0, d = 0]: number[]): boolean {
+  if ([a, b, c, d].some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true
+  if (a === 127 || a === 10) return true
+  if (a === 172 && b >= 16 && b <= 31) return true
+  if (a === 192 && b === 168) return true
+  if (a === 169 && b === 254) return true
+  if (a === 0) return true
+  return false
+}
+
 function isNonPublicHost(host: string): boolean {
-  let bare = host.toLowerCase().trim()
+  const bare = host.toLowerCase().trim().replace(/\.+$/, '')
   if (!bare) return true
-  if (bare.startsWith('[') && bare.includes(']')) bare = bare.slice(1, bare.indexOf(']'))
-  bare = bare.split(':')[0] ?? ''
-  if (!bare) return true
-  if (bare === 'localhost' || bare.endsWith('.localhost') || bare === '0.0.0.0' || bare === '::' || bare === '::1') return true
+  if (bare === 'localhost' || bare.endsWith('.localhost') || bare === '0.0.0.0') return true
   if (bare === 'metadata.google.internal' || bare === 'metadata.google.com' || bare === 'instance-data') return true
+  if (bare.startsWith('[') && bare.endsWith(']')) {
+    const expanded = expandIpv6(bare.slice(1, -1))
+    return expanded === null || isNonPublicIpv6(expanded)
+  }
+  // Post-normalization IPv4 is always four decimal groups; anything else
+  // with a colon is an unbracketed IPv6 form and refused, since no
+  // legitimate embed target uses one.
+  if (bare.includes(':')) return true
   const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(bare)
-  if (ipv4) {
-    const parts = ipv4.slice(1).map(Number)
-    if (parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true
-    const [a = 0, b = 0] = parts
-    if (a === 127 || a === 10) return true
-    if (a === 172 && b >= 16 && b <= 31) return true
-    if (a === 192 && b === 168) return true
-    if (a === 169 && b === 254) return true
-    if (a === 0) return true
-    return false
-  }
-  if (bare.includes(':')) {
-    const normalized = bare.toLowerCase()
-    if (normalized === '::1' || normalized === '::') return true
-    if (/^(fc|fd)[0-9a-f]*:/.test(normalized)) return true
-    if (/^fe[89ab][0-9a-f]*:/.test(normalized)) return true
-    return false
-  }
+  if (ipv4) return isNonPublicIpv4(ipv4.slice(1).map(Number))
   return false
 }
 
@@ -155,7 +225,9 @@ export function isSafeServerId(value: string): boolean {
   const decoded = tryBase64UrlDecodeToText(value)
   if (decoded) texts.push(decoded)
   for (const text of texts) {
-    for (const host of candidateHosts(text)) {
+    const hosts = normalizedEmbeddedHosts(text)
+    if (hosts === null) return false
+    for (const host of hosts) {
       if (isNonPublicHost(host)) return false
     }
     const textLower = text.toLowerCase()
@@ -397,6 +469,28 @@ function hiddenRoute(): Response {
   return jsonError(404, 'AniSource route not found.', {}, 'invalid')
 }
 
+/**
+ * Abuse verdict with Redis failures translated: a telemetry outage must
+ * never surface as a bare 500 or, worse, fail open into a blind abuse
+ * window. Null means the store was unreachable — callers answer 503, the
+ * same fail-closed posture as the rate limiter.
+ */
+async function abuseVerdict(
+  store: AbuseStore | null,
+  signal: AbuseSignal,
+  nowSeconds: number,
+): Promise<AbuseVerdict | null> {
+  try {
+    return await checkAbuse(store, signal, nowSeconds)
+  } catch {
+    return null
+  }
+}
+
+function abuseUnavailable(): Response {
+  return jsonError(503, 'AniSource request protection is temporarily unavailable.', {}, 'misconfigured')
+}
+
 function apiBase(): URL | null {
   return upstreamBase(process.env.ANISOURCE_BASE, apiUrls.anisource)
 }
@@ -539,24 +633,13 @@ async function rewriteApiUrl(value: string, base: URL, session: Session | null, 
       const cap = await mintPlaybackCapability(token, session.sid)
       return appendPlaybackCapability(url.toString(), cap)
     }
-    // Ticket mode preserves the upstream signed query and, when playback
-    // secrets resolve, additionally binds a session capability to it: ticket
-    // asset fetches replay the stored query upstream, so deployments that
-    // enforce capabilities on media keep working through the gateway, while
-    // deployments that rely on Bearer or pre-signed queries ignore the extra
-    // parameter. Best-effort by design — missing secrets must not break
-    // ticket mode, which authenticates via Bearer plus the preserved query.
-    let ticketQuery = url.search
-    try {
-      const token = url.pathname.split('/').filter(Boolean).at(-1)
-      if (token) {
-        const cap = await mintPlaybackCapability(token, session.sid)
-        ticketQuery = `${ticketQuery}${ticketQuery ? '&' : '?'}${'cap'}=${encodeURIComponent(cap)}`
-      }
-    } catch (error) {
-      if (!(error instanceof PlaybackCapUnavailable)) throw error
-    }
-    const ticket = await issueTicket(path, ticketQuery, scope, session, key, viaFallback)
+    // Ticket mode stores only the upstream path and its original signed query:
+    // the session-bound API capability is minted server-side at fetch time
+    // (see the asset branch below), so no browser-redeemable grant ever sits
+    // in readable ticket JSON. Without a resolvable secret the fetch still
+    // proceeds on Bearer plus the preserved query; production refuses to run
+    // that way (see verify-anisource-config).
+    const ticket = await issueTicket(path, url.search, scope, session, key, viaFallback)
     return `${API_PREFIX}/asset/${ticket}`
   }
   if (isAllowedUpstreamPath(path, url.search)) return `${API_PREFIX}${path}${url.search}${url.hash}`
@@ -616,6 +699,35 @@ async function readBounded(response: Response): Promise<Uint8Array | null> {
   return result
 }
 
+/** Exchange bodies stay tiny; the declared length is advisory, so cap the
+ * actual bytes the parser ever sees. Throws past the cap. */
+const MAX_EXCHANGE_BODY_BYTES = 4096
+
+async function readBoundedText(request: Request, maxBytes: number): Promise<string> {
+  if (!request.body) return ''
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > maxBytes) {
+      await reader.cancel()
+      throw new Error('Exchange body exceeds the bounded read.')
+    }
+    chunks.push(value)
+  }
+  const result = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    result.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder().decode(result)
+}
+
+
 function browserHeaders(upstream: Response, transformed: boolean): Headers {
   const headers = new Headers()
   for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified', 'retry-after']) {
@@ -652,14 +764,20 @@ async function servePowChallenge(request: Request): Promise<Response> {
     return jsonError(503, 'AniSource verification is not configured.', {}, 'misconfigured')
   }
   const ip = requestClientIp(request)
-  if (await isNetworkDenied(cachedAbuseStore(), networkFingerprint(ip))) {
-    return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '900' }, 'rate-limited')
+  let budgetCount = 0
+  try {
+    if (await isNetworkDenied(cachedAbuseStore(), networkFingerprint(ip))) {
+      return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '900' }, 'rate-limited')
+    }
+    const budget = store ? await store.hitBudget(`challenge:${ip ?? 'unknown'}`, POW_CHALLENGE_BUDGET_PER_MINUTE, 60) : { allowed: true, count: 0 }
+    if (store && !budget.allowed) {
+      return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '60' }, 'rate-limited')
+    }
+    budgetCount = budget.count
+  } catch {
+    return jsonError(503, 'AniSource verification is temporarily unavailable.', {}, 'misconfigured')
   }
-  const budget = store ? await store.hitBudget(`challenge:${ip ?? 'unknown'}`, POW_CHALLENGE_BUDGET_PER_MINUTE, 60) : { allowed: true, count: 0 }
-  if (store && !budget.allowed) {
-    return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '60' }, 'rate-limited')
-  }
-  const issued = mintPowChallenge(ip, Math.floor(Date.now() / 1000), escalatedDifficulty(powDifficulty(), budget.count))
+  const issued = mintPowChallenge(ip, Math.floor(Date.now() / 1000), escalatedDifficulty(powDifficulty(), budgetCount))
   if (!issued) return jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured')
   return new Response(JSON.stringify(issued), { status: 200, headers: powNoStore() })
 }
@@ -671,9 +789,35 @@ async function exchangePowSession(request: Request): Promise<Response> {
   if (Number(request.headers.get('content-length') ?? 0) > 2048) {
     return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
   }
+  const store = challengeStore()
+  if (!store && process.env.NODE_ENV === 'production') {
+    return jsonError(503, 'AniSource verification is not configured.', {}, 'misconfigured')
+  }
+  const ip = requestClientIp(request)
+  // Budgets are charged before parsing: attackers pay for the attempt even
+  // when the body is garbage, and parsing never runs on unbounded input.
+  try {
+    if (await isNetworkDenied(cachedAbuseStore(), networkFingerprint(ip))) {
+      return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '900' }, 'rate-limited')
+    }
+    const budget = store ? await store.hitBudget(`exchange:${ip ?? 'unknown'}`, POW_EXCHANGE_BUDGET_PER_MINUTE, 60) : { allowed: true, count: 0 }
+    if (store && !budget.allowed) {
+      return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '60' }, 'rate-limited')
+    }
+  } catch {
+    return jsonError(503, 'AniSource verification is temporarily unavailable.', {}, 'misconfigured')
+  }
+  // Bounded read: declared Content-Length is advisory (chunked bodies omit
+  // it), so the parser never sees more than a small payload.
+  let raw: string
+  try {
+    raw = await readBoundedText(request, MAX_EXCHANGE_BODY_BYTES)
+  } catch {
+    return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
+  }
   let body: ReturnType<typeof parseExchangeBody>
   try {
-    body = parseExchangeBody(await request.json())
+    body = parseExchangeBody(JSON.parse(raw))
   } catch {
     return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
   }
@@ -686,19 +830,12 @@ async function exchangePowSession(request: Request): Promise<Response> {
   if (!clientWeekInWindow(body.attestation.cw, Date.now())) {
     return jsonError(426, 'Client is outdated. Reload to update.', {}, 'invalid')
   }
-  const store = challengeStore()
-  if (!store && process.env.NODE_ENV === 'production') {
-    return jsonError(503, 'AniSource verification is not configured.', {}, 'misconfigured')
+  let result: Awaited<ReturnType<typeof redeemPowChallenge>>
+  try {
+    result = await redeemPowChallenge(body.challenge, body.solution.nonce, body.attestation, ip, store, Math.floor(Date.now() / 1000))
+  } catch {
+    return jsonError(503, 'AniSource verification is temporarily unavailable.', {}, 'misconfigured')
   }
-  const ip = requestClientIp(request)
-  if (await isNetworkDenied(cachedAbuseStore(), networkFingerprint(ip))) {
-    return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '900' }, 'rate-limited')
-  }
-  const budget = store ? await store.hitBudget(`exchange:${ip ?? 'unknown'}`, POW_EXCHANGE_BUDGET_PER_MINUTE, 60) : { allowed: true, count: 0 }
-  if (store && !budget.allowed) {
-    return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '60' }, 'rate-limited')
-  }
-  const result = await redeemPowChallenge(body.challenge, body.solution.nonce, body.attestation, ip, store, Math.floor(Date.now() / 1000))
   if (!result.ok) {
     if (result.reason === 'misconfigured') {
       return jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured')
@@ -715,7 +852,12 @@ async function exchangePowSession(request: Request): Promise<Response> {
   const attestation = scoreAttestation(body.attestation)
   const short = attestation.score >= SUSPICIOUS_ATTESTATION_SCORE
   if (short && store) {
-    await store.burnBudget(`challenge:${ip ?? 'unknown'}`, POW_SUSPICIOUS_BURN_AMOUNT, 60)
+    try {
+      await store.burnBudget(`challenge:${ip ?? 'unknown'}`, POW_SUSPICIOUS_BURN_AMOUNT, 60)
+    } catch {
+      // Best-effort pricing only: the session was fairly earned, and the
+      // catalog abuse checks fail closed on their own when Redis is down.
+    }
   }
   const created = await createSession(
     signingKey,
@@ -778,11 +920,12 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
       // Sessionless floods are scanner-shaped: legitimate clients 401 once
       // per session, then verify. Count every one; the tripwire below turns
       // persistent probing into a short network ban.
-      const verdict = await checkAbuse(abuse, {
+      const verdict = await abuseVerdict(abuse, {
         ipHash: networkFingerprint(requestClientIp(request)),
         sessionFingerprint: null,
         sessionless: true,
       }, nowSeconds)
+      if (!verdict) return abuseUnavailable()
       if (!verdict.ok) {
         return jsonError(429, 'Too many verification attempts from this network. Try again shortly.', { 'Retry-After': String(verdict.retryAfterSeconds) }, 'rate-limited')
       }
@@ -836,23 +979,25 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
   // instead of serving out the ticket lifetime. Sampled writes keep the hot
   // path cheap; denials always read.
   if (!healthExempt && !ticket && session) {
-    const verdict = await checkAbuse(abuse, {
+    const verdict = await abuseVerdict(abuse, {
       ipHash: networkFingerprint(requestClientIp(request)),
       sessionFingerprint: sessionFingerprint(session.sid),
       sessionless: false,
       mediaResolve: isMediaResolutionPath(rawPath),
     }, nowSeconds)
+    if (!verdict) return withSession(abuseUnavailable())
     if (!verdict.ok) {
       return withSession(jsonError(429, 'Too many requests from this session. Try again shortly.', { 'Retry-After': String(verdict.retryAfterSeconds) }, 'rate-limited'))
     }
   }
   if (!healthExempt && ticket && session) {
-    const verdict = await checkAbuse(abuse, {
+    const verdict = await abuseVerdict(abuse, {
       ipHash: networkFingerprint(requestClientIp(request)),
       sessionFingerprint: sessionFingerprint(session.sid),
       sessionless: false,
       readOnly: true,
     }, nowSeconds)
+    if (!verdict) return withSession(abuseUnavailable())
     if (!verdict.ok) {
       return withSession(jsonError(429, 'Too many requests from this session. Try again shortly.', { 'Retry-After': String(verdict.retryAfterSeconds) }, 'rate-limited'))
     }
@@ -898,6 +1043,25 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
   // an extra header is harmless there and required when the deployment
   // enforces service auth uniformly. The credential never leaves the server.
   const sentServiceAuth = Boolean(serviceToken)
+  if (ticket && session) {
+    // Mint the upstream capability here, server-side only, after the
+    // session/network/ban checks: the ticket carries no browser-redeemable
+    // grant, so decoding it yields no direct-API access. Without a
+    // resolvable secret the fetch proceeds on Bearer plus the preserved
+    // query; production refuses to run that way (see
+    // verify-anisource-config), while development stays open.
+    try {
+      const token = normalizedPath.split('/').filter(Boolean).at(-1)
+      if (token) {
+        upstreamUrl.searchParams.set(
+          PLAYBACK_CAP_PARAM,
+          await mintPlaybackCapability(token, session.sid),
+        )
+      }
+    } catch (error) {
+      if (!(error instanceof PlaybackCapUnavailable)) throw error
+    }
+  }
 
   const headers = new Headers({ Accept: request.headers.get('accept') ?? 'application/json, */*;q=0.8' })
   if (request.method === 'GET') {

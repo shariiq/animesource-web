@@ -57,8 +57,17 @@ export type WatchErrorKind =
 /** Maximum manual stream retries after the initial stream resolution attempt. */
 export const MAX_STREAM_RETRIES = 2
 
-/** Maximum silent expired-ticket recoveries per manual server selection. */
+/**
+ * Silent expired-ticket recovery budget, measured as a burst window rather
+ * than a lifetime count. Gateway tickets (9 min) and API capabilities
+ * (10 min) expire on independent cycles across long playback, so isolated
+ * expiries spaced minutes apart must always renew: only failures clustering
+ * inside the window (instantly-dying links) exhaust the budget. The in-player
+ * Retry button re-picks the server and clears the window.
+ */
 export const MAX_EXPIRED_STREAM_REFRESHES = 3
+/** Failures older than this stop counting toward the refresh budget. */
+export const EXPIRED_STREAM_BURST_WINDOW_MS = 2 * 60_000
 
 export type SourceHealthStatus =
   | 'unknown'
@@ -373,7 +382,7 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
   const healthRetries = new Map<string, number>()
   const streamAttempts = new Map<string, number>()
   /** Silent expired-ticket recoveries per server; reset whenever the viewer picks (or retries) the server. */
-  const expiredStreamRefreshes = new Map<string, number>()
+  const expiredStreamRefreshes = new Map<string, number[]>()
 
   /** Starts an operation on a fresh generation, aborting everything in flight. */
   const begin = (): ScopeOperation => scope.restart()
@@ -617,10 +626,11 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
       if (!result.length) return
 
       streamAttempts.delete(attemptKey)
-      // The silent-refresh budget intentionally survives success: gateway
-      // tickets (55 min) and API capabilities (media 60 min, HLS keys as low
-      // as 10 min) expire on independent cycles, so one manual server pick
-      // covers repeated recoveries up to MAX_EXPIRED_STREAM_REFRESHES.
+      // The silent-refresh budget is burst-windowed, not lifetime-counted:
+      // gateway tickets (9 min) and API capabilities (10 min) expire on
+      // independent cycles across long playback, so one manual server pick
+      // covers repeated isolated recoveries while rapid failure bursts still
+      // trip the budget.
       setHealth(sourceId, 'healthy', null)
       const identity: PlaybackIdentity = {
         key: `${sourceId}:${episodeId}:${serverId}:${operation.id}`,
@@ -1058,13 +1068,17 @@ export function createWatchSession(options: WatchSessionOptions): WatchSession {
 
     if (expired) {
       const attemptKey = `${identity.sourceId}:${identity.episodeId}:${identity.serverId}`
-      const refreshes = expiredStreamRefreshes.get(attemptKey) ?? 0
-      // Cap silent recoveries so instantly-expiring links cannot refresh
-      // forever; the in-player Retry button resets the budget by re-picking
-      // the server, and each manual pick starts a fresh budget. Origin
-      // problems underneath take the client's overflow path on their own.
-      if (refreshes < MAX_EXPIRED_STREAM_REFRESHES) {
-        expiredStreamRefreshes.set(attemptKey, refreshes + 1)
+      const now = Date.now()
+      const recent = (expiredStreamRefreshes.get(attemptKey) ?? [])
+        .filter((timestamp) => now - timestamp < EXPIRED_STREAM_BURST_WINDOW_MS)
+      // Cap failure bursts so instantly-expiring links cannot refresh
+      // forever: up to three refreshes per window, then a surfaced error.
+      // Isolated expiries (ticket lifetimes apart) always renew, the
+      // in-player Retry button resets the budget by re-picking the server,
+      // and each manual pick starts a fresh budget. Origin problems
+      // underneath take the client's overflow path on their own.
+      if (recent.length < MAX_EXPIRED_STREAM_REFRESHES) {
+        expiredStreamRefreshes.set(attemptKey, [...recent, now])
         void chooseServer(identity.serverId, true)
         return true
       }

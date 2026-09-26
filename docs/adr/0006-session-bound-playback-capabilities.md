@@ -40,8 +40,8 @@ Per-instance bounded tracker (`cap fingerprint → distinct client IPs`, fingerp
 
 There is no enforcement flag: presence of secrets is the switch, and production without them refuses to start. Roll out by configuring secrets first, then deploying:
 
-1. Set `MEDIA_API_PLAYBACK_SECRETS` on the API deployment and `ANISOURCE_PLAYBACK_SECRETS` on the website, then deploy the API. Verification code ships inert until a request carries a `cap` parameter — unknown params are ignored, zero behavior change.
-2. Deploy the website (caps minted on direct-mode URLs; harmless extra query param until step 1 is live everywhere the site points at).
+1. Set `MEDIA_API_PLAYBACK_SECRETS` on the API deployment and `ANISOURCE_PLAYBACK_SECRETS` on the website, then deploy the API. Wherever the API has secrets configured, media requests require a capability — verification is live as soon as secrets exist on both sides, not inert. Unconfigured deployments keep bearer behavior for local dev only.
+2. Deploy the website (caps minted on direct-mode URLs and on ticket-mode asset fetches; an extra query param where unenforced is ignored).
 3. No step three: enforcement is live as soon as secrets exist on both sides. Stale pre-cap URLs die at registry TTL. Roll back by deploying the previous build, not by flipping a flag that no longer exists.
 
 ## Fixed interop vector (asserted by both suites)
@@ -56,7 +56,7 @@ v1.eyJleHAiOjE3NTAwMDA2MDAsImlhdCI6MTc1MDAwMDAwMCwia2lkIjoiZjkyYzQ4NTgiLCJzY29wZ
 
 ## Consequences
 
-- Direct mode keeps its speed (bytes still fly direct; one HMAC verify ≈ microseconds per request, no I/O on the hot path) and gains session binding: a copied URL without the victim's `HttpOnly` session context is useless, and replay is bounded by capability expiry rather than registry TTL.
+- Direct mode keeps its speed (bytes still fly direct; one HMAC verify ≈ microseconds per request, no I/O on the hot path) and gains session attribution: a copied URL plays until capability expiry for anyone holding it — the session binding is forensic (whose session minted it), not possessive (the API never sees the cookie). Every leak is small, short, attributable, and unscalable — the most any non-DRM system promises.
 - `ANISOURCE_PLAYBACK_SECRETS` / `MEDIA_API_PLAYBACK_SECRETS` join the secret-sync set with dual-accept rotation; Vercel env changes need redeploys.
 - 403s on media now have two authors (website ticket vs API capability); both sides keep distinct error kinds in logs.
 - Honest ceiling (unchanged): an authorized viewer can still save bytes inside the window or re-record. Every leak is small, short, attributable, and unscalable — the most any non-DRM system promises.

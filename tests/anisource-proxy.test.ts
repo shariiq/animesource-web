@@ -79,6 +79,31 @@ function applyUpstashCommand(command: unknown[], base64: boolean): unknown {
     return set.size > size ? 1 : 0
   }
   if (name === 'pfcount') return upstashHll.get(key)?.size ?? 0
+  if (name === 'eval') {
+    // Budget/telemetry scripts: ["EVAL", script, numkeys, key, ...args].
+    // Emulate the INCRBY + expire-if-first and PFADD + expire-if-first
+    // shapes honestly against the same maps; TTLs don't affect assertions.
+    // Arity tells the shapes apart: single-argument scripts increment by a
+    // literal 1 (the argument is the window), while the burn script carries
+    // its amount first. Reading the window as the step would brick budgets.
+    const evalKey = typeof command[3] === 'string' ? command[3] : ''
+    const evalArgs = command.slice(4)
+    if (typeof command[1] === 'string' && command[1].includes('PFADD')) {
+      const member = typeof evalArgs[0] === 'string' ? evalArgs[0] : JSON.stringify(evalArgs[0] ?? null)
+      let set = upstashHll.get(evalKey)
+      if (!set) {
+        set = new Set()
+        upstashHll.set(evalKey, set)
+      }
+      const size = set.size
+      set.add(member)
+      return set.size > size ? 1 : 0
+    }
+    const step = evalArgs.length === 1 || typeof evalArgs[0] !== 'number' ? 1 : evalArgs[0]
+    const count = (upstashCounters.get(evalKey) ?? 0) + step
+    upstashCounters.set(evalKey, count)
+    return count
+  }
   // Rate-limiter Lua scripts and anything else: allow.
   return [1, 240, 239, 9_999_999_999_999]
 }
@@ -607,6 +632,80 @@ describe('AniSource server boundary', () => {
     const { nonce } = await solvePowChallenge('test-challenge', 8)
     expect(countLeadingZeroBits(powAttemptHash('test-challenge', nonce))).toBeGreaterThanOrEqual(8)
     expect(countLeadingZeroBits(powAttemptHash('test-challenge', nonce + 1_000_000_007))).not.toBeGreaterThanOrEqual(256)
+  })
+
+  it('charges the exchange budget before parsing, so garbage still pays', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://upstash.test')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'redis-secret')
+    const upstreamFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const mocked = upstashAnswer(input, init)
+      if (mocked) return mocked
+      throw new Error(`Unexpected upstream fetch: ${input.toString()}`)
+    })
+    vi.stubGlobal('fetch', upstreamFetch)
+
+    const garbage = () => handleAniSourceRequest(new Request(`${APP_ORIGIN}/api/anisource/session`, {
+      method: 'POST',
+      headers: { Origin: APP_ORIGIN, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json' },
+      body: 'not-json{{{',
+    }))
+    // Five malformed attempts answer 400; the sixth trips the tight exchange
+    // budget with 429 — budgets run before the parser by design.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect((await garbage()).status).toBe(400)
+    }
+    const throttled = await garbage()
+    expect(throttled.status).toBe(429)
+    expect(throttled.headers.get('x-anisource-error-kind')).toBe('rate-limited')
+  })
+
+  it('fails closed with typed outages when Redis is unreachable', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://upstash.test')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'redis-secret')
+    const working = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const mocked = upstashAnswer(input, init)
+      if (mocked) return mocked
+      const target = new URL(input instanceof Request ? input.url : input.toString())
+      if (target.pathname.includes('/streams/')) {
+        return new Response(JSON.stringify([{
+          url: `${API_ORIGIN}/api/v1/proxy/hls/master`,
+          quality: 'Auto',
+          is_hls: true,
+          is_audio: false,
+        }]), { headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'video/mp4' } })
+    })
+    vi.stubGlobal('fetch', working)
+
+    const cookie = await verifiedSession()
+    const catalog = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/test/streams/episode?server_id=1', cookie))
+    expect(catalog.status).toBe(200)
+    const ticketPath = new URL(await ticketUrl(catalog), APP_ORIGIN).pathname
+
+    const redisDown = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const target = new URL(input instanceof Request ? input.url : input.toString())
+      if (target.host === 'upstash.test') throw new Error('redis unreachable')
+      return working(input, init)
+    })
+    vi.stubGlobal('fetch', redisDown)
+
+    // No bare 500s and no fail-open telemetry: every Redis-backed verdict
+    // answers 503 with the existing misconfigured kind.
+    for (const response of [
+      await handleAniSourceRequest(request('/api/anisource/challenge')),
+      await handleAniSourceRequest(new Request(`${APP_ORIGIN}/api/anisource/session`, {
+        method: 'POST',
+        headers: { Origin: APP_ORIGIN, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json' },
+        body: 'garbage',
+      })),
+      await handleAniSourceRequest(request('/api/anisource/api/v1/anime/sources')),
+      await handleAniSourceRequest(request('/api/anisource/api/v1/anime/sources', cookie)),
+      await handleAniSourceRequest(request(ticketPath, cookie)),
+    ]) {
+      expect(response.status).toBe(503)
+      expect(response.headers.get('x-anisource-error-kind')).toBe('misconfigured')
+    }
   })
 
   it('requires a live session for catalog routes, distinguishably', async () => {
@@ -1288,16 +1387,29 @@ describe('AniSource server boundary', () => {
     const legitEmbed = toBase64Url(JSON.stringify({ name: 'CatStream', src: 'https://embed.test/play?id=1&type=hls&source=catstream' }))
     const loopbackEmbed = toBase64Url(JSON.stringify({ name: 'CatStream', src: 'http://127.0.0.1:8080/admin' }))
     const metadataEmbed = toBase64Url(JSON.stringify({ name: 'CatStream', src: 'http://169.254.169.254/latest/meta-data/' }))
+    const decimalEmbed = toBase64Url(JSON.stringify({ name: 'CatStream', src: 'https://2130706433/cat-player/player' }))
+    const shortEmbed = toBase64Url(JSON.stringify({ name: 'CatStream', src: 'https://127.1/cat-player/player' }))
+    const v6Embed = toBase64Url(JSON.stringify({ name: 'CatStream', src: 'https://[fd00::1]/cat-player/player' }))
     const cases: Array<{ id: string; allowed: boolean }> = [
       { id: '1', allowed: true },
       { id: 'server-1', allowed: true },
       { id: legitEmbed, allowed: true },
+      { id: 'https://93.184.216.34/cat-player/player', allowed: true },
       { id: 'http://127.0.0.1:8080/admin', allowed: false },
       { id: 'http://10.0.0.5/collect', allowed: false },
+      // Parser-normalized numerics: decimal, short, and hex IPv4 forms.
+      { id: 'https://2130706433/cat-player/player', allowed: false },
+      { id: 'https://127.1/cat-player/player', allowed: false },
+      { id: 'https://0x7f.0.0.1/cat-player/player', allowed: false },
+      { id: 'https://[fd00::1]/cat-player/player', allowed: false },
+      { id: 'https://[::1]/cat-player/player', allowed: false },
       { id: 'file:///etc/passwd', allowed: false },
       { id: 'gopher://127.0.0.1:70/x', allowed: false },
       { id: loopbackEmbed, allowed: false },
       { id: metadataEmbed, allowed: false },
+      { id: decimalEmbed, allowed: false },
+      { id: shortEmbed, allowed: false },
+      { id: v6Embed, allowed: false },
       { id: 'has space', allowed: true },
       { id: 'back\\slash', allowed: false },
       { id: 'bell', allowed: false },
@@ -1503,13 +1615,21 @@ describe('AniSource server boundary', () => {
     const catalog = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/test/streams/episode?server_id=1', cookie))
     expect(catalog.status).toBe(200)
     const ticket = await ticketUrl(catalog)
+    // Tickets carry no browser-redeemable grant: decoding one must yield the
+    // upstream path and original query only, never an API capability.
+    const ticketPayload = JSON.parse(
+      Buffer.from(ticket.split('/').at(-1)!.split('.')[0]!, 'base64url').toString('utf8'),
+    ) as { q: string }
+    expect(ticketPayload.q).toBe('?sig=orig')
+    expect(ticketPayload.q).not.toContain('cap=')
     const media = await handleAniSourceRequest(request(new URL(ticket, APP_ORIGIN).pathname, cookie))
     expect(media.status).toBe(200)
 
     const mediaUpstream = seen.find(({ url }) => url.pathname.includes('/proxy/hls/master'))
     if (!mediaUpstream) throw new Error('Expected the asset ticket to fetch upstream media.')
-    // The preserved upstream signature survives, the session capability
-    // joins it, and the service credential authenticates the server call.
+    // The capability is minted server-side at fetch time: the preserved
+    // upstream signature survives, the fresh session capability joins it,
+    // and the service credential authenticates the server call.
     expect(mediaUpstream.url.searchParams.get('sig')).toBe('orig')
     expect(mediaUpstream.url.searchParams.get('cap')).toMatch(/^v1\./)
     expect(mediaUpstream.auth).toBe(`Bearer ${SERVICE_TOKEN}`)

@@ -27,6 +27,8 @@ const TEST_ATTESTATION = {
   screenHeight: 100,
   touchPoints: 0,
   mobile: false,
+  av: 1,
+  cw: null,
 }
 
 function fakeStore(): ChallengeStore & { claimed: string[] } {
@@ -182,6 +184,8 @@ describe('proof-of-work session issuance', () => {
       screenHeight: 100,
       touchPoints: 0,
       mobile: false,
+      av: 1,
+      cw: null,
     }
     expect(parseExchangeBody({ challenge: 'c', solution: { nonce: 3 }, attestation })).toMatchObject({ challenge: 'c' })
     for (const bad of [null, {}, { challenge: 'c' }, { challenge: 'c', solution: {} }, { challenge: 'c', solution: { nonce: -1 } }, {

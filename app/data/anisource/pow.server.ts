@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { Redis } from '@upstash/redis'
 import { serverSecret } from '../../lib/serverSecret'
+import { clientWeekId } from '../../lib/proofOfWork'
 import {
   attestationDigest,
   countLeadingZeroBits,
@@ -49,6 +50,8 @@ const attestationSchema = z.object({
   screenHeight: z.number().int().min(0).nullable(),
   touchPoints: z.number().int().min(0).nullable(),
   mobile: z.boolean().nullable(),
+  av: z.number().int().min(0).nullable(),
+  cw: z.string().regex(/^\d{4}W\d{2}$/).nullable(),
 }).strict()
 
 const exchangeBodySchema = z.object({
@@ -58,6 +61,18 @@ const exchangeBodySchema = z.object({
 }).strict()
 
 export type PowExchangeBody = z.infer<typeof exchangeBodySchema>
+
+/**
+ * Client-week freshness: a hardcoded attestation rots within weeks while the
+ * web client is always current. Null is allowed (unverifiable, not guilty);
+ * a present-but-stale week fails closed with upgrade semantics.
+ */
+export function clientWeekInWindow(week: string | null, nowMs: number): boolean {
+  if (week === null) return true
+  if (!/^\d{4}W\d{2}$/.test(week)) return false
+  const window = [-7, 0, 7].map((offsetDays) => clientWeekId(nowMs + offsetDays * 86_400_000))
+  return window.includes(week)
+}
 
 export function parseExchangeBody(raw: unknown): PowExchangeBody | null {
   const parsed = exchangeBodySchema.safeParse(raw)

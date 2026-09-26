@@ -150,6 +150,8 @@ export function powAttemptHash(challengeId: string, nonce: number): Uint8Array {
  */
 export function canonicalizeAttestation(attestation: PowAttestation): string {
   return JSON.stringify({
+    av: attestation.av,
+    cw: attestation.cw,
     hardwareConcurrency: attestation.hardwareConcurrency,
     languages: attestation.languages,
     mobile: attestation.mobile,
@@ -162,10 +164,15 @@ export function canonicalizeAttestation(attestation: PowAttestation): string {
   })
 }
 
+/** Full SHA-256 hex digest for fingerprints and key material. */
+export function sha256Hex(value: string): string {
+  const digest = sha256Digest(textEncoder.encode(value))
+  return [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
 /** Short binding digest: 128 bits, far past collision concern for this use, short enough to keep preimages small. */
 export function attestationDigest(attestation: PowAttestation): string {
-  const digest = sha256Digest(textEncoder.encode(canonicalizeAttestation(attestation)))
-  return [...digest.slice(0, 16)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+  return sha256Hex(canonicalizeAttestation(attestation)).slice(0, 32)
 }
 
 /**
@@ -197,6 +204,28 @@ export interface PowAttestation {
   screenHeight: number | null
   touchPoints: number | null
   mobile: boolean | null
+  /** Attestation schema version: lets the server retire shapes clients outgrow. */
+  av: number | null
+  /** Client ISO week (`YYYYWww`): forces third-party clients onto our release
+   *  cadence — a hardcoded copy rots within weeks, while our web client is
+   *  always current. Checked with a ±1 week window for clock skew. */
+  cw: string | null
+}
+
+/** Current attestation schema version. Bump when the shape changes. */
+export const ATTESTATION_VERSION = 1
+
+/**
+ * ISO week id (`YYYYWww`) in UTC. Shared by client stamping and server
+ * windowing so neither side can drift from the other.
+ */
+export function clientWeekId(nowMs: number): string {
+  const date = new Date(nowMs)
+  const day = (date.getUTCDay() + 6) % 7
+  const thursday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - day + 3))
+  const year = thursday.getUTCFullYear()
+  const week = Math.floor((thursday.getTime() - Date.UTC(year, 0, 4)) / (7 * 86_400_000)) + 1
+  return `${year}W${String(week).padStart(2, '0')}`
 }
 
 export function collectEnvironmentAttestation(): PowAttestation {
@@ -210,6 +239,8 @@ export function collectEnvironmentAttestation(): PowAttestation {
     screenHeight: null,
     touchPoints: null,
     mobile: null,
+    av: ATTESTATION_VERSION,
+    cw: clientWeekId(Date.now()),
   }
   try {
     if (typeof navigator === 'undefined') return empty
@@ -225,6 +256,8 @@ export function collectEnvironmentAttestation(): PowAttestation {
       screenHeight: typeof screen?.height === 'number' ? screen.height : null,
       touchPoints: typeof navigator.maxTouchPoints === 'number' ? navigator.maxTouchPoints : null,
       mobile: userAgent === null ? null : /Mobile|Android|iPhone|iPad/i.test(userAgent),
+      av: ATTESTATION_VERSION,
+      cw: clientWeekId(Date.now()),
     }
   } catch {
     return empty

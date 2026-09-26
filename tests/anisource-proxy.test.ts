@@ -26,18 +26,61 @@ function request(path: string, cookie?: string, origin = APP_ORIGIN): Request {
  * INCR counts per key (budgets trip), pipelines always allow (rate-limiter
  * success path, as the pre-existing tests require). Reset per test.
  */
-const upstashSets = new Map<string, string>()
+const upstashKv = new Map<string, string>()
 const upstashCounters = new Map<string, number>()
+const upstashHll = new Map<string, Set<string>>()
 
 function resetUpstashMock(): void {
-  upstashSets.clear()
+  upstashKv.clear()
   upstashCounters.clear()
+  upstashHll.clear()
 }
 
 function upstashKey(target: URL, body: unknown): string {
   if (Array.isArray(body) && typeof body[1] === 'string') return body[1]
   const segments = target.pathname.split('/').filter(Boolean)
   return segments.length > 1 ? segments.slice(1).join('/') : target.pathname
+}
+
+/** Apply one Redis command against the mock state; mirrors Upstash result shapes. */
+function applyUpstashCommand(command: unknown[], base64: boolean): unknown {
+  const name = typeof command[0] === 'string' ? command[0].toLowerCase() : ''
+  const key = typeof command[1] === 'string' ? command[1] : ''
+  const args = command.slice(2).map((entry) => String(entry).toLowerCase())
+  if (name === 'set') {
+    if (args.includes('nx') && upstashKv.has(key)) return null
+    upstashKv.set(key, typeof command[2] === 'string' ? command[2] : JSON.stringify(command[2] ?? null))
+    return 'OK'
+  }
+  if (name === 'get') {
+    // Data-returning commands arrive base64-encoded on the wire, exactly
+    // like production: a mock returning raw strings would decode into
+    // mojibake and hide real comparison bugs.
+    const stored = upstashKv.has(key) ? upstashKv.get(key) : null
+    if (stored === null || stored === undefined || !base64) return stored
+    return Buffer.from(stored, 'utf8').toString('base64')
+  }
+  if (name === 'incr' || name === 'incrby') {
+    const step = name === 'incrby' && typeof command[2] === 'number' ? command[2] : 1
+    const count = (upstashCounters.get(key) ?? 0) + step
+    upstashCounters.set(key, count)
+    return count
+  }
+  if (name === 'expire') return 1
+  if (name === 'pfadd') {
+    const member = typeof command[2] === 'string' ? command[2] : JSON.stringify(command[2] ?? null)
+    let set = upstashHll.get(key)
+    if (!set) {
+      set = new Set()
+      upstashHll.set(key, set)
+    }
+    const size = set.size
+    set.add(member)
+    return set.size > size ? 1 : 0
+  }
+  if (name === 'pfcount') return upstashHll.get(key)?.size ?? 0
+  // Rate-limiter Lua scripts and anything else: allow.
+  return [1, 240, 239, 9_999_999_999_999]
 }
 
 function upstashAnswer(input: RequestInfo | URL, init?: RequestInit): Response | null {
@@ -52,32 +95,24 @@ function upstashAnswer(input: RequestInfo | URL, init?: RequestInit): Response |
   } catch {
     body = null
   }
-  if (Array.isArray(body) && body.every((entry) => Array.isArray(entry))) {
-    // The client pipelines every command: inspect the inner command name.
-    const name = String(body[0]?.[0] ?? '').toLowerCase()
-    const innerKey = typeof body[0]?.[1] === 'string' ? body[0][1] : ''
-    if (name === 'set') {
-      if (upstashSets.has(innerKey)) return json([{ result: null }])
-      upstashSets.set(innerKey, '1')
-      return json([{ result: 'OK' }])
-    }
-    if (name === 'incr' || name === 'incrby') {
-      const step = name === 'incrby' && typeof body[0]?.[2] === 'number' ? body[0][2] : 1
-      const count = (upstashCounters.get(innerKey) ?? 0) + step
-      upstashCounters.set(innerKey, count)
-      return json([{ result: count }])
-    }
-    if (name === 'expire') return json([{ result: 1 }])
-    // Rate-limiter Lua scripts and anything else: allow.
-    return json([{ result: [1, 240, 239, 9_999_999_999_999] }])
+  let base64 = false
+  try {
+    base64 = new Headers(init?.headers).get('Upstash-Encoding') === 'base64'
+  } catch {
+    base64 = false
   }
-  const command = Array.isArray(body) && typeof body[0] === 'string'
-    ? body[0].toUpperCase()
-    : target.pathname.split('/').filter(Boolean)[0]?.toUpperCase() ?? ''
+  if (Array.isArray(body) && body.every((entry) => Array.isArray(entry))) {
+    // The client pipelines every command: one response entry per command.
+    return json(body.map((entry) => ({ result: applyUpstashCommand(entry as unknown[], base64) })))
+  }
+  if (Array.isArray(body)) {
+    return json({ result: applyUpstashCommand(body, base64) })
+  }
+  const command = target.pathname.split('/').filter(Boolean)[0]?.toUpperCase() ?? ''
   const key = upstashKey(target, body)
   if (command === 'SET') {
-    if (upstashSets.has(key)) return json({ result: null })
-    upstashSets.set(key, '1')
+    if (upstashKv.has(key)) return json({ result: null })
+    upstashKv.set(key, '1')
     return json({ result: 'OK' })
   }
   if (command === 'INCR' || command === 'INCRBY') {
@@ -105,6 +140,8 @@ const CLEAN_ATTESTATION: PowAttestation = {
   screenHeight: 1080,
   touchPoints: 0,
   mobile: false,
+  av: 1,
+  cw: null,
 }
 
 const HEADLESS_ATTESTATION: PowAttestation = {
@@ -117,6 +154,8 @@ const HEADLESS_ATTESTATION: PowAttestation = {
   screenHeight: 600,
   touchPoints: 0,
   mobile: false,
+  av: 1,
+  cw: null,
 }
 
 async function verifiedSession(attestation: PowAttestation = CLEAN_ATTESTATION): Promise<string> {
@@ -678,6 +717,52 @@ describe('AniSource server boundary', () => {
     expect(clean.headers.get('set-cookie')).toContain('Max-Age=7200')
   })
 
+  it('bans sessionless floods and honors standing denials', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://upstash.test')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'redis-secret')
+    const upstreamFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const mocked = upstashAnswer(input, init)
+      if (mocked) return mocked
+      throw new Error(`Unexpected upstream fetch: ${input.toString()}`)
+    })
+    vi.stubGlobal('fetch', upstreamFetch)
+
+    let denied = 0
+    for (let attempt = 0; attempt < 205; attempt += 1) {
+      const response = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/sources'))
+      if (response.status === 401) continue
+      expect(response.status).toBe(429)
+      expect(response.headers.get('x-anisource-error-kind')).toBe('rate-limited')
+      expect(response.headers.get('Retry-After')).toBe('900')
+      denied += 1
+    }
+    expect(denied).toBeGreaterThan(0)
+  })
+
+  it('denies banned sessions before touching upstream', async () => {
+    const { createHash } = await import('node:crypto')
+    const cookie = await verifiedSession()
+    const payload = JSON.parse(Buffer.from(cookie.split('=')[1]!.split('.')[0]!, 'base64url').toString('utf8')) as { sid: string }
+    const fingerprint = createHash('sha256').update(`abuse-session-v1:${payload.sid}`).digest('hex')
+    upstashKv.set(`abuse:denied:sid:${fingerprint}`, 'velocity')
+
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://upstash.test')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'redis-secret')
+    const upstreamFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const mocked = upstashAnswer(input, init)
+      if (mocked) return mocked
+      throw new Error(`Unexpected upstream fetch: ${input.toString()}`)
+    })
+    vi.stubGlobal('fetch', upstreamFetch)
+    const response = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/sources', cookie))
+    expect(response.status).toBe(429)
+    expect(response.headers.get('x-anisource-error-kind')).toBe('rate-limited')
+    expect(response.headers.get('Retry-After')).toBe('1800')
+    for (const [input] of upstreamFetch.mock.calls) {
+      expect(new URL(input instanceof Request ? input.url : input.toString()).host).toBe('upstash.test')
+    }
+  })
+
   it('rejects exchanges without a well-formed attestation', async () => {
     const body = await solvedExchangeBody(CLEAN_ATTESTATION)
     const missing = await handleAniSourceRequest(new Request(`${APP_ORIGIN}/api/anisource/session`, {
@@ -986,12 +1071,19 @@ describe('AniSource server boundary', () => {
   it('serves session-bound media without paying the distributed limiter round trips', async () => {
     const ticketPath = '/api/v1/proxy/hls/master-token'
     let upstashCalls = 0
-    const upstreamFetch = vi.fn(async (input: RequestInfo | URL) => {
+    const upstreamFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const target = input instanceof Request ? input.url : input.toString()
       if (target.startsWith('https://upstash.test')) {
-        // A well-formed allow response keeps the limiter on its success path;
-        // the assertion below is that media never calls it at all.
-        upstashCalls += 1
+        // Count only pipelined limiter calls: abuse telemetry uses single
+        // commands on the same host, which this test does not budget.
+        let pipelined = false
+        try {
+          const body = typeof init?.body === 'string' ? JSON.parse(init.body) : null
+          pipelined = Array.isArray(body) && body.every((entry) => Array.isArray(entry))
+        } catch {
+          pipelined = false
+        }
+        if (pipelined) upstashCalls += 1
         return new Response(JSON.stringify([{ result: [1, 240, 239, 9_999_999_999_999] }]), {
           headers: { 'Content-Type': 'application/json' },
         })

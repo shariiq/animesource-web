@@ -33,6 +33,8 @@ const TEST_ATTESTATION: PowAttestation = {
   screenHeight: 100,
   touchPoints: 0,
   mobile: false,
+  av: 1,
+  cw: null,
 }
 
 describe('proof-of-work primitives', () => {
@@ -147,6 +149,8 @@ describe('proof-of-work primitives', () => {
       screenHeight: 1080,
       touchPoints: 0,
       mobile: false,
+      av: 1,
+      cw: null,
     }
     expect(scoreAttestation(desktop).score).toBe(0)
 
@@ -160,6 +164,8 @@ describe('proof-of-work primitives', () => {
       screenHeight: 852,
       touchPoints: 5,
       mobile: true,
+      av: 1,
+      cw: null,
     }
     expect(scoreAttestation(iphone).score).toBe(0)
 
@@ -176,6 +182,8 @@ describe('proof-of-work primitives', () => {
       screenHeight: 600,
       touchPoints: 0,
       mobile: false,
+      av: 1,
+      cw: null,
     }
     const flagged = scoreAttestation(headless)
     expect(flagged.score).toBeGreaterThanOrEqual(SUSPICIOUS_ATTESTATION_SCORE)
@@ -193,6 +201,8 @@ describe('proof-of-work primitives', () => {
       screenHeight: 720,
       touchPoints: 0,
       mobile: false,
+      av: 1,
+      cw: null,
     }
     expect(scoreAttestation(stealth).score).toBe(0)
   })
@@ -200,7 +210,7 @@ describe('proof-of-work primitives', () => {
   it('collects attestation without throwing on sparse environments', () => {
     const attestation = collectEnvironmentAttestation()
     expect(Object.keys(attestation).sort()).toEqual(
-      ['hardwareConcurrency', 'languages', 'mobile', 'plugins', 'screenHeight', 'screenWidth', 'touchPoints', 'userAgent', 'webdriver'].sort(),
+      ['av', 'cw', 'hardwareConcurrency', 'languages', 'mobile', 'plugins', 'screenHeight', 'screenWidth', 'touchPoints', 'userAgent', 'webdriver'].sort(),
     )
   })
 

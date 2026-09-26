@@ -4,6 +4,7 @@ import { z } from 'zod'
 import apiUrls from '../../../config/api-urls.json'
 import { serverSecret } from '../../lib/serverSecret'
 import { scoreAttestation, scoreRequestFingerprint, SUSPICIOUS_ATTESTATION_SCORE } from '../../lib/proofOfWork'
+import { cachedAbuseStore, checkAbuse, isNetworkDenied, networkFingerprint, sessionFingerprint } from './abuse.server'
 import { PlaybackCapUnavailable, appendPlaybackCapability, mintPlaybackCapability } from './capability.server'
 import {
   POW_CHALLENGE_BUDGET_PER_MINUTE,
@@ -11,6 +12,7 @@ import {
   POW_SHORT_SESSION_TTL_SECONDS,
   POW_SUSPICIOUS_BURN_AMOUNT,
   challengeStore,
+  clientWeekInWindow,
   escalatedDifficulty,
   mintPowChallenge,
   parseExchangeBody,
@@ -527,6 +529,9 @@ async function servePowChallenge(request: Request): Promise<Response> {
     return jsonError(503, 'AniSource verification is not configured.', {}, 'misconfigured')
   }
   const ip = requestClientIp(request)
+  if (await isNetworkDenied(cachedAbuseStore(), networkFingerprint(ip))) {
+    return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '900' }, 'rate-limited')
+  }
   const budget = store ? await store.hitBudget(`challenge:${ip ?? 'unknown'}`, POW_CHALLENGE_BUDGET_PER_MINUTE, 60) : { allowed: true, count: 0 }
   if (store && !budget.allowed) {
     return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '60' }, 'rate-limited')
@@ -550,11 +555,17 @@ async function exchangePowSession(request: Request): Promise<Response> {
     return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
   }
   if (!body) return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
+  if (!clientWeekInWindow(body.attestation.cw, Date.now())) {
+    return jsonError(426, 'Client is outdated. Reload to update.', {}, 'invalid')
+  }
   const store = challengeStore()
   if (!store && process.env.NODE_ENV === 'production') {
     return jsonError(503, 'AniSource verification is not configured.', {}, 'misconfigured')
   }
   const ip = requestClientIp(request)
+  if (await isNetworkDenied(cachedAbuseStore(), networkFingerprint(ip))) {
+    return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '900' }, 'rate-limited')
+  }
   const budget = store ? await store.hitBudget(`exchange:${ip ?? 'unknown'}`, POW_EXCHANGE_BUDGET_PER_MINUTE, 60) : { allowed: true, count: 0 }
   if (store && !budget.allowed) {
     return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '60' }, 'rate-limited')
@@ -631,8 +642,21 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
   // browser client must learn it has to verify before retrying.
   const healthExempt = rawPath === '/health' || rawPath === '/api/v1/health'
   const session = await readSession(request, signingKey)
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const abuse = cachedAbuseStore()
   if (!healthExempt) {
     if (!session) {
+      // Sessionless floods are scanner-shaped: legitimate clients 401 once
+      // per session, then verify. Count every one; the tripwire below turns
+      // persistent probing into a short network ban.
+      const verdict = await checkAbuse(abuse, {
+        ipHash: networkFingerprint(requestClientIp(request)),
+        sessionFingerprint: null,
+        sessionless: true,
+      }, nowSeconds)
+      if (!verdict.ok) {
+        return jsonError(429, 'Too many verification attempts from this network. Try again shortly.', { 'Retry-After': String(verdict.retryAfterSeconds) }, 'rate-limited')
+      }
       return jsonError(401, 'Browser verification is required before using AniSource.', {}, 'session-required')
     }
     if (
@@ -664,6 +688,22 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
   } else {
     path = rawPath
     search = url.search
+  }
+
+  // Abuse telemetry runs on catalog traffic: velocity, sharing, and standing
+  // denials. Asset tickets stay Redis-free by design (per the limiter note
+  // below), so bans take effect when banned sessions re-resolve metadata —
+  // at most a ticket lifetime later. Sampled writes keep the hot path cheap;
+  // denials always read.
+  if (!healthExempt && !ticket && session) {
+    const verdict = await checkAbuse(abuse, {
+      ipHash: networkFingerprint(requestClientIp(request)),
+      sessionFingerprint: sessionFingerprint(session.sid),
+      sessionless: false,
+    }, nowSeconds)
+    if (!verdict.ok) {
+      return withSession(jsonError(429, 'Too many requests from this session. Try again shortly.', { 'Retry-After': String(verdict.retryAfterSeconds) }, 'rate-limited'))
+    }
   }
 
   // Media tickets are unguessable session-bound capabilities and the API applies

@@ -136,6 +136,9 @@ const sessionResponseSchema = z.object({ ok: z.literal(true) })
 /** In-flight verification shared by concurrent requests; reset after settling. */
 let sessionExchange: Promise<void> | null = null
 
+/** Reloaded once when the server reports a stale client; module state resets on navigation anyway. */
+let reloadedForStaleClient = false
+
 async function runPowExchange(
   fetch: AniSourceTransport['fetch'],
   base: string,
@@ -190,6 +193,23 @@ async function runPowExchange(
       }
       return
     } catch (error) {
+      // Stale cached JavaScript cannot fix itself by retrying: reload once
+      // for a fresh bundle, then let any repeat failure surface normally.
+      if (
+        error instanceof AniSourceError &&
+        error.status === 426 &&
+        !reloadedForStaleClient &&
+        typeof window !== 'undefined' &&
+        typeof window.location?.reload === 'function'
+      ) {
+        reloadedForStaleClient = true
+        try {
+          window.location.reload()
+          await new Promise<never>(() => {})
+        } catch {
+          // Reload unavailable (tests, exotic embeds): fall through and throw.
+        }
+      }
       // A stale or spent challenge fails 'invalid': solve once more against a
       // fresh challenge before surfacing the failure.
       if (attempt === 0 && error instanceof AniSourceError && error.kind === 'invalid') continue

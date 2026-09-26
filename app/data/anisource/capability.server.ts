@@ -15,7 +15,7 @@ export const PLAYBACK_CAP_PURPOSE = 'playback-cap-v1'
 export const PLAYBACK_CAP_PARAM = 'cap'
 export const PLAYBACK_CAP_LEEWAY_SECONDS = 60
 
-const DEFAULT_CAP_TTL_SECONDS = 900
+const DEFAULT_CAP_TTL_SECONDS = 600
 const MIN_SECRET_BYTES = 32
 
 const textEncoder = new TextEncoder()

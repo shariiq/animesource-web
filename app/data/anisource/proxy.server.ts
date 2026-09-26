@@ -2,9 +2,24 @@ import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
 import { z } from 'zod'
 import apiUrls from '../../../config/api-urls.json'
-import { REQUEST_NONCE_HEADER, verifyRequestNonce } from '../../lib/requestNonce'
 import { serverSecret } from '../../lib/serverSecret'
-import { PlaybackCapUnavailable, appendPlaybackCapability, mintPlaybackCapability } from './capability.server'
+import { scoreAttestation, scoreRequestFingerprint, SUSPICIOUS_ATTESTATION_SCORE } from '../../lib/proofOfWork'
+import { type AbuseSignal, type AbuseStore, type AbuseVerdict, cachedAbuseStore, checkAbuse, isNetworkDenied, networkFingerprint, sessionFingerprint } from './abuse.server'
+import { PlaybackCapUnavailable, PLAYBACK_CAP_PARAM, appendPlaybackCapability, mintPlaybackCapability } from './capability.server'
+import {
+  POW_CHALLENGE_BUDGET_PER_MINUTE,
+  POW_EXCHANGE_BUDGET_PER_MINUTE,
+  POW_SHORT_SESSION_TTL_SECONDS,
+  POW_SUSPICIOUS_BURN_AMOUNT,
+  attestationVersionCurrent,
+  challengeStore,
+  clientWeekInWindow,
+  escalatedDifficulty,
+  mintPowChallenge,
+  parseExchangeBody,
+  powDifficulty,
+  redeemPowChallenge,
+} from './pow.server'
 import {
   anisourceMangaSchema,
   chapterPageSchema,
@@ -20,16 +35,30 @@ import {
 
 const API_PREFIX = '/api/anisource'
 const FALLBACK_PREFIX = '/fallback'
-const SESSION_LIFETIME_SECONDS = 12 * 60 * 60
-// Ticket lifetime sits just under the API media capability TTL (60 min) so a
-// gateway expiry always fires first and its refresh pulls fresh API URLs too.
-// API HLS key resources may expire sooner (10 min); those surface as upstream
-// 401/403/410 on the media fetch and ride the same expired-link refresh path.
-const ASSET_TICKET_LIFETIME_SECONDS = 55 * 60
+// Short sessions bound the value of one solved puzzle: a harvested session
+// stops working within two hours, so bulk abuse must keep solving.
+const SESSION_LIFETIME_SECONDS = 2 * 60 * 60
+// Ticket lifetime nests inside the playback capability TTL (600 s) with
+// margin to spare: gateway expiry always fires first and its refresh pulls
+// fresh API URLs and a fresh capability too. API HLS key resources may
+// expire sooner (10 min); those surface as upstream 401/403/410 on the media
+// fetch and ride the same expired-link refresh path.
+const ASSET_TICKET_LIFETIME_SECONDS = 9 * 60
 const MAX_PROXY_BODY_BYTES = 8 * 1024 * 1024
 const textEncoder = new TextEncoder()
 
-const sessionSchema = z.object({ sid: z.string().regex(/^[A-Za-z0-9_-]{43}$/), exp: z.number().int() })
+const sessionSchema = z.object({
+  sid: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  exp: z.number().int(),
+  // Automation score at mint. Strict: sessions minted before scores existed
+  // do not verify, so a deploy cleanly retires them within one lifetime.
+  scr: z.number().int().min(0),
+  // Issuing-network fingerprint (opaque hash, see abuse.server). Required:
+  // pre-binding sessions fail verification and re-verify transparently, so
+  // no grandfathering logic ships. Metadata stays lenient across hops (the
+  // check runs on media paths only); media re-verifies on drift.
+  net: z.string().regex(/^[0-9a-f]{64}$/),
+})
 const identifierSchema = z.string().min(1).max(512).refine((value) => {
   try {
     const decoded = decodeURIComponent(value)
@@ -44,6 +73,173 @@ const identifierSchema = z.string().min(1).max(512).refine((value) => {
 const emptyQuerySchema = z.object({}).strict()
 const searchQuerySchema = z.object({ q: z.string().max(512), page: z.coerce.number().int().positive() }).strict()
 const streamQuerySchema = z.object({ server_id: z.string().min(1).max(512) }).strict()
+
+/**
+ * Server identifier guard: `server_id` is caller-controlled and replayed to
+ * the upstream API verbatim, so the gateway refuses values shaped like an
+ * internal-network pivot before they leave this deployment. Legitimate IDs
+ * are opaque tokens or base64 JSON carrying a public embed host (for
+ * example KickAssAnime's `{name, src: https://embed.host/...}`); anything
+ * embedding control bytes, non-HTTP fetch schemes, or loopback / private /
+ * link-local / metadata hosts is rejected as an unknown route (404), never
+ * with a message naming the rule. Public-host fetching stays upstream
+ * territory: the API must allowlist embed hosts there, since Sources
+ * legitimately resolve third-party hosts by design.
+ */
+function tryBase64UrlDecodeToText(value: string): string | null {
+  if (!/^[A-Za-z0-9-_]+={0,2}$/.test(value) || value.length % 4 === 1 || value.length > 1024) return null
+  try {
+    const binary = atob(value.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - value.length % 4) % 4))
+    if (!binary) return null
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    if (!/^[\x20-\x7E\s]*$/.test(text)) return null
+    return text
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Hosts of embedded absolute URLs, normalized with the URL parser before
+ * classification. WHATWG normalization collapses decimal/octal/hex and
+ * short-form IPv4 (`2130706433`, `127.1`, `0x7f.0.0.1`) to dotted quads,
+ * lowercases names, and separates userinfo and ports — so string-splitting
+ * tricks stop working. Null means an embedded URL failed to parse, which is
+ * itself a refusal: legitimate values are clean URLs.
+ */
+function normalizedEmbeddedHosts(text: string): string[] | null {
+  const hosts: string[] = []
+  for (const match of text.matchAll(/https?:\/\/[^/?#\s]+/gi)) {
+    // The authority pattern can swallow trailing JSON/text punctuation
+    // (`",`, `)`, `]`); strip it before parsing — no legitimate host ends
+    // with these characters.
+    const candidate = match[0].replace(/[`"'.,;)\]}]+$/, '')
+    try {
+      hosts.push(new URL(candidate).hostname.replace(/\.+$/, ''))
+    } catch {
+      return null
+    }
+  }
+  return hosts
+}
+
+/** Expand an IPv6 literal (no brackets) to 16 bytes, or null if malformed. */
+function expandIpv6(host: string): number[] | null {
+  const halves = host.split('::')
+  if (halves.length > 2) return null
+  const parseHextets = (part: string): number[] | null => {
+    if (part === '') return []
+    const out: number[] = []
+    for (const piece of part.split(':')) {
+      if (piece.includes('.')) {
+        // Embedded dotted quad tail (including ::ffff:127.0.0.1).
+        const quads = piece.split('.')
+        if (quads.length !== 4) return null
+        const bytes = quads.map(Number)
+        if (bytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) return null
+        out.push((bytes[0]! << 8) | bytes[1]!, (bytes[2]! << 8) | bytes[3]!)
+      } else {
+        if (!/^[0-9a-fA-F]{1,4}$/.test(piece)) return null
+        out.push(Number.parseInt(piece, 16))
+      }
+    }
+    return out
+  }
+  const head = parseHextets(halves[0] ?? '')
+  const tail = parseHextets(halves[1] ?? '')
+  if (!head || !tail) return null
+  // Each 16-bit group is one slot; an embedded quad consumes two.
+  if (halves.length === 1) {
+    return head.length === 8 ? head.flatMap((group) => [group >> 8, group & 0xff]) : null
+  }
+  if (head.length + tail.length > 7) return null
+  const middle = new Array(8 - head.length - tail.length).fill(0)
+  return [...head, ...middle, ...tail].flatMap((group) => [group >> 8, group & 0xff])
+}
+
+/** True when 16 IPv6 bytes are NOT globally routable (or malformed input). */
+function isNonPublicIpv6(bytes: number[]): boolean {
+  if (bytes.length !== 16) return true
+  const allZero = bytes.every((byte) => byte === 0)
+  if (allZero) return true
+  if (bytes.slice(0, 15).every((byte) => byte === 0) && bytes[15] === 1) return true
+  if (bytes[0] === 0xff) return true
+  if (bytes[0] === 0xfe && (bytes[1]! & 0xc0) === 0x80) return true
+  if ((bytes[0]! & 0xfe) === 0xfc) return true
+  if (
+    bytes.slice(0, 10).every((byte) => byte === 0) &&
+    bytes[10] === 0xff && bytes[11] === 0xff
+  ) {
+    // IPv4-mapped: classify the embedded quad recursively.
+    return isNonPublicIpv4([bytes[12]!, bytes[13]!, bytes[14]!, bytes[15]!])
+  }
+  if (
+    bytes[0] === 0x20 && bytes[1] === 0x01 && bytes[2] === 0x0d && bytes[3] === 0xb8
+  ) return true
+  return false
+}
+
+function isNonPublicIpv4([a = 0, b = 0, c = 0, d = 0]: number[]): boolean {
+  if ([a, b, c, d].some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true
+  if (a === 127 || a === 10) return true
+  if (a === 172 && b >= 16 && b <= 31) return true
+  if (a === 192 && b === 168) return true
+  if (a === 169 && b === 254) return true
+  if (a === 0) return true
+  return false
+}
+
+function isNonPublicHost(host: string): boolean {
+  const bare = host.toLowerCase().trim().replace(/\.+$/, '')
+  if (!bare) return true
+  if (bare === 'localhost' || bare.endsWith('.localhost') || bare === '0.0.0.0') return true
+  if (bare === 'metadata.google.internal' || bare === 'metadata.google.com' || bare === 'instance-data') return true
+  if (bare.startsWith('[') && bare.endsWith(']')) {
+    const expanded = expandIpv6(bare.slice(1, -1))
+    return expanded === null || isNonPublicIpv6(expanded)
+  }
+  // Post-normalization IPv4 is always four decimal groups; anything else
+  // with a colon is an unbracketed IPv6 form and refused, since no
+  // legitimate embed target uses one.
+  if (bare.includes(':')) return true
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(bare)
+  if (ipv4) return isNonPublicIpv4(ipv4.slice(1).map(Number))
+  return false
+}
+
+export function isSafeServerId(value: string): boolean {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 512) return false
+  // Control bytes and backslashes never appear in legitimate opaque IDs or
+  // base64 JSON. Checked by code point (not a control-character regex) so
+  // the pattern stays lint-clean.
+  for (const character of value) {
+    const code = character.charCodeAt(0)
+    if (code < 32 || code === 127 || code === 92) return false
+  }
+  const lower = value.toLowerCase()
+  for (const scheme of ['file:', 'gopher:', 'ftp:', 'dict:', 'ldap:', 'ldaps:', 'jar:', 'tftp:', 'sftp:', 'ssh:', 'telnet:', 'javascript:', 'data:', 'vbscript:']) {
+    if (lower.includes(scheme)) return false
+  }
+  const texts = [value]
+  const decoded = tryBase64UrlDecodeToText(value)
+  if (decoded) texts.push(decoded)
+  for (const text of texts) {
+    const hosts = normalizedEmbeddedHosts(text)
+    if (hosts === null) return false
+    for (const host of hosts) {
+      if (isNonPublicHost(host)) return false
+    }
+    const textLower = text.toLowerCase()
+    if (/\b127\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/.test(textLower)) return false
+    if (textLower.includes('localhost')) return false
+    if (/\b169\.254\.\d{1,3}\.\d{1,3}\b/.test(textLower)) return false
+    if (/\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/.test(textLower)) return false
+    if (/\b192\.168\.\d{1,3}\.\d{1,3}\b/.test(textLower)) return false
+    if (/\b172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}\b/.test(textLower)) return false
+  }
+  return true
+}
 const ticketSchema = z.object({
   v: z.literal(1),
   p: z.string().min(1).max(4096),
@@ -116,16 +312,42 @@ async function readSession(request: Request, key: CryptoKey): Promise<Session | 
   }
 }
 
-async function createSession(key: CryptoKey): Promise<{ session: Session; cookie: string }> {
-  const session = {
+async function createSession(key: CryptoKey, ttlSeconds: number, score: number, netHash: string): Promise<{ session: Session; cookie: string }> {
+  const session: Session = {
     sid: encodeBase64Url(crypto.getRandomValues(new Uint8Array(32))),
-    exp: Math.floor(Date.now() / 1000) + SESSION_LIFETIME_SECONDS,
+    exp: Math.floor(Date.now() / 1000) + ttlSeconds,
+    scr: Math.max(0, Math.trunc(score)),
+    net: netHash,
   }
   const payload = encodeBase64Url(textEncoder.encode(JSON.stringify(session)))
   const signature = await sign(payload, 'session-v1', key)
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
-  const cookie = `${cookieName()}=${payload}.${signature}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_LIFETIME_SECONDS}${secure}`
+  const cookie = `${cookieName()}=${payload}.${signature}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${ttlSeconds}${secure}`
   return { session, cookie }
+}
+
+/**
+ * Media-resolution operations: the only catalog paths that hand out playable
+ * bytes or page images. Gating here (not on metadata lists) keeps discovery,
+ * search, and detail pages working for every client while headless playback
+ * dies at the point of use, in both proxied and direct-media modes.
+ */
+function isMediaResolutionPath(path: string): boolean {
+  return (
+    /^\/api\/v1\/anime\/[^/]+\/streams\/[^/]+$/.test(path) ||
+    /^\/api\/v1\/manga\/[^/]+\/pages\/[^/]+$/.test(path)
+  )
+}
+
+/**
+ * Forged-stack ban: the request stack itself looks automated. Score 4+
+ * means a Chromium claim with no browser headers, or a known automation
+ * user agent with sloppy metadata — shapes no legitimate browser produces
+ * (stock Chrome/Firefox/Safari score 0–2). Single signals stay priced,
+ * never banned; only this conjunction of independent misses ends playback.
+ */
+function mediaStackForged(request: Request): boolean {
+  return scoreRequestFingerprint(request.headers).score >= 4
 }
 
 function isSameOriginRequest(request: Request): boolean {
@@ -144,7 +366,7 @@ function isSameOriginRequest(request: Request): boolean {
   }
 }
 
-function requestClientIp(request: Request): string | null {
+export function requestClientIp(request: Request): string | null {
   const forwarded = process.env.NODE_ENV === 'production'
     ? request.headers.get('x-vercel-forwarded-for')
     : request.headers.get('x-vercel-forwarded-for') ?? request.headers.get('x-forwarded-for')
@@ -196,7 +418,7 @@ function cachedHmacKey(value: string): Promise<CryptoKey> {
   return pending
 }
 
-async function checkRateLimits(request: Request, session: Session, key: CryptoKey): Promise<Response | null> {
+async function checkRateLimits(request: Request, session: Session | null, key: CryptoKey): Promise<Response | null> {
   const limiters = getLimiters()
   if (!limiters) {
     return process.env.NODE_ENV === 'production'
@@ -206,12 +428,17 @@ async function checkRateLimits(request: Request, session: Session, key: CryptoKe
   const ip = requestClientIp(request)
   if (!ip) return jsonError(503, 'Client rate limiting is unavailable.', {}, 'misconfigured')
   try {
-    const [bySession, byIp] = await Promise.all([
-      limiters.session.limit(await sign(session.sid, 'limit-session-v1', key)),
-      limiters.ip.limit(await sign(ip, 'limit-ip-v1', key)),
-    ])
-    if (bySession.success && byIp.success) return null
-    const reset = Math.min(...[bySession, byIp].filter((result) => !result.success).map((result) => result.reset))
+    // Sessionless health checks pay only the IP budget: there is no session
+    // to charge, and minting one just to limit it would reopen session
+    // issuance without proof-of-work.
+    const checks = session
+      ? await Promise.all([
+        limiters.session.limit(await sign(session.sid, 'limit-session-v1', key)),
+        limiters.ip.limit(await sign(ip, 'limit-ip-v1', key)),
+      ])
+      : [await limiters.ip.limit(await sign(ip, 'limit-ip-v1', key))]
+    if (checks.every((result) => result.success)) return null
+    const reset = Math.min(...checks.filter((result) => !result.success).map((result) => result.reset))
     return jsonError(429, 'Too many AniSource requests. Try again shortly.', {
       'Retry-After': String(Math.max(1, Math.ceil((reset - Date.now()) / 1000))),
     }, 'rate-limited')
@@ -233,12 +460,35 @@ function jsonError(status: number, detail: string, headers: HeadersInit = {}, ki
 }
 
 /**
- * Single source for the camouflage response: unknown routes, failed
- * same-origin checks, and missing request nonces all answer identically so
- * probers cannot tell the three cases apart.
+ * Single source for the camouflage response: unknown routes and failed
+ * same-origin checks all answer identically so probers cannot tell the cases
+ * apart. Sessionless catalog calls deliberately do NOT use this (401
+ * session-required): the client must learn it has to verify before retrying.
  */
 function hiddenRoute(): Response {
   return jsonError(404, 'AniSource route not found.', {}, 'invalid')
+}
+
+/**
+ * Abuse verdict with Redis failures translated: a telemetry outage must
+ * never surface as a bare 500 or, worse, fail open into a blind abuse
+ * window. Null means the store was unreachable — callers answer 503, the
+ * same fail-closed posture as the rate limiter.
+ */
+async function abuseVerdict(
+  store: AbuseStore | null,
+  signal: AbuseSignal,
+  nowSeconds: number,
+): Promise<AbuseVerdict | null> {
+  try {
+    return await checkAbuse(store, signal, nowSeconds)
+  } catch {
+    return null
+  }
+}
+
+function abuseUnavailable(): Response {
+  return jsonError(503, 'AniSource request protection is temporarily unavailable.', {}, 'misconfigured')
 }
 
 function apiBase(): URL | null {
@@ -302,7 +552,10 @@ function responseSchema(path: string, search: string): z.ZodType | null {
   }
   if (!itemId) return null
   if (catalog === 'anime' && operation === 'streams') {
-    return streamQuerySchema.safeParse(query).success ? streamSchema.array() : null
+    if (!streamQuerySchema.safeParse(query).success) return null
+    // server_id replays upstream verbatim: refuse internal-pivot shapes here.
+    if (typeof query.server_id !== 'string' || !isSafeServerId(query.server_id)) return null
+    return streamSchema.array()
   }
   if (!emptyQuerySchema.safeParse(query).success) return null
   if (catalog === 'manga') {
@@ -353,7 +606,7 @@ async function verifyTicket(value: string, session: Session, key: CryptoKey): Pr
   }
 }
 
-async function rewriteApiUrl(value: string, base: URL, session: Session, key: CryptoKey, scope: string, viaFallback = false): Promise<string> {
+async function rewriteApiUrl(value: string, base: URL, session: Session | null, key: CryptoKey, scope: string, viaFallback = false): Promise<string> {
   const absoluteUrl = /^(?:https?:)?\/\//i.test(value)
   if (!absoluteUrl && !/^\/?api\/v1(?:\/|$)/i.test(value)) return value
   let url: URL
@@ -367,6 +620,10 @@ async function rewriteApiUrl(value: string, base: URL, session: Session, key: Cr
   const basePath = base.pathname.replace(/\/$/, '')
   const path = basePath && url.pathname.startsWith(`${basePath}/`) ? url.pathname.slice(basePath.length) : url.pathname
   if (isMediaPath(path)) {
+    // Media URLs are always session-bound (tickets or capabilities): a
+    // sessionless response (health) never contains one, so reaching here
+    // without a session is an upstream shape violation, not a user state.
+    if (!session) throw new Error('AniSource session is required to sign media URLs.')
     if (directMediaEnabled()) {
       // Direct mode hands the browser absolute API URLs, so each one carries
       // a session-bound capability (ADR 0006). Without a resolvable secret
@@ -376,6 +633,12 @@ async function rewriteApiUrl(value: string, base: URL, session: Session, key: Cr
       const cap = await mintPlaybackCapability(token, session.sid)
       return appendPlaybackCapability(url.toString(), cap)
     }
+    // Ticket mode stores only the upstream path and its original signed query:
+    // the session-bound API capability is minted server-side at fetch time
+    // (see the asset branch below), so no browser-redeemable grant ever sits
+    // in readable ticket JSON. Without a resolvable secret the fetch still
+    // proceeds on Bearer plus the preserved query; production refuses to run
+    // that way (see verify-anisource-config).
     const ticket = await issueTicket(path, url.search, scope, session, key, viaFallback)
     return `${API_PREFIX}/asset/${ticket}`
   }
@@ -384,7 +647,7 @@ async function rewriteApiUrl(value: string, base: URL, session: Session, key: Cr
   return `${path}${url.search}${url.hash}`
 }
 
-async function rewriteJson(value: unknown, base: URL, session: Session, key: CryptoKey, scope: string, viaFallback = false): Promise<unknown> {
+async function rewriteJson(value: unknown, base: URL, session: Session | null, key: CryptoKey, scope: string, viaFallback = false): Promise<unknown> {
   if (typeof value === 'string') return rewriteApiUrl(value, base, session, key, scope, viaFallback)
   if (Array.isArray(value)) return Promise.all(value.map((item) => rewriteJson(item, base, session, key, scope, viaFallback)))
   if (value && typeof value === 'object') {
@@ -396,7 +659,7 @@ async function rewriteJson(value: unknown, base: URL, session: Session, key: Cry
   return value
 }
 
-async function rewriteManifest(content: string, base: URL, session: Session, key: CryptoKey, scope: string, viaFallback = false): Promise<string> {
+async function rewriteManifest(content: string, base: URL, session: Session | null, key: CryptoKey, scope: string, viaFallback = false): Promise<string> {
   const rewrite = (value: string) => rewriteApiUrl(value, base, session, key, scope, viaFallback)
   const attributes = await Promise.all([...content.matchAll(/URI=(['"])([^'"]+)\1/g)].map(async (match) => ({
     value: match[0],
@@ -436,6 +699,35 @@ async function readBounded(response: Response): Promise<Uint8Array | null> {
   return result
 }
 
+/** Exchange bodies stay tiny; the declared length is advisory, so cap the
+ * actual bytes the parser ever sees. Throws past the cap. */
+const MAX_EXCHANGE_BODY_BYTES = 4096
+
+async function readBoundedText(request: Request, maxBytes: number): Promise<string> {
+  if (!request.body) return ''
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > maxBytes) {
+      await reader.cancel()
+      throw new Error('Exchange body exceeds the bounded read.')
+    }
+    chunks.push(value)
+  }
+  const result = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    result.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder().decode(result)
+}
+
+
 function browserHeaders(upstream: Response, transformed: boolean): Headers {
   const headers = new Headers()
   for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified', 'retry-after']) {
@@ -459,16 +751,141 @@ function appendSessionCookie(response: Response, cookie: string | undefined): Re
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 
+function powNoStore(): HeadersInit {
+  return { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+}
+
+/** Issue a single-use proof-of-work challenge bound to the request network. */
+async function servePowChallenge(request: Request): Promise<Response> {
+  const secret = serverSecret()
+  if (!secret) return jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured')
+  const store = challengeStore()
+  if (!store && process.env.NODE_ENV === 'production') {
+    return jsonError(503, 'AniSource verification is not configured.', {}, 'misconfigured')
+  }
+  const ip = requestClientIp(request)
+  let budgetCount = 0
+  try {
+    if (await isNetworkDenied(cachedAbuseStore(), networkFingerprint(ip))) {
+      return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '900' }, 'rate-limited')
+    }
+    const budget = store ? await store.hitBudget(`challenge:${ip ?? 'unknown'}`, POW_CHALLENGE_BUDGET_PER_MINUTE, 60) : { allowed: true, count: 0 }
+    if (store && !budget.allowed) {
+      return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '60' }, 'rate-limited')
+    }
+    budgetCount = budget.count
+  } catch {
+    return jsonError(503, 'AniSource verification is temporarily unavailable.', {}, 'misconfigured')
+  }
+  const issued = mintPowChallenge(ip, Math.floor(Date.now() / 1000), escalatedDifficulty(powDifficulty(), budgetCount))
+  if (!issued) return jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured')
+  return new Response(JSON.stringify(issued), { status: 200, headers: powNoStore() })
+}
+
+/** Verify a solved challenge and issue the browser session. */
+async function exchangePowSession(request: Request): Promise<Response> {
+  const secret = serverSecret()
+  if (!secret) return jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured')
+  if (Number(request.headers.get('content-length') ?? 0) > 2048) {
+    return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
+  }
+  const store = challengeStore()
+  if (!store && process.env.NODE_ENV === 'production') {
+    return jsonError(503, 'AniSource verification is not configured.', {}, 'misconfigured')
+  }
+  const ip = requestClientIp(request)
+  // Budgets are charged before parsing: attackers pay for the attempt even
+  // when the body is garbage, and parsing never runs on unbounded input.
+  try {
+    if (await isNetworkDenied(cachedAbuseStore(), networkFingerprint(ip))) {
+      return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '900' }, 'rate-limited')
+    }
+    const budget = store ? await store.hitBudget(`exchange:${ip ?? 'unknown'}`, POW_EXCHANGE_BUDGET_PER_MINUTE, 60) : { allowed: true, count: 0 }
+    if (store && !budget.allowed) {
+      return jsonError(429, 'Too many verification requests. Try again shortly.', { 'Retry-After': '60' }, 'rate-limited')
+    }
+  } catch {
+    return jsonError(503, 'AniSource verification is temporarily unavailable.', {}, 'misconfigured')
+  }
+  // Bounded read: declared Content-Length is advisory (chunked bodies omit
+  // it), so the parser never sees more than a small payload.
+  let raw: string
+  try {
+    raw = await readBoundedText(request, MAX_EXCHANGE_BODY_BYTES)
+  } catch {
+    return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
+  }
+  let body: ReturnType<typeof parseExchangeBody>
+  try {
+    body = parseExchangeBody(JSON.parse(raw))
+  } catch {
+    return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
+  }
+  if (!body) return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
+  // Stale-but-well-formed copies reload for a fresh bundle; malformed ones
+  // (including missing week/version, rejected by the schema above) stay 400.
+  if (!attestationVersionCurrent(body.attestation.av)) {
+    return jsonError(426, 'Client is outdated. Reload to update.', {}, 'invalid')
+  }
+  if (!clientWeekInWindow(body.attestation.cw, Date.now())) {
+    return jsonError(426, 'Client is outdated. Reload to update.', {}, 'invalid')
+  }
+  let result: Awaited<ReturnType<typeof redeemPowChallenge>>
+  try {
+    result = await redeemPowChallenge(body.challenge, body.solution.nonce, body.attestation, ip, store, Math.floor(Date.now() / 1000))
+  } catch {
+    return jsonError(503, 'AniSource verification is temporarily unavailable.', {}, 'misconfigured')
+  }
+  if (!result.ok) {
+    if (result.reason === 'misconfigured') {
+      return jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured')
+    }
+    if (result.reason === 'expired' || result.reason === 'spent') {
+      return jsonError(400, 'Verification expired. Request a fresh challenge and retry.', {}, 'invalid')
+    }
+    return jsonError(400, 'Invalid verification payload.', {}, 'invalid')
+  }
+  const signingKey = await cachedHmacKey(secret)
+  // Automation tells price, never block: suspicious sessions get a short
+  // leash (transparent re-verification) and pre-burn the network's challenge
+  // budget so follow-up puzzles escalate. Forged-clean passes by design.
+  const attestation = scoreAttestation(body.attestation)
+  const short = attestation.score >= SUSPICIOUS_ATTESTATION_SCORE
+  if (short && store) {
+    try {
+      await store.burnBudget(`challenge:${ip ?? 'unknown'}`, POW_SUSPICIOUS_BURN_AMOUNT, 60)
+    } catch {
+      // Best-effort pricing only: the session was fairly earned, and the
+      // catalog abuse checks fail closed on their own when Redis is down.
+    }
+  }
+  const created = await createSession(
+    signingKey,
+    short ? POW_SHORT_SESSION_TTL_SECONDS : SESSION_LIFETIME_SECONDS,
+    attestation.score,
+    networkFingerprint(ip),
+  )
+  const headers = new Headers(powNoStore())
+  headers.append('Set-Cookie', created.cookie)
+  return new Response(JSON.stringify({ ok: true }), { status: 200, headers })
+}
+
 /** The single server-side AniSource seam for catalog JSON and signed media assets. */
 export async function handleAniSourceRequest(request: Request): Promise<Response> {
   // Deliberately indistinguishable from an unknown route: confirming the
   // route exists (or why it was rejected) only teaches probers the rule.
   if (!isSameOriginRequest(request)) return hiddenRoute()
+  const url = new URL(request.url)
+  let rawPath = url.pathname.startsWith(`${API_PREFIX}/`) ? url.pathname.slice(API_PREFIX.length) : ''
+
+  // Local proof-of-work session issuance is the only unauthenticated surface
+  // besides health. Challenge minting costs one HMAC; exchange verification
+  // costs one hash plus a single-use spend.
+  if (rawPath === '/challenge' && request.method === 'GET') return servePowChallenge(request)
+  if (rawPath === '/session' && request.method === 'POST') return exchangePowSession(request)
   if (!['GET', 'HEAD'].includes(request.method)) return jsonError(405, 'Method not allowed.', { Allow: 'GET, HEAD' }, 'invalid')
 
   const signingSecret = serverSecret()
-  const url = new URL(request.url)
-  let rawPath = url.pathname.startsWith(`${API_PREFIX}/`) ? url.pathname.slice(API_PREFIX.length) : ''
   let viaFallback = false
   if (rawPath === FALLBACK_PREFIX || rawPath.startsWith(`${FALLBACK_PREFIX}/`)) {
     viaFallback = true
@@ -490,29 +907,62 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
 
   const assetMatch = /^\/asset\/([^/]+)$/.exec(rawPath)
   if (!assetMatch && !isAllowedUpstreamPath(rawPath, url.search)) return hiddenRoute()
-  // Catalog callers must prove they rendered site HTML recently. Media
-  // tickets stay exempt (image and media elements cannot send headers) as do
-  // health checks (headerless monitors). A missing nonce answers exactly
-  // like an unknown route.
-  const nonceExempt = assetMatch !== null || rawPath === '/health' || rawPath === '/api/v1/health'
-  if (!nonceExempt && !verifyRequestNonce(request.headers.get(REQUEST_NONCE_HEADER), signingSecret, Math.floor(Date.now() / 1000))) {
-    return hiddenRoute()
-  }
-  let session = await readSession(request, signingKey)
-  if (assetMatch && !session) return jsonError(403, 'Expired or invalid media ticket.', {}, 'invalid')
 
-  let newCookie: string | undefined
-  if (!session) {
-    const created = await createSession(signingKey)
-    session = created.session
-    newCookie = created.cookie
+  // Every gateway route but health requires a live proof-of-work session.
+  // Sessionless callers get a distinguishable 401 (never camouflage): the
+  // browser client must learn it has to verify before retrying.
+  const healthExempt = rawPath === '/health' || rawPath === '/api/v1/health'
+  const session = await readSession(request, signingKey)
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const abuse = cachedAbuseStore()
+  if (!healthExempt) {
+    if (!session) {
+      // Sessionless floods are scanner-shaped: legitimate clients 401 once
+      // per session, then verify. Count every one; the tripwire below turns
+      // persistent probing into a short network ban.
+      const verdict = await abuseVerdict(abuse, {
+        ipHash: networkFingerprint(requestClientIp(request)),
+        sessionFingerprint: null,
+        sessionless: true,
+      }, nowSeconds)
+      if (!verdict) return abuseUnavailable()
+      if (!verdict.ok) {
+        return jsonError(429, 'Too many verification attempts from this network. Try again shortly.', { 'Retry-After': String(verdict.retryAfterSeconds) }, 'rate-limited')
+      }
+      return jsonError(401, 'Browser verification is required before using AniSource.', {}, 'session-required')
+    }
+    // Network-bound media: the challenge was issued to one network and the
+    // session carries its fingerprint. Metadata stays lenient across hops;
+    // media resolution and asset tickets re-verify transparently (the browser
+    // client solves on 401 and replays once), so a harvested or shared
+    // session stops playing outside its home network within minutes.
+    if (!!assetMatch || isMediaResolutionPath(rawPath)) {
+      if (session.net !== networkFingerprint(requestClientIp(request))) {
+        return jsonError(401, 'Browser verification is required before using AniSource.', {}, 'session-required')
+      }
+    }
+    if (
+      process.env.NODE_ENV === 'production' &&
+      isMediaResolutionPath(rawPath) &&
+      (session.scr >= SUSPICIOUS_ATTESTATION_SCORE || mediaStackForged(request))
+    ) {
+      // Headless playback ends here: automated sessions resolve metadata but
+      // never media. Production-only by design — development and the headless
+      // e2e suite keep exercising these flows, and attackers cannot reach
+      // non-production deployments. Stealth clients pass by construction.
+      return jsonError(403, 'Automated browsing is not supported for playback. Use a standard browser to watch or read.', {}, 'automation')
+    }
   }
-  const withSession = (response: Response) => appendSessionCookie(response, newCookie)
+
+  // No session is ever minted here: issuance happens only through the
+  // proof-of-work exchange, so health responses carry no Set-Cookie.
+  const withSession = (response: Response) => appendSessionCookie(response, undefined)
 
   let path: string
   let search: string
   let ticket: AssetTicket | null = null
   if (assetMatch) {
+    if (!session) return withSession(jsonError(403, 'Expired or invalid media ticket.', {}, 'invalid'))
     ticket = await verifyTicket(assetMatch[1]!, session, signingKey)
     if (!ticket) return withSession(jsonError(403, 'Expired or invalid media ticket.', {}, 'invalid'))
     path = ticket.p
@@ -520,6 +970,37 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
   } else {
     path = rawPath
     search = url.search
+  }
+
+  // Abuse telemetry runs on catalog traffic: velocity, sharing, media pacing,
+  // and standing denials. Asset tickets stay write-free by design (per the
+  // limiter note below): media bytes never increment counters, but a banned
+  // session's ticket reads its standing denial and answers 429 immediately
+  // instead of serving out the ticket lifetime. Sampled writes keep the hot
+  // path cheap; denials always read.
+  if (!healthExempt && !ticket && session) {
+    const verdict = await abuseVerdict(abuse, {
+      ipHash: networkFingerprint(requestClientIp(request)),
+      sessionFingerprint: sessionFingerprint(session.sid),
+      sessionless: false,
+      mediaResolve: isMediaResolutionPath(rawPath),
+    }, nowSeconds)
+    if (!verdict) return withSession(abuseUnavailable())
+    if (!verdict.ok) {
+      return withSession(jsonError(429, 'Too many requests from this session. Try again shortly.', { 'Retry-After': String(verdict.retryAfterSeconds) }, 'rate-limited'))
+    }
+  }
+  if (!healthExempt && ticket && session) {
+    const verdict = await abuseVerdict(abuse, {
+      ipHash: networkFingerprint(requestClientIp(request)),
+      sessionFingerprint: sessionFingerprint(session.sid),
+      sessionless: false,
+      readOnly: true,
+    }, nowSeconds)
+    if (!verdict) return withSession(abuseUnavailable())
+    if (!verdict.ok) {
+      return withSession(jsonError(429, 'Too many requests from this session. Try again shortly.', { 'Retry-After': String(verdict.retryAfterSeconds) }, 'rate-limited'))
+    }
   }
 
   // Media tickets are unguessable session-bound capabilities and the API applies
@@ -557,7 +1038,30 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
     || (serviceToken && new TextEncoder().encode(serviceToken).byteLength < 32)) {
     return withSession(jsonError(503, 'AniSource server access is not configured.', {}, 'misconfigured'))
   }
-  const sentServiceAuth = Boolean(serviceToken && !isMediaPath(normalizedPath))
+  // The gateway authenticates to the API on every upstream call, catalog and
+  // media alike: media capability URLs are exempt from Bearer upstream, but
+  // an extra header is harmless there and required when the deployment
+  // enforces service auth uniformly. The credential never leaves the server.
+  const sentServiceAuth = Boolean(serviceToken)
+  if (ticket && session) {
+    // Mint the upstream capability here, server-side only, after the
+    // session/network/ban checks: the ticket carries no browser-redeemable
+    // grant, so decoding it yields no direct-API access. Without a
+    // resolvable secret the fetch proceeds on Bearer plus the preserved
+    // query; production refuses to run that way (see
+    // verify-anisource-config), while development stays open.
+    try {
+      const token = normalizedPath.split('/').filter(Boolean).at(-1)
+      if (token) {
+        upstreamUrl.searchParams.set(
+          PLAYBACK_CAP_PARAM,
+          await mintPlaybackCapability(token, session.sid),
+        )
+      }
+    } catch (error) {
+      if (!(error instanceof PlaybackCapUnavailable)) throw error
+    }
+  }
 
   const headers = new Headers({ Accept: request.headers.get('accept') ?? 'application/json, */*;q=0.8' })
   if (request.method === 'GET') {
@@ -598,6 +1102,7 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
     // deployments disagree on the shared secret. Surfacing the 401 would make
     // sessions report "expired stream links" and burn refresh budgets on an
     // outage no retry can heal, so translate it to a misconfigured outage.
+    // This covers catalog and media alike now that both carry service auth.
     await upstream.body?.cancel()
     return withSession(jsonError(
       503,

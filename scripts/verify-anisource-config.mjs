@@ -62,19 +62,30 @@ if ((!redisUrl || !redisToken) && enforced) {
   }
 }
 
-const directMedia = process.env.ANISOURCE_DIRECT_MEDIA
-const directEnabled = directMedia === '1' || directMedia?.toLowerCase() === 'true' || directMedia?.toLowerCase() === 'yes'
 const playbackSecrets = (process.env.ANISOURCE_PLAYBACK_SECRETS ?? '')
   .split(',')
   .map((entry) => entry.trim())
   .filter((entry) => Buffer.byteLength(entry, 'utf8') >= 32)
-if (directEnabled && enforced && playbackSecrets.length === 0) {
-  problems.push('ANISOURCE_PLAYBACK_SECRETS is required when ANISOURCE_DIRECT_MEDIA is on: direct media URLs must be session-bound (ADR 0006).')
+// Ticket mode mints fetch-time capabilities and direct mode hands them to
+// the browser; the production API requires a valid Capability on media in
+// both modes, so the shared secret is mandatory whenever enforced,
+// regardless of the media mode. Without it the gateway resolves metadata
+// and fails every media request.
+if (enforced && playbackSecrets.length === 0) {
+  problems.push('ANISOURCE_PLAYBACK_SECRETS is required in production: media capabilities are minted in direct and ticket modes alike (ADR 0006).')
 }
 
 for (const [name] of Object.entries(process.env)) {
   if (/^VITE_(ANISOURCE|UPSTASH)_/i.test(name)) {
     problems.push(`${name} ships its value to every visitor: server secrets must never use the VITE_ prefix.`)
+  }
+}
+
+const powDifficulty = process.env.ANISOURCE_POW_DIFFICULTY
+if (powDifficulty !== undefined && powDifficulty !== '') {
+  const parsed = Number.parseInt(powDifficulty, 10)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 30) {
+    problems.push('ANISOURCE_POW_DIFFICULTY must be an integer from 1 to 30.')
   }
 }
 

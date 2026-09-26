@@ -15,8 +15,6 @@ import { MobileTabBar } from '../components/layout/MobileTabBar'
 import { ErrorBoundary } from '../components/shared/ErrorBoundary'
 import { RouteLoadingFallback } from '../components/ui/LoadingSkeleton'
 import { API_URLS } from '../config/api'
-import { REQUEST_NONCE_COOKIE, REQUEST_NONCE_TTL_SECONDS, issueRequestNonce } from '../lib/requestNonce'
-import { serverSecret } from '../lib/serverSecret'
 import '../styles/app.css'
 
 const anilistOrigin = new URL(API_URLS.anilist).origin
@@ -64,23 +62,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   component: RootLayout,
   errorComponent: RootError,
   shellComponent: RootDocument,
-  headers: () => {
-    const headers: Record<string, string> = {
-      'Content-Security-Policy': `connect-src 'self' ${documentConnectSources()}`,
-    }
-    // Proof-of-visit for the AniSource gateway: a short-lived HMAC cookie
-    // the browser client echoes on catalog requests. serverSecret() shares
-    // the gateway's key (including its development fallback) and returns
-    // null outside a server runtime, so no cookie is ever minted the gateway
-    // could not verify — and the secret itself never leaves configuration.
-    const secret = serverSecret()
-    if (secret) {
-      const secure = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production' ? '; Secure' : ''
-      headers['Set-Cookie'] =
-        `${REQUEST_NONCE_COOKIE}=${issueRequestNonce(secret, Math.floor(Date.now() / 1000))}; Path=/; SameSite=Lax; Max-Age=${REQUEST_NONCE_TTL_SECONDS}${secure}`
-    }
-    return headers
-  },
+  headers: () => ({
+    // Browsers ignore CSP meta tags injected after the initial document, so
+    // the policy ships as a response header instead of a static meta tag.
+    'Content-Security-Policy': `connect-src 'self' ${documentConnectSources()}`,
+  }),
 })
 
 function RootLayout() {

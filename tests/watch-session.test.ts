@@ -4,6 +4,7 @@ import {
   createWatchSession,
   derivePlayerStage,
   episodeRouteToken,
+  EXPIRED_STREAM_BURST_WINDOW_MS,
   MAX_EXPIRED_STREAM_REFRESHES,
   orderStreams,
   resolveEpisodeId,
@@ -607,6 +608,49 @@ describe('Watch session', () => {
 
     expect(api.streams).toHaveBeenCalledTimes(3)
     expect(session.watchError()).toBeNull()
+  })
+
+  it('renews isolated expiries indefinitely but trips rapid failure bursts', async () => {
+    const streams = vi.fn(async () => [stream('720p')])
+    const { session } = sessionParts({ api: { streams } })
+
+    await session.initialize()
+    await session.chooseServer('server-a')
+
+    let now = 1_700_000_000_000
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    try {
+      const failOnce = async (): Promise<void> => {
+        const current = session.playbackIdentity()
+        if (!current) throw new Error('Expected the selected server to have a playback identity.')
+        session.reportMediaFailure(current, 'This stream link has expired.', true)
+        await vi.waitFor(() => {
+          expect(session.playbackIdentity()).not.toBeNull()
+          expect(session.playbackIdentity()?.key).not.toBe(current.key)
+        })
+      }
+      // Four expiries spaced past the burst window: ticket lifetimes apart,
+      // every one renews silently — long playback never exhausts recovery.
+      for (let round = 0; round < 4; round += 1) {
+        await failOnce()
+        now += EXPIRED_STREAM_BURST_WINDOW_MS + 1
+        expect(session.watchError()).toBeNull()
+      }
+      expect(streams).toHaveBeenCalledTimes(5)
+
+      // Instantly-dying links cluster inside the window: three refresh, the
+      // fourth surfaces the terminal error.
+      for (let round = 0; round < MAX_EXPIRED_STREAM_REFRESHES; round += 1) {
+        await failOnce()
+      }
+      const dying = session.playbackIdentity()
+      if (!dying) throw new Error('Expected the selected server to have a playback identity.')
+      session.reportMediaFailure(dying, 'This stream link has expired again.', true)
+      expect(streams).toHaveBeenCalledTimes(5 + MAX_EXPIRED_STREAM_REFRESHES)
+      expect(session.watchError()?.kind).toBe('expired-stream')
+    } finally {
+      nowSpy.mockRestore()
+    }
   })
 
   it('re-resolves the current server with a fresh attempt for in-player retry', async () => {

@@ -559,6 +559,25 @@ test("a named local viewer is not described as anonymous", async ({ page }) => {
   await page.screenshot({ path: "test-results/profile-mobile.png", fullPage: true });
 });
 
+test("gateway catalog requires a verified browser session", async ({ page }) => {
+  await page.goto("/");
+  const sessionless = await page.evaluate(async () => {
+    const response = await fetch("/api/anisource/api/v1/anime/sources", {
+      headers: { Accept: "application/json" },
+    });
+    return { status: response.status, kind: response.headers.get("x-anisource-error-kind") };
+  });
+  expect(sessionless.status).toBe(401);
+  expect(sessionless.kind).toBe("session-required");
+
+  // The real client verifies transparently: resolving streams works in-page
+  // with no user-visible checkpoint.
+  await page.goto("/anime/1/watch/next");
+  await page.getByRole("button", { name: "Episode 1: Pilot" }).click();
+  await page.getByRole("button", { name: "Test server" }).click();
+  await expect(page).toHaveURL(/\/anime\/1\/watch\/episode-1(?:\?|$)/);
+});
+
 test("settings stays usable across desktop and mobile layouts", async ({ page }) => {
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Viewer settings." })).toBeVisible();

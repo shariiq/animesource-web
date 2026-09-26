@@ -64,6 +64,18 @@ _Avoid_: Panel, frame
 A short-lived, session-bound signed token minted by the website and verified by the AniSource gateway and API. It authorizes one playback by binding an exact media URL to the website session that requested it.
 _Avoid_: Password, shared key, bearer URL
 
+**Session**:
+An anonymous browser session issued only for a solved proof-of-work challenge, carried in an HttpOnly cookie. Every gateway route but health requires a live one; sessions expire after 2 hours and carry the issuing-network fingerprint, which media resolution enforces (drift re-verifies transparently).
+_Avoid_: Account, login, user
+
+**Challenge**:
+A single-use, server-signed computational puzzle binding a difficulty and the requesting network. Solving it prices bulk automation with real computation; native implementations pass clean, so it never proves a JavaScript engine or a human — only that somebody paid the compute.
+_Avoid_: CAPTCHA, puzzle page, bot check
+
+**Attestation**:
+Coarse environment signals (automation flag, counts, viewport) plus a required schema version and client week shipped with a proof-of-work exchange. Missing values are malformed; stale versions or weeks answer upgrade-and-reload. Scored to price automation with shorter sessions and hotter puzzles; never blocks, because client-asserted signals are forgeable.
+_Avoid_: Fingerprint, tracking, bot score
+
 **Reader**:
 The client-only route that loads manga chapters and pages, records local position, and provides reading controls.
 _Avoid_: Viewer, document viewer

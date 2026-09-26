@@ -2,7 +2,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createAniSourceClient } from '../app/data/anisource/client'
 import { handleAniSourceRequest } from '../app/data/anisource/proxy.server'
-import { REQUEST_NONCE_HEADER, issueRequestNonce } from '../app/lib/requestNonce'
 
 const APP_ORIGIN = 'https://app.test'
 const API_ORIGIN = 'https://api.test'
@@ -23,6 +22,7 @@ describe('AniSource client/gateway route contract', () => {
     vi.stubEnv('ANISOURCE_FALLBACK_BASE', '')
     vi.stubEnv('UPSTASH_REDIS_REST_URL', '')
     vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', '')
+    vi.stubEnv('ANISOURCE_POW_DIFFICULTY', '6')
   })
 
   afterEach(() => {
@@ -88,22 +88,40 @@ describe('AniSource client/gateway route contract', () => {
     }))
 
     const requestedPaths: string[] = []
-    // The transport shim plays the browser: it attaches the cookie-derived
-    // request nonce exactly as client request encoding does.
-    const nonce = issueRequestNonce('session-secret-'.padEnd(48, 's'), Math.floor(Date.now() / 1000))
+    // Minimal cookie jar: the client verifies through proof-of-work once
+    // (challenge + exchange), then the jar carries the session exactly as a
+    // browser would. The first catalog call pays the 401 + verify + retry.
+    let jar = ''
+    // The transport shim plays the browser: same-origin gateway calls with
+    // the jar attached, solving proof-of-work transparently via the client.
     const client = createAniSourceClient({
       transport: {
-        fetch: async (input: string) => {
+        fetch: async (input: string, init?: RequestInit) => {
           requestedPaths.push(input)
-          // The browser only ever talks to the same-origin gateway.
-          return handleAniSourceRequest(new Request(`${APP_ORIGIN}${input}`, {
-            headers: {
+          const send = async (): Promise<Response> => {
+            const headers = new Headers({
               Origin: APP_ORIGIN,
               'Sec-Fetch-Site': 'same-origin',
               Accept: 'application/json',
-              [REQUEST_NONCE_HEADER]: nonce,
-            },
-          }))
+            })
+            if (jar) headers.set('Cookie', jar)
+            if (init?.headers) {
+              new Headers(init.headers).forEach((value, key) => headers.set(key, value))
+            }
+            return handleAniSourceRequest(new Request(`${APP_ORIGIN}${input}`, {
+              method: init?.method ?? 'GET',
+              headers,
+              body: init?.body ?? undefined,
+              ...(init?.signal ? { signal: init.signal } : {}),
+            }))
+          }
+          const first = await send()
+          const setCookie = first.headers.get('set-cookie')
+          if (setCookie) {
+            const value = setCookie.split(';', 1)[0]
+            if (value) jar = value
+          }
+          return first
         },
         setTimeout: (callback: () => void) => setTimeout(callback, 0),
         clearTimeout: (timeout: ReturnType<typeof setTimeout>) => clearTimeout(timeout),
@@ -125,7 +143,9 @@ describe('AniSource client/gateway route contract', () => {
     const servers = await client.servers('test', 'episode-1', noop)
     const streams = await client.streams('test', 'episode-1', 'server-1', noop)
 
-    expect(requestedPaths).toHaveLength(11)
+    // 11 catalog paths plus the failed attempt, challenge, and exchange the
+    // first sessionless call pays transparently (health is exempt).
+    expect(requestedPaths).toHaveLength(14)
     expect(health.status).toBe('ok')
     expect(sources.count).toBe(1)
     expect(mangaSources.count).toBe(1)

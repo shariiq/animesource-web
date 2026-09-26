@@ -8,8 +8,8 @@ This file holds what the code cannot tell you. When it and the code disagree, th
 
 Bun only: `bun install --frozen-lockfile`, `bun run <script>`, `bunx <tool>`. Scripts live in `package.json`.
 
-- Iterate with the narrowest check: `bun run typecheck`, `bun run lint`, `bunx vitest run tests/<file>`, `bunx playwright test -g "<title>"`.
-- NEVER run `bun run verify` or `bun run verify:boundary` unless a huge part of codebase is changed. CI runs both (they need a full build). Diagnose and confirm your work with the focused checks above. If Playwright's browser is missing, run `bunx playwright install chromium`.
+- **Iterate with the narrowest check**: `bun run typecheck`, `bun run lint`, `bunx vitest run tests/<file>`, `bunx playwright test -g "<title>"`.
+- NEVER run `bun run verify` or `bun run verify:boundary` or `bunx playwright test`(name specific test with -g) unless a huge relevant part of the codebase is changed. CI runs both (they need a full build). Diagnose and confirm your work with the focused checks above. If Playwright's browser is missing, run `bunx playwright install chromium`.
 - Docs-only changes need no automated check: lint doesn't validate prose or paths, so review those directly. Copy-only edits in source files need `bun run lint`. Markup or behavior changes are not copy-only.
 - Local checks use mocks and disposable fixtures with no production access. Run them, fix failures your change caused, and rerun without asking. A plain dev server is not mocked.
 - `bun run test:live` hits real AniList/AniSource. Run it only when asked; it never gates a merge.

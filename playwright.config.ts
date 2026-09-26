@@ -35,6 +35,9 @@ export default defineConfig({
         // Keep overflow traffic hermetic: an unset fallback base would point
         // the mount-time warm ping at the production Render deployment.
         ANISOURCE_FALLBACK_BASE: 'http://127.0.0.1:3101',
+        // Real browsers solve real challenges: keep the work trivial so the
+        // journeys measure product behavior, not hashing throughput.
+        ANISOURCE_POW_DIFFICULTY: '8',
       },
     },
   ],

@@ -139,14 +139,43 @@ describe('AniSource server boundary', () => {
 
     expect(catalog.status).toBe(200)
     const body = await catalog.json()
-    expect(body[0].url).toBe(`${API_ORIGIN}/api/v1/proxy/hls/master`)
-    expect(body[1].url).toBe(`${API_ORIGIN}/api/v1/proxy/hls/variant`)
+    // Direct mode passes absolute API URLs through, each carrying a
+    // session-bound playback capability (ADR 0006) instead of a bare bearer.
+    for (const [index, token] of ['master', 'variant'].entries()) {
+      const url = new URL(body[index].url)
+      expect(`${url.origin}${url.pathname}`).toBe(`${API_ORIGIN}/api/v1/proxy/hls/${token}`)
+      const cap = url.searchParams.get('cap')
+      expect(cap).toMatch(/^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/)
+      const claims = JSON.parse(Buffer.from(cap!.split('.')[1]!, 'base64url').toString('utf8'))
+      expect(claims.v).toBe(1)
+      expect(claims.scope).toMatch(/^[0-9a-f]{64}$/)
+      expect(claims.exp).toBeGreaterThan(claims.iat)
+    }
+    // Capabilities bind the exact API token: the two URLs carry different caps.
+    expect(new URL(body[0].url).searchParams.get('cap')).not.toBe(new URL(body[1].url).searchParams.get('cap'))
     expect(JSON.stringify(body)).not.toContain('/api/anisource/asset/')
     // Extractor credentials are still stripped even though URLs pass through.
     expect(JSON.stringify(body)).not.toContain('private-extractor-token')
     expect(JSON.stringify(body)).not.toContain('extractor.test')
     expect(body[0]).not.toHaveProperty('headers')
     expect(new Headers(upstreamFetch.mock.calls[0]![1]?.headers).get('Authorization')).toBe(`Bearer ${SERVICE_TOKEN}`)
+  })
+
+  it('fails closed in production when direct media has no capability secret', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('ANISOURCE_DIRECT_MEDIA', '1')
+    vi.stubEnv('ANISOURCE_PLAYBACK_SECRETS', '')
+    const upstreamFetch = vi.fn(async () => new Response(JSON.stringify([{
+      url: `${API_ORIGIN}/api/v1/proxy/hls/master`,
+      quality: 'Auto',
+      is_hls: true,
+      is_audio: false,
+    }]), { headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', upstreamFetch)
+
+    const catalog = await handleAniSourceRequest(request('/api/anisource/api/v1/anime/test/streams/episode?server_id=1'))
+    expect(catalog.status).toBe(503)
+    expect(catalog.headers.get('X-AniSource-Error-Kind')).toBe('misconfigured')
   })
 
   it('rewrites protocol-relative HLS URLs to session-bound same-origin tickets', async () => {

@@ -60,6 +60,10 @@ _Avoid_: Part, episode
 An ordered manga image in a Chapter, loaded by the Reader from the AniSource page endpoint.
 _Avoid_: Panel, frame
 
+**Capability**:
+A short-lived, session-bound signed token minted by the website and verified by the AniSource gateway and API. It authorizes one playback by binding an exact media URL to the website session that requested it.
+_Avoid_: Password, shared key, bearer URL
+
 **Reader**:
 The client-only route that loads manga chapters and pages, records local position, and provides reading controls.
 _Avoid_: Viewer, document viewer

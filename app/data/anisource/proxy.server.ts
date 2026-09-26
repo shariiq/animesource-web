@@ -4,6 +4,7 @@ import { z } from 'zod'
 import apiUrls from '../../../config/api-urls.json'
 import { REQUEST_NONCE_HEADER, verifyRequestNonce } from '../../lib/requestNonce'
 import { serverSecret } from '../../lib/serverSecret'
+import { PlaybackCapUnavailable, appendPlaybackCapability, mintPlaybackCapability } from './capability.server'
 import {
   anisourceMangaSchema,
   chapterPageSchema,
@@ -254,7 +255,8 @@ function apiBase(): URL | null {
  * the full playlist window with no hotlink check.
  */
 function directMediaEnabled(): boolean {
-  return process.env.ANISOURCE_DIRECT_MEDIA === '1'
+  const value = process.env.ANISOURCE_DIRECT_MEDIA
+  return value === '1' || value?.toLowerCase() === 'true' || value?.toLowerCase() === 'yes'
 }
 
 function fallbackBase(): URL | null {
@@ -365,7 +367,15 @@ async function rewriteApiUrl(value: string, base: URL, session: Session, key: Cr
   const basePath = base.pathname.replace(/\/$/, '')
   const path = basePath && url.pathname.startsWith(`${basePath}/`) ? url.pathname.slice(basePath.length) : url.pathname
   if (isMediaPath(path)) {
-    if (directMediaEnabled()) return url.toString()
+    if (directMediaEnabled()) {
+      // Direct mode hands the browser absolute API URLs, so each one carries
+      // a session-bound capability (ADR 0006). Without a resolvable secret
+      // there is nothing safe to hand out: fail closed, not bearer-open.
+      const token = url.pathname.split('/').filter(Boolean).at(-1)
+      if (!token) throw new PlaybackCapUnavailable()
+      const cap = await mintPlaybackCapability(token, session.sid)
+      return appendPlaybackCapability(url.toString(), cap)
+    }
     const ticket = await issueTicket(path, url.search, scope, session, key, viaFallback)
     return `${API_PREFIX}/asset/${ticket}`
   }
@@ -663,7 +673,10 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
         if (serialized === undefined) throw new Error('AniSource response could not be serialized.')
         body = serialized
         transformed = true
-      } catch {
+      } catch (error) {
+        if (error instanceof PlaybackCapUnavailable) {
+          return withSession(jsonError(503, 'Direct media access is not configured.', {}, 'misconfigured'))
+        }
         return withSession(jsonError(502, 'AniSource returned an unsupported URL.', {
           'X-AniSource-Error-Kind': 'invalid',
         }))
@@ -672,7 +685,10 @@ export async function handleAniSourceRequest(request: Request): Promise<Response
       try {
         body = await rewriteManifest(body, activeBase, session, signingKey, scope, rewriteViaFallback)
         transformed = true
-      } catch {
+      } catch (error) {
+        if (error instanceof PlaybackCapUnavailable) {
+          return withSession(jsonError(503, 'Direct media access is not configured.', {}, 'misconfigured'))
+        }
         return withSession(jsonError(502, 'AniSource returned an unsupported playlist URL.', {
           'X-AniSource-Error-Kind': 'invalid',
         }))
